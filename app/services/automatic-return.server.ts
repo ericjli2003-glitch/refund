@@ -1,14 +1,17 @@
-import { createHmac } from "node:crypto";
 import { Prisma } from "@prisma/client";
 
 import prisma from "../db.server";
-import { unauthenticated } from "../shopify.server";
 import { customerAccountGraphql } from "./customer-account.server";
+import {
+  hasDuplicateLineItems,
+  hashCustomerId,
+  moneyAmountsMatch,
+  moneyIsAbove,
+  sameReturnItems,
+  type RequestedItem,
+} from "./return-guards.server";
 
-export type RequestedItem = {
-  lineItemId: string;
-  quantity: number;
-};
+export type { RequestedItem } from "./return-guards.server";
 
 type Money = { amount: string; currencyCode: string };
 type UserError = { field?: string[]; message: string };
@@ -162,36 +165,14 @@ function throwOnUserErrors(errors: UserError[], action: string) {
 function customerHash(customerId: string) {
   const secret = process.env.SHOPIFY_API_SECRET;
   if (!secret) {
-    throw new Error("SHOPIFY_API_SECRET is required for customer identity hashing.");
-  }
-  return createHmac("sha256", secret).update(customerId).digest("hex");
-}
-
-function moneyIsAbove(amount: string, maximum: string) {
-  const value = Number(amount);
-  const limit = Number(maximum);
-  return !Number.isFinite(value) || !Number.isFinite(limit) || value > limit;
-}
-
-function sameItems(left: unknown, right: RequestedItem[]) {
-  const normalize = (items: RequestedItem[]) =>
-    [...items].sort((a, b) =>
-      a.lineItemId === b.lineItemId
-        ? a.quantity - b.quantity
-        : a.lineItemId.localeCompare(b.lineItemId),
+    throw new Error(
+      "SHOPIFY_API_SECRET is required for customer identity hashing.",
     );
-
-  if (!Array.isArray(left)) return false;
-  return (
-    JSON.stringify(normalize(left as RequestedItem[])) ===
-    JSON.stringify(normalize(right))
-  );
+  }
+  return hashCustomerId(customerId, secret);
 }
 
-export async function getReturnableOrders(
-  shop: string,
-  customerToken: string,
-) {
+export async function getReturnableOrders(shop: string, customerToken: string) {
   const result = await customerAccountGraphql<CustomerOrdersResponse>(
     shop,
     customerToken,
@@ -252,7 +233,7 @@ export async function executeAutomaticReturn({
     if (
       existing.customerSubjectHash !== subjectHash ||
       existing.orderId !== orderId ||
-      !sameItems(existing.requestedLineItems, items)
+      !sameReturnItems(existing.requestedLineItems, items)
     ) {
       throw new Error(
         "This idempotency key belongs to a different customer return request.",
@@ -282,7 +263,7 @@ export async function executeAutomaticReturn({
       entry.quantity,
     ]),
   );
-  if (new Set(items.map((item) => item.lineItemId)).size !== items.length) {
+  if (hasDuplicateLineItems(items)) {
     throw new Error("Each line item can appear only once in a return request.");
   }
   for (const item of items) {
@@ -294,7 +275,12 @@ export async function executeAutomaticReturn({
     }
   }
 
-  const calculation = await calculateReturn(shop, customerToken, orderId, items);
+  const calculation = await calculateReturn(
+    shop,
+    customerToken,
+    orderId,
+    items,
+  );
   const quote = calculation.financialSummary.returnTotalSet.presentmentMoney;
   if (quote.currencyCode !== policy.currencyCode) {
     throw new Error(
@@ -332,7 +318,7 @@ export async function executeAutomaticReturn({
       if (
         concurrent?.customerSubjectHash === subjectHash &&
         concurrent.orderId === orderId &&
-        sameItems(concurrent.requestedLineItems, items)
+        sameReturnItems(concurrent.requestedLineItems, items)
       ) {
         return concurrent;
       }
@@ -362,9 +348,14 @@ export async function executeAutomaticReturn({
 
     await prisma.agentReturn.update({
       where: { id: record.id },
-      data: { returnId, status: "RETURN_REQUESTED" },
+      data: {
+        returnId,
+        status: "RETURN_REQUESTED",
+        returnStatus: "REQUESTED",
+      },
     });
 
+    const { unauthenticated } = await import("../shopify.server");
     const { admin } = await unauthenticated.admin(shop);
     const approvalResponse = await admin.graphql(APPROVE_RETURN_MUTATION, {
       variables: { input: { returnId } },
@@ -391,7 +382,7 @@ export async function executeAutomaticReturn({
 
     await prisma.agentReturn.update({
       where: { id: record.id },
-      data: { status: "RETURN_OPEN" },
+      data: { status: "RETURN_OPEN", returnStatus: "OPEN" },
     });
 
     const refundLineItems = items.map((item) => ({
@@ -426,8 +417,10 @@ export async function executeAutomaticReturn({
     }
 
     if (
-      Number(suggestion.amountSet.presentmentMoney.amount) !==
-        Number(quote.amount) ||
+      !moneyAmountsMatch(
+        suggestion.amountSet.presentmentMoney.amount,
+        quote.amount,
+      ) ||
       suggestion.amountSet.presentmentMoney.currencyCode !== quote.currencyCode
     ) {
       throw new Error(
@@ -435,13 +428,15 @@ export async function executeAutomaticReturn({
       );
     }
 
-    const transactions = suggestion.suggestedTransactions.map((transaction) => ({
-      amount: transaction.amountSet.presentmentMoney.amount,
-      gateway: transaction.gateway,
-      kind: transaction.kind,
-      orderId,
-      parentId: transaction.parentTransaction?.id,
-    }));
+    const transactions = suggestion.suggestedTransactions.map(
+      (transaction) => ({
+        amount: transaction.amountSet.presentmentMoney.amount,
+        gateway: transaction.gateway,
+        kind: transaction.kind,
+        orderId,
+        parentId: transaction.parentTransaction?.id,
+      }),
+    );
     if (!transactions.length || transactions.some((item) => !item.parentId)) {
       throw new Error(
         "Shopify could not identify the original payment transaction. The return is open, but no refund was issued.",
@@ -485,14 +480,23 @@ export async function executeAutomaticReturn({
 
     return prisma.agentReturn.update({
       where: { id: record.id },
-      data: { refundId, status: "REFUND_SUBMITTED" },
+      data: {
+        refundId,
+        status: "REFUND_SUBMITTED",
+        refundStatus: "SUBMITTED",
+      },
     });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Unknown automatic return error.";
+      error instanceof Error
+        ? error.message
+        : "Unknown automatic return error.";
     await prisma.agentReturn.update({
       where: { id: record.id },
-      data: { status: "NEEDS_ATTENTION", failureReason: message.slice(0, 1_000) },
+      data: {
+        status: "NEEDS_ATTENTION",
+        failureReason: message.slice(0, 1_000),
+      },
     });
     throw error;
   }

@@ -51,6 +51,8 @@ model AgentReturn {
   returnId            String?
   refundId            String?
   status              String   @default("IN_PROGRESS")
+  returnStatus        String?
+  refundStatus        String?
   amount              String?
   currencyCode        String?
   idempotencyKey      String
@@ -61,5 +63,27 @@ model AgentReturn {
   updatedAt           DateTime @updatedAt
 
   @@unique([shop, idempotencyKey])
+  @@index([shop, status, createdAt])
+}
+
+model WebhookReceipt {
+  id          String   @id
+  shop        String
+  topic       String
+  processedAt DateTime @default(now())
+
+  @@index([shop, processedAt])
+}
+
+model PrivacyRequest {
+  id                  String    @id
+  shop                String
+  type                String
+  customerSubjectHash String?
+  status              String    @default("PENDING")
+  reportData          Json
+  createdAt           DateTime  @default(now())
+  completedAt         DateTime?
+
   @@index([shop, status, createdAt])
 }

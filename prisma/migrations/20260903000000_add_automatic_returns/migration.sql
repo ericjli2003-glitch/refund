@@ -18,6 +18,8 @@ CREATE TABLE "AgentReturn" (
     "returnId" TEXT,
     "refundId" TEXT,
     "status" TEXT NOT NULL DEFAULT 'IN_PROGRESS',
+    "returnStatus" TEXT,
+    "refundStatus" TEXT,
     "amount" TEXT,
     "currencyCode" TEXT,
     "idempotencyKey" TEXT NOT NULL,
@@ -33,3 +35,29 @@ CREATE UNIQUE INDEX "AgentReturn_shop_idempotencyKey_key" ON "AgentReturn"("shop
 
 -- CreateIndex
 CREATE INDEX "AgentReturn_shop_status_createdAt_idx" ON "AgentReturn"("shop", "status", "createdAt");
+
+-- CreateTable
+CREATE TABLE "WebhookReceipt" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "shop" TEXT NOT NULL,
+    "topic" TEXT NOT NULL,
+    "processedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- CreateIndex
+CREATE INDEX "WebhookReceipt_shop_processedAt_idx" ON "WebhookReceipt"("shop", "processedAt");
+
+-- CreateTable
+CREATE TABLE "PrivacyRequest" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "shop" TEXT NOT NULL,
+    "type" TEXT NOT NULL,
+    "customerSubjectHash" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'PENDING',
+    "reportData" JSONB NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completedAt" DATETIME
+);
+
+-- CreateIndex
+CREATE INDEX "PrivacyRequest_shop_status_createdAt_idx" ON "PrivacyRequest"("shop", "status", "createdAt");

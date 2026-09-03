@@ -84,11 +84,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw new Response(message, { status: 502 });
   }
 
-  const [storedPolicy, agentReturns] = await Promise.all([
+  const [storedPolicy, agentReturns, privacyRequests] = await Promise.all([
     prisma.storePolicy.findUnique({ where: { shop: session.shop } }),
     prisma.agentReturn.findMany({
       where: { shop: session.shop },
       orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
+    prisma.privacyRequest.findMany({
+      where: { shop: session.shop, status: "PENDING" },
+      orderBy: { createdAt: "asc" },
       take: 10,
     }),
   ]);
@@ -97,6 +102,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     orders: responseJson.data.orders.nodes,
     query,
     saved: url.searchParams.get("saved") === "true",
+    privacyResolved: url.searchParams.get("privacyResolved") === "true",
     connectorUrl: new URL(`/mcp/${session.shop}`, request.url).toString(),
     policy: storedPolicy ?? {
       automaticRefundsEnabled: false,
@@ -105,12 +111,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       currencyCode: responseJson.data.shop.currencyCode,
     },
     agentReturns,
+    privacyRequests,
   };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session, redirect } = await authenticate.admin(request);
   const formData = await request.formData();
+  if (formData.get("intent") === "resolvePrivacyRequest") {
+    const requestId = formData.get("requestId");
+    if (typeof requestId !== "string" || !requestId) {
+      throw new Response("Privacy request ID is required.", { status: 400 });
+    }
+    await prisma.privacyRequest.updateMany({
+      where: { id: requestId, shop: session.shop, status: "PENDING" },
+      data: { status: "COMPLETED", completedAt: new Date() },
+    });
+    return redirect("/app?privacyResolved=true");
+  }
+
   const returnWindowDays = Number(formData.get("returnWindowDays"));
   const maxAutoRefundAmount = Number(formData.get("maxAutoRefundAmount"));
 
@@ -210,9 +229,11 @@ export default function RefundDashboard() {
     orders,
     query,
     saved,
+    privacyResolved,
     policy,
     connectorUrl,
     agentReturns,
+    privacyRequests,
   } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const [search, setSearch] = useState(query);
@@ -252,6 +273,57 @@ export default function RefundDashboard() {
           Customers can use the policy immediately after authenticating with
           their Shopify customer account.
         </s-banner>
+      )}
+
+      {privacyResolved && (
+        <s-banner heading="Privacy request completed" tone="success">
+          The request has been removed from the pending queue.
+        </s-banner>
+      )}
+
+      {privacyRequests.length > 0 && (
+        <s-section heading="Pending privacy requests">
+          <s-stack direction="block" gap="base">
+            <s-banner heading="Customer data export required" tone="warning">
+              Download each verified customer export, deliver it through your
+              compliance process, then mark the request completed.
+            </s-banner>
+            {privacyRequests.map((privacyRequest) => (
+              <s-stack
+                key={privacyRequest.id}
+                direction="inline"
+                gap="base"
+                alignItems="center"
+              >
+                <s-link href={`/app/privacy/${privacyRequest.id}`}>
+                  Download request from{" "}
+                  {formatDate(privacyRequest.createdAt.toString())}
+                </s-link>
+                <form
+                  method="post"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    submit(event.currentTarget);
+                  }}
+                >
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value="resolvePrivacyRequest"
+                  />
+                  <input
+                    type="hidden"
+                    name="requestId"
+                    value={privacyRequest.id}
+                  />
+                  <s-button type="submit" variant="secondary">
+                    Mark completed
+                  </s-button>
+                </form>
+              </s-stack>
+            ))}
+          </s-stack>
+        </s-section>
       )}
 
       <s-section heading="Customer-agent automation">
@@ -417,7 +489,8 @@ export default function RefundDashboard() {
                   <s-table-cell>
                     <s-badge
                       tone={
-                        agentReturn.status === "REFUND_SUBMITTED"
+                        agentReturn.status === "REFUND_SUBMITTED" ||
+                        agentReturn.status === "REFUND_RECORDED"
                           ? "success"
                           : agentReturn.status === "NEEDS_ATTENTION"
                             ? "critical"

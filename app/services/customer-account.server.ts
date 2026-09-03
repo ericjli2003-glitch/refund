@@ -110,3 +110,19 @@ export async function customerAccountGraphql<T>(
 
   return result.data;
 }
+
+export async function verifyCustomerAccess(shop: string, accessToken: string) {
+  const result = await customerAccountGraphql<{
+    customer: { id: string };
+  }>(
+    shop,
+    accessToken,
+    `#graphql
+      query VerifyCustomerAccess {
+        customer { id }
+      }
+    `,
+  );
+
+  return result.customer.id;
+}

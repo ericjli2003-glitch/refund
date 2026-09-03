@@ -6,6 +6,7 @@ import {
   executeAutomaticReturn,
   getReturnableOrders,
 } from "./services/automatic-return.server";
+import { CustomerAccountApiError } from "./services/customer-account.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -25,21 +26,39 @@ const itemsSchema = z
     "Each line item can appear only once",
   );
 
-function toolError(error: unknown) {
+const oauthSecuritySchemes = [
+  {
+    type: "oauth2",
+    scopes: ["openid", "email", "customer-account-api:full"],
+  },
+];
+
+function toolError(error: unknown, resourceMetadataUrl: string) {
   const message =
     error instanceof Error ? error.message : "The return action failed.";
   return {
     isError: true as const,
     content: [{ type: "text" as const, text: message }],
+    ...(error instanceof CustomerAccountApiError && error.status === 401
+      ? {
+          _meta: {
+            "mcp/www_authenticate": [
+              `Bearer resource_metadata="${resourceMetadataUrl}", error="invalid_token", error_description="The Shopify customer session expired"`,
+            ],
+          },
+        }
+      : {}),
   };
 }
 
 export function createCustomerReturnsMcpServer({
   shop,
   customerToken,
+  resourceMetadataUrl,
 }: {
   shop: string;
   customerToken: string;
+  resourceMetadataUrl: string;
 }) {
   const server = new McpServer({
     name: "Shopify customer returns",
@@ -65,6 +84,7 @@ export function createCustomerReturnsMcpServer({
         idempotentHint: true,
         openWorldHint: true,
       },
+      _meta: { securitySchemes: oauthSecuritySchemes },
     },
     async ({ query }) => {
       try {
@@ -107,7 +127,7 @@ export function createCustomerReturnsMcpServer({
           ],
         };
       } catch (error) {
-        return toolError(error);
+        return toolError(error, resourceMetadataUrl);
       }
     },
   );
@@ -128,6 +148,7 @@ export function createCustomerReturnsMcpServer({
         idempotentHint: true,
         openWorldHint: true,
       },
+      _meta: { securitySchemes: oauthSecuritySchemes },
     },
     async ({ orderId, items }) => {
       try {
@@ -157,7 +178,7 @@ export function createCustomerReturnsMcpServer({
           ],
         };
       } catch (error) {
-        return toolError(error);
+        return toolError(error, resourceMetadataUrl);
       }
     },
   );
@@ -186,6 +207,7 @@ export function createCustomerReturnsMcpServer({
         idempotentHint: true,
         openWorldHint: true,
       },
+      _meta: { securitySchemes: oauthSecuritySchemes },
     },
     async ({ orderId, items, customerNote, idempotencyKey }) => {
       try {
@@ -225,7 +247,7 @@ export function createCustomerReturnsMcpServer({
           ],
         };
       } catch (error) {
-        return toolError(error);
+        return toolError(error, resourceMetadataUrl);
       }
     },
   );

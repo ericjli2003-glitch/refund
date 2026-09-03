@@ -10,7 +10,19 @@ embedded = true
 scopes = "read_orders,write_orders,read_returns,write_returns"
 
 [webhooks]
-api_version = "2026-10"
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/returns"
+  topics = [ "returns/request", "returns/approve", "returns/cancel", "returns/close", "returns/decline", "returns/process", "returns/reopen", "returns/update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/refunds"
+  topics = [ "refunds/create" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/compliance"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/uninstalled"

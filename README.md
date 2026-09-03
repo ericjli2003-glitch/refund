@@ -38,6 +38,25 @@ accounts, protected customer data access, and an OAuth client with the callback
 URLs required by the assistant host before distributing the connector. The
 required customer scope is `openid email customer-account-api:full`.
 
+The MCP endpoint publishes OAuth protected-resource metadata, returns a
+standards-based challenge when a token is absent or expired, and validates the
+customer token with Shopify before exposing tools. For ChatGPT, configure one
+of the client-identification modes supported by the connector builder and add
+the exact callback URL shown there to the Shopify Customer Account OAuth client.
+
+## Reconciliation and privacy
+
+Shopify app-specific webhooks reconcile return and refund state. Webhook IDs
+are recorded transactionally, so repeat deliveries are safe. The app also
+implements the mandatory customer data-request, customer-redaction, and
+shop-redaction endpoints. Verified data requests create a downloadable report
+in the merchant dashboard; customer and shop redactions delete the matching
+local operational records.
+
+Run `npm test` to check MCP tool discovery, OAuth metadata declarations,
+idempotency request matching, duplicate-line guards, currency comparisons, and
+keyed customer-identity hashing.
+
 The app intentionally does not accept a debit-card number. Shopify routes the
 refund through the original order transaction; bank posting time is controlled
 by the payment provider.

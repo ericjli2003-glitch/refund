@@ -3,7 +3,11 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 
 import prisma from "../db.server";
 import { createCustomerReturnsMcpServer } from "../mcp.server";
-import { normalizeShopDomain } from "../services/customer-account.server";
+import {
+  CustomerAccountApiError,
+  normalizeShopDomain,
+  verifyCustomerAccess,
+} from "../services/customer-account.server";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
@@ -23,6 +27,20 @@ function withCors(response: Response) {
     statusText: response.statusText,
     headers,
   });
+}
+
+function authenticationRequired(
+  resourceMetadataUrl: string,
+  error = "invalid_token",
+) {
+  return withCors(
+    new Response("Customer authentication is required.", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl}", scope="openid email customer-account-api:full", error="${error}"`,
+      },
+    }),
+  );
 }
 
 async function handleMcpRequest(request: Request, shopParam: string) {
@@ -47,26 +65,32 @@ async function handleMcpRequest(request: Request, shopParam: string) {
 
   const authorization = request.headers.get("Authorization");
   const customerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  const resourceMetadataUrl = new URL(
+    `/oauth/resource/${shop}`,
+    request.url,
+  ).toString();
   if (!customerToken) {
-    const resourceMetadata = new URL(
-      `/oauth/resource/${shop}`,
-      request.url,
-    ).toString();
-    return withCors(
-      new Response("Customer authentication is required.", {
-        status: 401,
-        headers: {
-          "WWW-Authenticate": `Bearer resource_metadata="${resourceMetadata}"`,
-        },
-      }),
-    );
+    return authenticationRequired(resourceMetadataUrl, "missing_token");
+  }
+
+  try {
+    await verifyCustomerAccess(shop, customerToken);
+  } catch (error) {
+    if (error instanceof CustomerAccountApiError && error.status === 401) {
+      return authenticationRequired(resourceMetadataUrl);
+    }
+    throw error;
   }
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
   });
-  const server = createCustomerReturnsMcpServer({ shop, customerToken });
+  const server = createCustomerReturnsMcpServer({
+    shop,
+    customerToken,
+    resourceMetadataUrl,
+  });
   await server.connect(transport);
   return withCors(await transport.handleRequest(request));
 }
