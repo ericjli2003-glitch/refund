@@ -23,7 +23,7 @@
   },
   "type": "module",
   "engines": {
-    "node": ">=20.19 <22 || >=22.12"
+    "node": ">=22.18"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

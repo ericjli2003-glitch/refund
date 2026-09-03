@@ -35,7 +35,7 @@ cannot finish cleanly are marked `NEEDS_ATTENTION` for merchant review.
 
 ## Local development
 
-Requirements: Node.js 20.19 or newer, Shopify CLI, and PostgreSQL.
+Requirements: Node.js 22.18 or newer, Shopify CLI, and PostgreSQL.
 
 ```sh
 cp .env.example .env
