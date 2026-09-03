@@ -5,8 +5,8 @@ CREATE TABLE "StorePolicy" (
     "returnWindowDays" INTEGER NOT NULL DEFAULT 30,
     "maxAutoRefundAmount" TEXT NOT NULL DEFAULT '100.00',
     "currencyCode" TEXT NOT NULL DEFAULT 'USD',
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateTable
@@ -26,8 +26,8 @@ CREATE TABLE "AgentReturn" (
     "requestedLineItems" JSONB NOT NULL,
     "customerSubjectHash" TEXT NOT NULL,
     "failureReason" TEXT,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" DATETIME NOT NULL
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL
 );
 
 -- CreateIndex
@@ -41,7 +41,7 @@ CREATE TABLE "WebhookReceipt" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "shop" TEXT NOT NULL,
     "topic" TEXT NOT NULL,
-    "processedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    "processedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- CreateIndex
@@ -55,8 +55,8 @@ CREATE TABLE "PrivacyRequest" (
     "customerSubjectHash" TEXT,
     "status" TEXT NOT NULL DEFAULT 'PENDING',
     "reportData" JSONB NOT NULL,
-    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "completedAt" DATETIME
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "completedAt" TIMESTAMP(3)
 );
 
 -- CreateIndex
