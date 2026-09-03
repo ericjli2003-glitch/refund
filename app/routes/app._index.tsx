@@ -1,347 +1,243 @@
-import { useEffect } from "react";
-import type {
-  ActionFunctionArgs,
-  HeadersFunction,
-  LoaderFunctionArgs,
-} from "react-router";
-import { useFetcher } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
-import { authenticate } from "../shopify.server";
+import { useState } from "react";
+import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
+import { useLoaderData } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
-export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+import { authenticate } from "../shopify.server";
 
-  return null;
+const DASHBOARD_ORDER_LIMIT = 25;
+
+type Money = {
+  amount: string;
+  currencyCode: string;
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
+type DashboardOrder = {
+  id: string;
+  legacyResourceId: string;
+  name: string;
+  createdAt: string;
+  displayFinancialStatus: string | null;
+  currentTotalPriceSet: { shopMoney: Money };
+  totalRefundedSet: { shopMoney: Money };
+};
+
+type OrdersQueryResponse = {
+  data?: {
+    orders: {
+      nodes: DashboardOrder[];
+    };
+  };
+  errors?: Array<{ message: string }>;
+};
+
+export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
+  const url = new URL(request.url);
+  const query = url.searchParams.get("query")?.trim() ?? "";
+
   const response = await admin.graphql(
     `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
+      query RefundDashboardOrders($first: Int!, $query: String) {
+        orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
+          nodes {
             id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
+            legacyResourceId
+            name
+            createdAt
+            displayFinancialStatus
+            currentTotalPriceSet {
+              shopMoney {
+                amount
+                currencyCode
               }
             }
-            demoInfo: metafield(namespace: "$app", key: "demo_info") {
-              jsonValue
+            totalRefundedSet {
+              shopMoney {
+                amount
+                currencyCode
+              }
             }
           }
         }
       }`,
     {
       variables: {
-        product: {
-          title: `${color} Snowboard`,
-          metafields: [
-            {
-              namespace: "$app",
-              key: "demo_info",
-              value: "Created by React Router Template",
-            },
-          ],
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
-
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
-
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
+        first: DASHBOARD_ORDER_LIMIT,
+        query: query || null,
       },
     },
   );
 
-  const variantResponseJson = await variantResponse.json();
-
-  const metaobjectResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpsertMetaobject($handle: MetaobjectHandleInput!, $values: JSON!) {
-      metaobjectUpsert(handle: $handle, values: $values) {
-        metaobject {
-          id
-          handle
-          values
-        }
-        userErrors {
-          field
-          message
-        }
-      }
-    }`,
-    {
-      variables: {
-        handle: {
-          type: "$app:example",
-          handle: "demo-entry",
-        },
-        values: {
-          title: "Demo Entry",
-          description:
-            "This metaobject was created by the Shopify app template to demonstrate the metaobject API.",
-        },
-      },
-    },
-  );
-
-  const metaobjectResponseJson = await metaobjectResponse.json();
+  const responseJson = (await response.json()) as OrdersQueryResponse;
+  if (!responseJson.data || responseJson.errors?.length) {
+    const message =
+      responseJson.errors?.map((error) => error.message).join(", ") ||
+      "Shopify did not return order data.";
+    throw new Response(message, { status: 502 });
+  }
 
   return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-    metaobject: metaobjectResponseJson!.data!.metaobjectUpsert!.metaobject,
+    orders: responseJson.data.orders.nodes,
+    query,
   };
 };
 
-export default function Index() {
-  const fetcher = useFetcher<typeof action>();
+function formatMoney(money: Money) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: money.currencyCode,
+  }).format(Number(money.amount));
+}
 
-  const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+  }).format(new Date(value));
+}
 
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
+function formatStatus(status: string | null) {
+  if (!status) return "Unknown";
 
-  const generateProduct = () => fetcher.submit({}, { method: "POST" });
+  return status
+    .toLowerCase()
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+}
+
+function statusTone(status: string | null) {
+  switch (status) {
+    case "PAID":
+      return "success" as const;
+    case "PARTIALLY_REFUNDED":
+      return "caution" as const;
+    case "REFUNDED":
+      return "info" as const;
+    case "PENDING":
+    case "AUTHORIZED":
+    case "PARTIALLY_PAID":
+      return "warning" as const;
+    case "EXPIRED":
+    case "VOIDED":
+      return "critical" as const;
+    default:
+      return "auto" as const;
+  }
+}
+
+export default function RefundDashboard() {
+  const { orders, query } = useLoaderData<typeof loader>();
+  const [search, setSearch] = useState(query);
+  const refundedOrders = orders.filter(
+    (order) => Number(order.totalRefundedSet.shopMoney.amount) > 0,
+  ).length;
 
   return (
-    <s-page heading="Shopify app template">
-      <s-button slot="primary-action" onClick={generateProduct}>
-        Generate a product
+    <s-page heading="Refunds" inlineSize="large">
+      <s-button slot="primary-action" href="shopify:admin/orders">
+        View all orders
       </s-button>
 
-      <s-section heading="Congrats on creating a new Shopify app 🎉">
-        <s-paragraph>
-          This embedded app template uses{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/tools/app-bridge"
-            target="_blank"
-          >
-            App Bridge
-          </s-link>{" "}
-          interface examples like an{" "}
-          <s-link href="/app/additional">additional page in the app nav</s-link>
-          , as well as an{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            Admin GraphQL
-          </s-link>{" "}
-          mutation demo, to provide a starting point for app development.
-        </s-paragraph>
-      </s-section>
-      <s-section heading="Get started with products">
-        <s-paragraph>
-          Generate a product with GraphQL and get the JSON output for that
-          product. Learn more about the{" "}
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql/latest/mutations/productCreate"
-            target="_blank"
-          >
-            productCreate
-          </s-link>{" "}
-          mutation in our API references. Includes a product{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metafields"
-            target="_blank"
-          >
-            metafield
-          </s-link>{" "}
-          and{" "}
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data/metaobjects"
-            target="_blank"
-          >
-            metaobject
-          </s-link>
-          .
-        </s-paragraph>
-        <s-stack direction="inline" gap="base">
-          <s-button
-            onClick={generateProduct}
-            {...(isLoading ? { loading: true } : {})}
-          >
-            Generate a product
-          </s-button>
-          {fetcher.data?.product && (
-            <s-button
-              onClick={() => {
-                shopify.intents.invoke?.("edit:shopify/Product", {
-                  value: fetcher.data?.product?.id,
-                });
-              }}
-              target="_blank"
-              variant="tertiary"
-            >
-              Edit product
-            </s-button>
-          )}
-        </s-stack>
-        {fetcher.data?.product && (
-          <s-section heading="productCreate mutation">
-            <s-stack direction="block" gap="base">
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  <code>{JSON.stringify(fetcher.data.product, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>productVariantsBulkUpdate mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  <code>{JSON.stringify(fetcher.data.variant, null, 2)}</code>
-                </pre>
-              </s-box>
-
-              <s-heading>metaobjectUpsert mutation</s-heading>
-              <s-box
-                padding="base"
-                borderWidth="base"
-                borderRadius="base"
-                background="subdued"
-              >
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  <code>
-                    {JSON.stringify(fetcher.data.metaobject, null, 2)}
-                  </code>
-                </pre>
-              </s-box>
+      <s-section>
+        <s-grid
+          gridTemplateColumns="@container (inline-size <= 600px) 1fr, 1fr auto 1fr"
+          gap="base"
+        >
+          <s-box padding="small-400">
+            <s-stack direction="block" gap="small-200">
+              <s-text color="subdued">Orders shown</s-text>
+              <s-heading>{orders.length}</s-heading>
             </s-stack>
-          </s-section>
+          </s-box>
+          <s-divider direction="block" />
+          <s-box padding="small-400">
+            <s-stack direction="block" gap="small-200">
+              <s-text color="subdued">With refunds</s-text>
+              <s-heading>{refundedOrders}</s-heading>
+            </s-stack>
+          </s-box>
+        </s-grid>
+      </s-section>
+
+      <s-section heading="Recent orders" padding="none">
+        <s-box padding="base">
+          <form method="get">
+            <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="end">
+              <s-search-field
+                label="Search orders"
+                labelAccessibilityVisibility="exclusive"
+                name="query"
+                placeholder="Order number or Shopify search query"
+                value={search}
+                onChange={(event) => setSearch(event.currentTarget.value)}
+              ></s-search-field>
+              <s-button type="submit" variant="primary">
+                Search
+              </s-button>
+            </s-grid>
+          </form>
+        </s-box>
+
+        {orders.length === 0 ? (
+          <s-box padding="large">
+            <s-stack direction="block" gap="base" alignItems="center">
+              <s-heading>No orders found</s-heading>
+              <s-paragraph color="subdued">
+                Try another order number or clear the search to see recent
+                orders.
+              </s-paragraph>
+              {query && <s-button href="/app">Clear search</s-button>}
+            </s-stack>
+          </s-box>
+        ) : (
+          <s-table>
+            <s-table-header-row>
+              <s-table-header listSlot="primary">Order</s-table-header>
+              <s-table-header listSlot="secondary">Date</s-table-header>
+              <s-table-header listSlot="labeled">Payment</s-table-header>
+              <s-table-header listSlot="labeled" format="currency">
+                Total
+              </s-table-header>
+              <s-table-header listSlot="labeled" format="currency">
+                Refunded
+              </s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {orders.map((order) => (
+                <s-table-row key={order.id}>
+                  <s-table-cell>
+                    <s-link
+                      href={`shopify:admin/orders/${order.legacyResourceId}`}
+                    >
+                      {order.name}
+                    </s-link>
+                  </s-table-cell>
+                  <s-table-cell>{formatDate(order.createdAt)}</s-table-cell>
+                  <s-table-cell>
+                    <s-badge tone={statusTone(order.displayFinancialStatus)}>
+                      {formatStatus(order.displayFinancialStatus)}
+                    </s-badge>
+                  </s-table-cell>
+                  <s-table-cell>
+                    {formatMoney(order.currentTotalPriceSet.shopMoney)}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {formatMoney(order.totalRefundedSet.shopMoney)}
+                  </s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
         )}
       </s-section>
 
-      <s-section slot="aside" heading="App template specs">
-        <s-paragraph>
-          <s-text>Framework: </s-text>
-          <s-link href="https://reactrouter.com/" target="_blank">
-            React Router
-          </s-link>
+      <s-section slot="aside" heading="About this view">
+        <s-paragraph color="subdued">
+          This dashboard shows the 25 most recent matching orders. Opening an
+          order takes you to Shopify Admin, where the merchant can review and
+          issue the refund using Shopify&apos;s existing safeguards.
         </s-paragraph>
-        <s-paragraph>
-          <s-text>Interface: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/app-home/using-polaris-components"
-            target="_blank"
-          >
-            Polaris web components
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>API: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/api/admin-graphql"
-            target="_blank"
-          >
-            GraphQL
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Custom data: </s-text>
-          <s-link
-            href="https://shopify.dev/docs/apps/build/custom-data"
-            target="_blank"
-          >
-            Metafields &amp; metaobjects
-          </s-link>
-        </s-paragraph>
-        <s-paragraph>
-          <s-text>Database: </s-text>
-          <s-link href="https://www.prisma.io/" target="_blank">
-            Prisma
-          </s-link>
-        </s-paragraph>
-      </s-section>
-
-      <s-section slot="aside" heading="Next steps">
-        <s-unordered-list>
-          <s-list-item>
-            Build an{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/getting-started/build-app-example"
-              target="_blank"
-            >
-              example app
-            </s-link>
-          </s-list-item>
-          <s-list-item>
-            Explore Shopify&apos;s API with{" "}
-            <s-link
-              href="https://shopify.dev/docs/apps/tools/graphiql-admin-api"
-              target="_blank"
-            >
-              GraphiQL
-            </s-link>
-          </s-list-item>
-        </s-unordered-list>
       </s-section>
     </s-page>
   );
