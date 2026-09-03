@@ -7,34 +7,22 @@ embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products,write_metaobjects,write_metaobject_definitions"
-
-[product.metafields.app.demo_info]
-type = "single_line_text_field"
-name = "Demo Source Info"
-description = "Tracks products created by the Shopify app template for development"
-
-  [product.metafields.app.demo_info.access]
-  admin = "merchant_read_write"
-
-[metaobjects.app.example]
-name = "Example"
-description = "An example metaobject definition created by this template"
-
-  [metaobjects.app.example.access]
-  admin = "merchant_read_write"
-
-[metaobjects.app.example.fields.title]
-name = "Title"
-type = "single_line_text_field"
-required = true
-
-[metaobjects.app.example.fields.description]
-name = "Description"
-type = "multi_line_text_field"
+scopes = "read_orders,write_orders,read_returns,write_returns"
 
 [webhooks]
-api_version = "2026-10"
+api_version = "2026-07"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/returns"
+  topics = [ "returns/request", "returns/approve", "returns/cancel", "returns/close", "returns/decline", "returns/process", "returns/reopen", "returns/update" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/refunds"
+  topics = [ "refunds/create" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/compliance"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
   [[webhooks.subscriptions]]
   uri = "/webhooks/app/uninstalled"

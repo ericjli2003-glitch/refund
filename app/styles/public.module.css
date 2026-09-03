@@ -1,0 +1,157 @@
+:global(html),
+:global(body) {
+  min-height: 100%;
+  margin: 0;
+  background: #0b110e;
+}
+
+:global(body) {
+  color: #dfe6df;
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+:global(*) {
+  box-sizing: border-box;
+}
+
+.page {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 80% 5%, rgb(47 100 73 / 22%), transparent 28rem),
+    #0b110e;
+}
+
+.container {
+  width: min(100% - 2rem, 76rem);
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 4.5rem;
+  border-bottom: 1px solid #243229;
+}
+
+.brand {
+  color: #f7f4ec;
+  text-decoration: none;
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.brandMark {
+  display: inline-block;
+  width: 0.72rem;
+  height: 0.72rem;
+  margin-right: 0.55rem;
+  border-radius: 0.2rem;
+  background: #6ee7b7;
+  transform: rotate(10deg);
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+}
+
+.nav a,
+.footer a {
+  color: #aeb9b0;
+  text-decoration: none;
+  font-size: 0.84rem;
+}
+
+.nav a:hover,
+.footer a:hover {
+  color: #f7f4ec;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  border-top: 1px solid #243229;
+  padding: 2rem 0 3rem;
+  color: #78867d;
+  font-size: 0.8rem;
+}
+
+.footerLinks {
+  display: flex;
+  gap: 1rem;
+}
+
+.eyebrow {
+  margin: 0;
+  color: #6ee7b7;
+  font-size: 0.75rem;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.legal {
+  width: min(100%, 48rem);
+  padding: 5rem 0 7rem;
+}
+
+.legal h1 {
+  margin: 0.55rem 0 1rem;
+  color: #f7f4ec;
+  font-size: clamp(2.8rem, 7vw, 5.2rem);
+  letter-spacing: -0.06em;
+  line-height: 0.98;
+}
+
+.updated {
+  margin-bottom: 3rem;
+  color: #819087;
+  font-size: 0.85rem;
+}
+
+.legal h2 {
+  margin: 2.5rem 0 0.75rem;
+  color: #f0f2ed;
+  font-size: 1.35rem;
+  letter-spacing: -0.025em;
+}
+
+.legal p,
+.legal li {
+  color: #aeb9b0;
+  line-height: 1.75;
+}
+
+.legal ul {
+  padding-left: 1.2rem;
+}
+
+.legal a {
+  color: #8af0c8;
+}
+
+.callout {
+  margin: 2rem 0;
+  border: 1px solid #30473a;
+  border-radius: 0.9rem;
+  padding: 1.25rem;
+  background: #132019;
+}
+
+@media (max-width: 38rem) {
+  .nav a:not(:last-child) {
+    display: none;
+  }
+
+  .footer {
+    flex-direction: column;
+  }
+}

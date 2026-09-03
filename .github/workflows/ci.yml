@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: postgresql://refund:refund@localhost:5432/refund?schema=public
+      SHOPIFY_API_KEY: test_key
+      SHOPIFY_API_SECRET: test_secret
+      SHOPIFY_APP_URL: http://localhost:3000
+      SCOPES: read_orders,write_orders,read_returns,write_returns
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.18.0
+          cache: npm
+      - run: npm ci
+      - run: npm run prisma:validate
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build

@@ -1,73 +1,217 @@
-.index {
-  align-items: center;
-  display: flex;
-  justify-content: center;
-  height: 100%;
-  width: 100%;
-  text-align: center;
-  padding: 1rem;
-}
-
-.heading,
-.text {
-  padding: 0;
-  margin: 0;
-}
-
-.text {
-  font-size: 1.2rem;
-  padding-bottom: 2rem;
-}
-
-.content {
+.hero {
   display: grid;
-  gap: 2rem;
-}
-
-.form {
-  display: flex;
+  grid-template-columns: minmax(0, 1.25fr) minmax(18rem, 0.75fr);
+  gap: clamp(2.5rem, 7vw, 7rem);
   align-items: center;
-  justify-content: flex-start;
-  margin: 0 auto;
-  gap: 1rem;
+  min-height: 42rem;
+  padding: 6rem 0;
 }
 
+.heroCopy h1 {
+  max-width: 13ch;
+  margin: 0.55rem 0 1.5rem;
+  color: #f7f4ec;
+  font-size: clamp(3rem, 7vw, 6.6rem);
+  font-weight: 600;
+  letter-spacing: -0.065em;
+  line-height: 0.95;
+}
+
+.lede {
+  max-width: 42rem;
+  margin: 0;
+  color: #b9c4bb;
+  font-size: clamp(1.05rem, 2vw, 1.3rem);
+  line-height: 1.7;
+}
+
+.trustLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 2rem;
+}
+
+.trustLine span {
+  border: 1px solid #31483a;
+  border-radius: 999px;
+  padding: 0.48rem 0.75rem;
+  color: #d7ded7;
+  background: #132019;
+  font-size: 0.8rem;
+}
+
+.installCard {
+  border: 1px solid #2a3b31;
+  border-radius: 1.25rem;
+  padding: clamp(1.5rem, 4vw, 2.25rem);
+  background: linear-gradient(145deg, #17251d, #101713);
+  box-shadow: 0 1.75rem 5rem rgb(0 0 0 / 28%);
+}
+
+.installCard h2 {
+  margin: 0.55rem 0 0.7rem;
+  color: #f7f4ec;
+  font-size: 2rem;
+  letter-spacing: -0.035em;
+}
+
+.installCard > p:not(.finePrint) {
+  margin: 0 0 1.5rem;
+  color: #aeb9b0;
+  line-height: 1.55;
+}
+
+.form,
 .label {
   display: grid;
-  gap: 0.2rem;
-  max-width: 20rem;
-  text-align: left;
-  font-size: 1rem;
+  gap: 0.65rem;
+}
+
+.label span {
+  color: #dfe6df;
+  font-size: 0.86rem;
+  font-weight: 600;
 }
 
 .input {
-  padding: 0.4rem;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #3c5043;
+  border-radius: 0.7rem;
+  padding: 0.86rem 0.95rem;
+  color: #f7f4ec;
+  background: #0a100d;
+  font: inherit;
+}
+
+.input:focus {
+  outline: 3px solid rgb(110 231 183 / 28%);
+  border-color: #6ee7b7;
 }
 
 .button {
-  padding: 0.4rem;
+  border: 0;
+  border-radius: 0.7rem;
+  padding: 0.9rem 1rem;
+  color: #062016;
+  background: #6ee7b7;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
 }
 
-.list {
-  list-style: none;
-  padding: 0;
-  padding-top: 3rem;
+.button:hover {
+  background: #8af0c8;
+}
+
+.finePrint {
+  margin: 0.9rem 0 0;
+  color: #829187;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+
+.section {
+  padding: 5rem 0;
+  border-top: 1px solid #243229;
+}
+
+.sectionHeading {
+  margin-bottom: 2rem;
+}
+
+.sectionHeading h2,
+.controlPanel h2 {
+  max-width: 19ch;
+  margin: 0.5rem 0 0;
+  color: #f7f4ec;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
+
+.cardGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.featureCard {
+  min-height: 15rem;
+  border: 1px solid #27372d;
+  border-radius: 1rem;
+  padding: 1.5rem;
+  background: #111b16;
+}
+
+.step {
+  color: #6ee7b7;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.featureCard h3 {
+  margin: 3.5rem 0 0.7rem;
+  color: #eff2ec;
+  font-size: 1.25rem;
+}
+
+.featureCard p {
   margin: 0;
-  display: flex;
-  gap: 2rem;
+  color: #9dac9f;
+  line-height: 1.65;
 }
 
-.list > li {
-  max-width: 20rem;
-  text-align: left;
+.controlPanel {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  margin: 2rem 0 7rem;
+  border-radius: 1.25rem;
+  padding: clamp(2rem, 6vw, 4rem);
+  color: #092218;
+  background: #b7f7d8;
 }
 
-@media only screen and (max-width: 50rem) {
-  .list {
-    display: block;
+.controlPanel h2 {
+  color: #092218;
+}
+
+.controlPanel ul {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.controlPanel li {
+  border-bottom: 1px solid rgb(9 34 24 / 20%);
+  padding: 1rem 0;
+  font-weight: 650;
+}
+
+@media (max-width: 52rem) {
+  .hero,
+  .controlPanel {
+    grid-template-columns: 1fr;
   }
 
-  .list > li {
-    padding-bottom: 1rem;
+  .hero {
+    padding: 4.5rem 0;
+  }
+
+  .cardGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .featureCard {
+    min-height: 0;
+  }
+
+  .featureCard h3 {
+    margin-top: 2rem;
   }
 }

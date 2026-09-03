@@ -9,26 +9,81 @@ generator client {
 // enough when changing adapters.
 // See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
 datasource db {
-  provider = "sqlite"
-  url      = "file:dev.sqlite"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model StorePolicy {
+  shop                    String   @id
+  automaticRefundsEnabled Boolean  @default(false)
+  returnWindowDays        Int      @default(30)
+  maxAutoRefundAmount     String   @default("100.00")
+  currencyCode            String   @default("USD")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model AgentReturn {
+  id                  String   @id @default(cuid())
+  shop                String
+  orderId             String
+  orderName           String?
+  returnId            String?
+  refundId            String?
+  status              String   @default("IN_PROGRESS")
+  returnStatus        String?
+  refundStatus        String?
+  amount              String?
+  currencyCode        String?
+  idempotencyKey      String
+  requestedLineItems  Json
+  customerSubjectHash String
+  failureReason       String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([shop, idempotencyKey])
+  @@index([shop, status, createdAt])
+}
+
+model WebhookReceipt {
+  id          String   @id
+  shop        String
+  topic       String
+  processedAt DateTime @default(now())
+
+  @@index([shop, processedAt])
+}
+
+model PrivacyRequest {
+  id                  String    @id
+  shop                String
+  type                String
+  customerSubjectHash String?
+  status              String    @default("PENDING")
+  reportData          Json
+  createdAt           DateTime  @default(now())
+  completedAt         DateTime?
+
+  @@index([shop, status, createdAt])
 }

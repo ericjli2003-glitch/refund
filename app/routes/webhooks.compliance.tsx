@@ -1,0 +1,96 @@
+import type { ActionFunctionArgs } from "react-router";
+
+import prisma from "../db.server";
+import { authenticate } from "../shopify.server";
+import { hashCustomerId } from "../services/return-guards.server";
+
+function customerIdFromPayload(payload: Record<string, unknown>) {
+  const customer = payload.customer;
+  if (!customer || typeof customer !== "object" || !("id" in customer)) {
+    return null;
+  }
+
+  const id = customer.id;
+  return typeof id === "string" || typeof id === "number" ? String(id) : null;
+}
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { payload, shop, topic, webhookId } =
+    await authenticate.webhook(request);
+  const numericCustomerId = customerIdFromPayload(payload);
+  const secret = process.env.SHOPIFY_API_SECRET;
+  const customerSubjectHash =
+    numericCustomerId && secret
+      ? hashCustomerId(
+          numericCustomerId.startsWith("gid://shopify/Customer/")
+            ? numericCustomerId
+            : `gid://shopify/Customer/${numericCustomerId}`,
+          secret,
+        )
+      : null;
+
+  if (topic === "CUSTOMERS_REDACT") {
+    if (!customerSubjectHash) {
+      throw new Error(
+        "Customer redaction payload is missing a usable identity.",
+      );
+    }
+    await prisma.$transaction([
+      prisma.agentReturn.deleteMany({ where: { shop, customerSubjectHash } }),
+      prisma.privacyRequest.deleteMany({
+        where: { shop, customerSubjectHash },
+      }),
+    ]);
+  }
+
+  if (topic === "CUSTOMERS_DATA_REQUEST") {
+    if (!customerSubjectHash) {
+      throw new Error("Customer data request is missing a usable identity.");
+    }
+    const records = await prisma.agentReturn.findMany({
+      where: { shop, customerSubjectHash },
+      select: {
+        orderId: true,
+        orderName: true,
+        returnId: true,
+        refundId: true,
+        status: true,
+        returnStatus: true,
+        refundStatus: true,
+        amount: true,
+        currencyCode: true,
+        requestedLineItems: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    const reportData = records.map((record) => ({
+      ...record,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    }));
+    await prisma.privacyRequest.upsert({
+      where: { id: webhookId },
+      create: {
+        id: webhookId,
+        shop,
+        type: String(topic),
+        customerSubjectHash,
+        reportData,
+      },
+      update: { reportData },
+    });
+  }
+
+  if (topic === "SHOP_REDACT") {
+    await prisma.$transaction([
+      prisma.agentReturn.deleteMany({ where: { shop } }),
+      prisma.privacyRequest.deleteMany({ where: { shop } }),
+      prisma.webhookReceipt.deleteMany({ where: { shop } }),
+      prisma.storePolicy.deleteMany({ where: { shop } }),
+      prisma.session.deleteMany({ where: { shop } }),
+    ]);
+  }
+
+  return new Response();
+};
