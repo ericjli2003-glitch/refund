@@ -10,6 +10,10 @@ import {
   sameReturnItems,
   type RequestedItem,
 } from "./return-guards.server";
+import {
+  buildRefundTransactions,
+  buildReturnApprovalVariables,
+} from "./shopify-inputs.server";
 
 export type { RequestedItem } from "./return-guards.server";
 
@@ -135,7 +139,6 @@ const SUGGESTED_REFUND_QUERY = `#graphql
         suggestedTransactions {
           amountSet { presentmentMoney { amount currencyCode } }
           gateway
-          kind
           parentTransaction { id }
         }
       }
@@ -358,7 +361,7 @@ export async function executeAutomaticReturn({
     const { unauthenticated } = await import("../shopify.server");
     const { admin } = await unauthenticated.admin(shop);
     const approvalResponse = await admin.graphql(APPROVE_RETURN_MUTATION, {
-      variables: { input: { returnId } },
+      variables: buildReturnApprovalVariables(returnId),
     });
     const approvalResult = (await approvalResponse.json()) as {
       data?: {
@@ -400,7 +403,6 @@ export async function executeAutomaticReturn({
             suggestedTransactions: Array<{
               amountSet: { presentmentMoney: Money };
               gateway: string;
-              kind: string;
               parentTransaction: { id: string } | null;
             }>;
           } | null;
@@ -428,14 +430,9 @@ export async function executeAutomaticReturn({
       );
     }
 
-    const transactions = suggestion.suggestedTransactions.map(
-      (transaction) => ({
-        amount: transaction.amountSet.presentmentMoney.amount,
-        gateway: transaction.gateway,
-        kind: transaction.kind,
-        orderId,
-        parentId: transaction.parentTransaction?.id,
-      }),
+    const transactions = buildRefundTransactions(
+      orderId,
+      suggestion.suggestedTransactions,
     );
     if (!transactions.length || transactions.some((item) => !item.parentId)) {
       throw new Error(
