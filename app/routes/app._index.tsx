@@ -1,8 +1,13 @@
 import { useState } from "react";
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { useLoaderData } from "react-router";
+import type {
+  ActionFunctionArgs,
+  HeadersFunction,
+  LoaderFunctionArgs,
+} from "react-router";
+import { useLoaderData, useSubmit } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 
 const DASHBOARD_ORDER_LIMIT = 25;
@@ -24,6 +29,7 @@ type DashboardOrder = {
 
 type OrdersQueryResponse = {
   data?: {
+    shop: { currencyCode: string };
     orders: {
       nodes: DashboardOrder[];
     };
@@ -32,13 +38,14 @@ type OrdersQueryResponse = {
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const url = new URL(request.url);
   const query = url.searchParams.get("query")?.trim() ?? "";
 
   const response = await admin.graphql(
     `#graphql
       query RefundDashboardOrders($first: Int!, $query: String) {
+        shop { currencyCode }
         orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
           nodes {
             id
@@ -77,10 +84,82 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw new Response(message, { status: 502 });
   }
 
+  const [storedPolicy, agentReturns] = await Promise.all([
+    prisma.storePolicy.findUnique({ where: { shop: session.shop } }),
+    prisma.agentReturn.findMany({
+      where: { shop: session.shop },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
+  ]);
+
   return {
     orders: responseJson.data.orders.nodes,
     query,
+    saved: url.searchParams.get("saved") === "true",
+    connectorUrl: new URL(`/mcp/${session.shop}`, request.url).toString(),
+    policy: storedPolicy ?? {
+      automaticRefundsEnabled: false,
+      returnWindowDays: 30,
+      maxAutoRefundAmount: "100.00",
+      currencyCode: responseJson.data.shop.currencyCode,
+    },
+    agentReturns,
   };
+};
+
+export const action = async ({ request }: ActionFunctionArgs) => {
+  const { admin, session, redirect } = await authenticate.admin(request);
+  const formData = await request.formData();
+  const returnWindowDays = Number(formData.get("returnWindowDays"));
+  const maxAutoRefundAmount = Number(formData.get("maxAutoRefundAmount"));
+
+  if (
+    !Number.isInteger(returnWindowDays) ||
+    returnWindowDays < 1 ||
+    returnWindowDays > 365 ||
+    !Number.isFinite(maxAutoRefundAmount) ||
+    maxAutoRefundAmount <= 0 ||
+    maxAutoRefundAmount > 100_000
+  ) {
+    throw new Response("Invalid automatic return policy.", { status: 400 });
+  }
+
+  const shopResponse = await admin.graphql(`#graphql
+    query AutomaticRefundCurrency {
+      shop { currencyCode }
+    }
+  `);
+  const shopResult = (await shopResponse.json()) as {
+    data?: { shop: { currencyCode: string } };
+  };
+  const currencyCode = shopResult.data?.shop.currencyCode;
+  if (!currencyCode) {
+    throw new Response("Could not determine the store currency.", {
+      status: 502,
+    });
+  }
+
+  await prisma.storePolicy.upsert({
+    where: { shop: session.shop },
+    create: {
+      shop: session.shop,
+      automaticRefundsEnabled:
+        formData.get("automaticRefundsEnabled") === "true",
+      returnWindowDays,
+      maxAutoRefundAmount: maxAutoRefundAmount.toFixed(2),
+      currencyCode,
+    },
+    update: {
+      automaticRefundsEnabled:
+        formData.get("automaticRefundsEnabled") === "true",
+      returnWindowDays,
+      maxAutoRefundAmount: maxAutoRefundAmount.toFixed(2),
+      currencyCode,
+    },
+  });
+
+  return redirect("/app?saved=true");
 };
 
 function formatMoney(money: Money) {
@@ -127,7 +206,15 @@ function statusTone(status: string | null) {
 }
 
 export default function RefundDashboard() {
-  const { orders, query } = useLoaderData<typeof loader>();
+  const {
+    orders,
+    query,
+    saved,
+    policy,
+    connectorUrl,
+    agentReturns,
+  } = useLoaderData<typeof loader>();
+  const submit = useSubmit();
   const [search, setSearch] = useState(query);
   const refundedOrders = orders.filter(
     (order) => Number(order.totalRefundedSet.shopMoney.amount) > 0,
@@ -160,9 +247,78 @@ export default function RefundDashboard() {
         </s-grid>
       </s-section>
 
+      {saved && (
+        <s-banner heading="Automatic return policy saved" tone="success">
+          Customers can use the policy immediately after authenticating with
+          their Shopify customer account.
+        </s-banner>
+      )}
+
+      <s-section heading="Customer-agent automation">
+        <form
+          method="post"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit(event.currentTarget);
+          }}
+        >
+          <s-stack direction="block" gap="base">
+            <s-switch
+              label="Allow eligible customer-confirmed returns without merchant approval"
+              name="automaticRefundsEnabled"
+              value="true"
+              checked={policy.automaticRefundsEnabled}
+            ></s-switch>
+            <s-paragraph color="subdued">
+              The customer still signs in, selects an eligible item, sees the
+              calculated amount, and confirms it. Shopify then opens the return
+              and sends the refund to the original payment method.
+            </s-paragraph>
+            <s-grid
+              gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+              gap="base"
+            >
+              <s-number-field
+                label="Return window (days)"
+                name="returnWindowDays"
+                min={1}
+                max={365}
+                step={1}
+                value={String(policy.returnWindowDays)}
+                required
+              ></s-number-field>
+              <s-money-field
+                label={`Maximum automatic refund (${policy.currencyCode})`}
+                name="maxAutoRefundAmount"
+                min={0.01}
+                max={100000}
+                value={policy.maxAutoRefundAmount}
+                required
+              ></s-money-field>
+            </s-grid>
+            <s-stack direction="inline" gap="base" alignItems="center">
+              <s-button type="submit" variant="primary">
+                Save policy
+              </s-button>
+              <s-badge
+                tone={policy.automaticRefundsEnabled ? "success" : "warning"}
+              >
+                {policy.automaticRefundsEnabled ? "Active" : "Paused"}
+              </s-badge>
+            </s-stack>
+          </s-stack>
+        </form>
+      </s-section>
+
       <s-section heading="Recent orders" padding="none">
         <s-box padding="base">
-          <form method="get">
+          <form
+            method="get"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit(event.currentTarget);
+            }}
+          >
             <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="end">
               <s-search-field
                 label="Search orders"
@@ -232,12 +388,77 @@ export default function RefundDashboard() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="About this view">
+      <s-section heading="Recent customer-agent returns" padding="none">
+        {agentReturns.length === 0 ? (
+          <s-box padding="large">
+            <s-paragraph color="subdued">
+              No customer-agent return requests have been received yet.
+            </s-paragraph>
+          </s-box>
+        ) : (
+          <s-table>
+            <s-table-header-row>
+              <s-table-header listSlot="primary">Order</s-table-header>
+              <s-table-header listSlot="secondary">Requested</s-table-header>
+              <s-table-header listSlot="labeled">Status</s-table-header>
+              <s-table-header listSlot="labeled" format="currency">
+                Refund
+              </s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {agentReturns.map((agentReturn) => (
+                <s-table-row key={agentReturn.id}>
+                  <s-table-cell>
+                    {agentReturn.orderName ?? agentReturn.orderId}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {formatDate(agentReturn.createdAt.toString())}
+                  </s-table-cell>
+                  <s-table-cell>
+                    <s-badge
+                      tone={
+                        agentReturn.status === "REFUND_SUBMITTED"
+                          ? "success"
+                          : agentReturn.status === "NEEDS_ATTENTION"
+                            ? "critical"
+                            : "info"
+                      }
+                    >
+                      {formatStatus(agentReturn.status)}
+                    </s-badge>
+                  </s-table-cell>
+                  <s-table-cell>
+                    {agentReturn.amount && agentReturn.currencyCode
+                      ? formatMoney({
+                          amount: agentReturn.amount,
+                          currencyCode: agentReturn.currencyCode,
+                        })
+                      : "—"}
+                  </s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
+        )}
+      </s-section>
+
+      <s-section slot="aside" heading="Connect ChatGPT or Claude">
         <s-paragraph color="subdued">
-          This dashboard shows the 25 most recent matching orders. Opening an
-          order takes you to Shopify Admin, where the merchant can review and
-          issue the refund using Shopify&apos;s existing safeguards.
+          Add this customer return connector URL to the assistant. Each customer
+          must authenticate with this store before the assistant can see or act
+          on their orders.
         </s-paragraph>
+        <s-box paddingBlockStart="base">
+          <s-paragraph>{connectorUrl}</s-paragraph>
+        </s-box>
+      </s-section>
+
+      <s-section slot="aside" heading="What is automatic">
+        <s-unordered-list>
+          <s-list-item>Customer and order ownership verification</s-list-item>
+          <s-list-item>Shopify return eligibility and amount check</s-list-item>
+          <s-list-item>Return approval and refund submission</s-list-item>
+        </s-unordered-list>
       </s-section>
     </s-page>
   );

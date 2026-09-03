@@ -49,6 +49,10 @@ module.exports = {
         },
       },
       rules: {
+        "import/no-unresolved": [
+          "error",
+          { ignore: ["^@modelcontextprotocol/sdk/"] },
+        ],
         "react/no-unknown-property": ["error", { ignore: ["variant"] }],
       },
     },

@@ -1,4 +1,48 @@
-# Shopify App Template - React Router
+# Refund
+
+Refund is a Shopify app and remote MCP server for customer-confirmed returns in
+ChatGPT, Claude, and other compatible assistants. A customer authenticates with
+the retailer's Shopify customer account, selects one of their own returnable
+line items, reviews Shopify's calculated amount, and explicitly confirms. The
+app then opens the return and submits an idempotent refund to the original
+payment method without requiring a merchant to approve that individual return.
+
+## Return flow
+
+1. `find_returnable_items` reads recent returnable purchases from the
+   authenticated customer's Shopify Customer Account API context.
+2. `quote_return` recalculates Shopify's expected return total for the exact
+   line items and quantities.
+3. `confirm_return` requires explicit customer confirmation and a new UUID. It
+   rechecks ownership, returnability, the store policy, and the amount before it
+   requests and opens the return and submits the refund.
+4. Every attempt is stored without raw customer identity or access tokens. A
+   retry with the same UUID returns the existing result instead of refunding
+   twice. Partial failures are marked `NEEDS_ATTENTION` for exception handling.
+
+The merchant configures the return window, maximum automatic amount, and the
+master enable switch once in the embedded app. There is no approval step on
+each eligible customer return.
+
+## Customer-agent connector
+
+After deployment, each installed shop receives a connector endpoint:
+
+```text
+https://YOUR_APP_HOST/mcp/SHOP.myshopify.com
+```
+
+The endpoint implements MCP over Streamable HTTP. Its bearer token must be a
+Shopify Customer Account API token for that shop. Configure Shopify customer
+accounts, protected customer data access, and an OAuth client with the callback
+URLs required by the assistant host before distributing the connector. The
+required customer scope is `openid email customer-account-api:full`.
+
+The app intentionally does not accept a debit-card number. Shopify routes the
+refund through the original order transaction; bank posting time is controlled
+by the payment provider.
+
+## Development
 
 This is a template for building a [Shopify app](https://shopify.dev/docs/apps/getting-started) using [React Router](https://reactrouter.com/). It was forked from the [Shopify Remix app template](https://github.com/Shopify/shopify-app-template-remix) and converted to React Router.
 

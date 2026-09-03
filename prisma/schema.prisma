@@ -14,21 +14,52 @@ datasource db {
 }
 
 model Session {
-  id            String    @id
-  shop          String
-  state         String
-  isOnline      Boolean   @default(false)
-  scope         String?
-  expires       DateTime?
-  accessToken   String
-  userId        BigInt?
-  firstName     String?
-  lastName      String?
-  email         String?
-  accountOwner  Boolean   @default(false)
-  locale        String?
-  collaborator  Boolean?  @default(false)
-  emailVerified Boolean?  @default(false)
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
   refreshToken        String?
   refreshTokenExpires DateTime?
+}
+
+model StorePolicy {
+  shop                    String   @id
+  automaticRefundsEnabled Boolean  @default(false)
+  returnWindowDays        Int      @default(30)
+  maxAutoRefundAmount     String   @default("100.00")
+  currencyCode            String   @default("USD")
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+}
+
+model AgentReturn {
+  id                  String   @id @default(cuid())
+  shop                String
+  orderId             String
+  orderName           String?
+  returnId            String?
+  refundId            String?
+  status              String   @default("IN_PROGRESS")
+  amount              String?
+  currencyCode        String?
+  idempotencyKey      String
+  requestedLineItems  Json
+  customerSubjectHash String
+  failureReason       String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([shop, idempotencyKey])
+  @@index([shop, status, createdAt])
 }
