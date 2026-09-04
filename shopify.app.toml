@@ -2,7 +2,7 @@
 
 client_id = "24193de3d7837cab554bb1ff8b53d388"
 name = "refund"
-application_url = "https://example.com"
+application_url = "https://refund-ztxz.onrender.com"
 embedded = true
 
 [access_scopes]
@@ -33,7 +33,7 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://refund-ztxz.onrender.com/api/auth" ]
 
 [build]
 include_config_on_deploy = true
