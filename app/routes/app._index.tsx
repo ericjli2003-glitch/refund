@@ -237,6 +237,15 @@ export default function RefundDashboard() {
   } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const [search, setSearch] = useState(query);
+  const [automaticRefundsEnabled, setAutomaticRefundsEnabled] = useState(
+    policy.automaticRefundsEnabled,
+  );
+  const [returnWindowDays, setReturnWindowDays] = useState(
+    String(policy.returnWindowDays),
+  );
+  const [maxAutoRefundAmount, setMaxAutoRefundAmount] = useState(
+    policy.maxAutoRefundAmount,
+  );
   const refundedOrders = orders.filter(
     (order) => Number(order.totalRefundedSet.shopMoney.amount) > 0,
   ).length;
@@ -331,15 +340,23 @@ export default function RefundDashboard() {
           method="post"
           onSubmit={(event) => {
             event.preventDefault();
-            submit(event.currentTarget);
+            const formData = new FormData();
+            formData.set(
+              "automaticRefundsEnabled",
+              automaticRefundsEnabled ? "true" : "false",
+            );
+            formData.set("returnWindowDays", returnWindowDays);
+            formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
+            submit(formData, { method: "post" });
           }}
         >
           <s-stack direction="block" gap="base">
             <s-switch
               label="Allow eligible customer-confirmed returns without merchant approval"
-              name="automaticRefundsEnabled"
-              value="true"
-              checked={policy.automaticRefundsEnabled}
+              checked={automaticRefundsEnabled}
+              onChange={(event) =>
+                setAutomaticRefundsEnabled(event.currentTarget.checked)
+              }
             ></s-switch>
             <s-paragraph color="subdued">
               The customer still signs in, selects an eligible item, sees the
@@ -352,19 +369,23 @@ export default function RefundDashboard() {
             >
               <s-number-field
                 label="Return window (days)"
-                name="returnWindowDays"
                 min={1}
                 max={365}
                 step={1}
-                value={String(policy.returnWindowDays)}
+                value={returnWindowDays}
+                onChange={(event) =>
+                  setReturnWindowDays(event.currentTarget.value)
+                }
                 required
               ></s-number-field>
               <s-money-field
                 label={`Maximum automatic refund (${policy.currencyCode})`}
-                name="maxAutoRefundAmount"
                 min={0.01}
                 max={100000}
-                value={policy.maxAutoRefundAmount}
+                value={maxAutoRefundAmount}
+                onChange={(event) =>
+                  setMaxAutoRefundAmount(event.currentTarget.value)
+                }
                 required
               ></s-money-field>
             </s-grid>
