@@ -33,7 +33,7 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://refund-ztxz.onrender.com/api/auth" ]
+redirect_urls = [ "https://refund-ztxz.onrender.com/auth/callback" ]
 
 [build]
 include_config_on_deploy = true
