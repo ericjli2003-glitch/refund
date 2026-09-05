@@ -417,7 +417,11 @@ export default function RefundDashboard() {
             before a refund is submitted.
           </s-paragraph>
           <s-box>
-            <s-button href={siteToolsActivationUrl} variant="primary">
+            <s-button
+              href={siteToolsActivationUrl}
+              target="_top"
+              variant="primary"
+            >
               Enable storefront AI tools
             </s-button>
           </s-box>
