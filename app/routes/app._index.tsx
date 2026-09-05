@@ -408,6 +408,22 @@ export default function RefundDashboard() {
         </form>
       </s-section>
 
+      <s-section heading="Storefront AI returns">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            Customers install nothing. Enable Refund once in the theme, and
+            compatible AI browsers can discover return help when they visit
+            this storefront. Customers still sign in and explicitly confirm
+            before a refund is submitted.
+          </s-paragraph>
+          <s-box>
+            <s-button href={siteToolsActivationUrl} variant="primary">
+              Enable storefront AI tools
+            </s-button>
+          </s-box>
+        </s-stack>
+      </s-section>
+
       <s-section heading="Recent orders" padding="none">
         <s-box padding="base">
           <form
@@ -539,20 +555,6 @@ export default function RefundDashboard() {
             </s-table-body>
           </s-table>
         )}
-      </s-section>
-
-      <s-section slot="aside" heading="Storefront AI returns">
-        <s-paragraph color="subdued">
-          Customers install nothing. Enable Refund once in the theme, and
-          compatible AI browsers can discover return help when they visit this
-          storefront. Customers still sign in and explicitly confirm before a
-          refund is submitted.
-        </s-paragraph>
-        <s-box paddingBlockStart="base">
-          <s-button href={siteToolsActivationUrl} variant="primary">
-            Enable storefront AI tools
-          </s-button>
-        </s-box>
       </s-section>
 
       <s-section slot="aside" heading="What is automatic">
