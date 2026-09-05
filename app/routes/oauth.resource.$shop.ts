@@ -40,7 +40,10 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
 
   return Response.json(
     {
-      resource: new URL(`/mcp/${shop}`, request.url).toString(),
+      resource: new URL(
+        `/mcp/${shop}`,
+        process.env.SHOPIFY_APP_URL || request.url,
+      ).toString(),
       authorization_servers: [discovery.issuer],
       scopes_supported: ["openid", "email", "customer-account-api:full"],
       bearer_methods_supported: ["header"],
