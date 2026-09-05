@@ -1,0 +1,13 @@
+{
+  "refund_site_tools": {
+    "launcher": "Start a return",
+    "close": "Close return assistant",
+    "heading": "Start your return",
+    "signed_in_body": "View your orders and choose the item you want to return.",
+    "signed_out_body": "Sign in to securely find your orders and choose an item to return.",
+    "view_orders": "View my orders",
+    "sign_in": "Sign in to continue",
+    "intent_prefix": "Return request for"
+  }
+}
+

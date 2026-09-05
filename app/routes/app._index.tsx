@@ -103,9 +103,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     query,
     saved: url.searchParams.get("saved") === "true",
     privacyResolved: url.searchParams.get("privacyResolved") === "true",
-    connectorUrl: new URL(
-      `/mcp/${session.shop}`,
-      process.env.SHOPIFY_APP_URL || request.url,
+    siteToolsActivationUrl: new URL(
+      `/admin/themes/current/editor?context=apps&template=index&activateAppId=${encodeURIComponent(
+        process.env.SHOPIFY_API_KEY ?? "",
+      )}/refund-site-tools`,
+      `https://${session.shop}`,
     ).toString(),
     policy: storedPolicy ?? {
       automaticRefundsEnabled: false,
@@ -234,12 +236,21 @@ export default function RefundDashboard() {
     saved,
     privacyResolved,
     policy,
-    connectorUrl,
+    siteToolsActivationUrl,
     agentReturns,
     privacyRequests,
   } = useLoaderData<typeof loader>();
   const submit = useSubmit();
   const [search, setSearch] = useState(query);
+  const [automaticRefundsEnabled, setAutomaticRefundsEnabled] = useState(
+    policy.automaticRefundsEnabled,
+  );
+  const [returnWindowDays, setReturnWindowDays] = useState(
+    String(policy.returnWindowDays),
+  );
+  const [maxAutoRefundAmount, setMaxAutoRefundAmount] = useState(
+    policy.maxAutoRefundAmount,
+  );
   const refundedOrders = orders.filter(
     (order) => Number(order.totalRefundedSet.shopMoney.amount) > 0,
   ).length;
@@ -334,15 +345,23 @@ export default function RefundDashboard() {
           method="post"
           onSubmit={(event) => {
             event.preventDefault();
-            submit(event.currentTarget);
+            const formData = new FormData();
+            formData.set(
+              "automaticRefundsEnabled",
+              automaticRefundsEnabled ? "true" : "false",
+            );
+            formData.set("returnWindowDays", returnWindowDays);
+            formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
+            submit(formData, { method: "post" });
           }}
         >
           <s-stack direction="block" gap="base">
             <s-switch
               label="Allow eligible customer-confirmed returns without merchant approval"
-              name="automaticRefundsEnabled"
-              value="true"
-              checked={policy.automaticRefundsEnabled}
+              checked={automaticRefundsEnabled}
+              onChange={(event) =>
+                setAutomaticRefundsEnabled(event.currentTarget.checked)
+              }
             ></s-switch>
             <s-paragraph color="subdued">
               The customer still signs in, selects an eligible item, sees the
@@ -355,19 +374,23 @@ export default function RefundDashboard() {
             >
               <s-number-field
                 label="Return window (days)"
-                name="returnWindowDays"
                 min={1}
                 max={365}
                 step={1}
-                value={String(policy.returnWindowDays)}
+                value={returnWindowDays}
+                onChange={(event) =>
+                  setReturnWindowDays(event.currentTarget.value)
+                }
                 required
               ></s-number-field>
               <s-money-field
                 label={`Maximum automatic refund (${policy.currencyCode})`}
-                name="maxAutoRefundAmount"
                 min={0.01}
                 max={100000}
-                value={policy.maxAutoRefundAmount}
+                value={maxAutoRefundAmount}
+                onChange={(event) =>
+                  setMaxAutoRefundAmount(event.currentTarget.value)
+                }
                 required
               ></s-money-field>
             </s-grid>
@@ -518,14 +541,17 @@ export default function RefundDashboard() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="Connect ChatGPT or Claude">
+      <s-section slot="aside" heading="Storefront AI returns">
         <s-paragraph color="subdued">
-          Add this customer return connector URL to the assistant. Each customer
-          must authenticate with this store before the assistant can see or act
-          on their orders.
+          Customers install nothing. Enable Refund once in the theme, and
+          compatible AI browsers can discover return help when they visit this
+          storefront. Customers still sign in and explicitly confirm before a
+          refund is submitted.
         </s-paragraph>
         <s-box paddingBlockStart="base">
-          <s-paragraph>{connectorUrl}</s-paragraph>
+          <s-button href={siteToolsActivationUrl} variant="primary">
+            Enable storefront AI tools
+          </s-button>
         </s-box>
       </s-section>
 

@@ -1,0 +1,9 @@
+{
+  "refund_site_tools": {
+    "name": "AI return assistance",
+    "settings": {
+      "show_launcher": "Show the return button"
+    }
+  }
+}
+
