@@ -67,7 +67,7 @@ async function handleMcpRequest(request: Request, shopParam: string) {
   const customerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
   const resourceMetadataUrl = new URL(
     `/oauth/resource/${shop}`,
-    request.url,
+    process.env.SHOPIFY_APP_URL || request.url,
   ).toString();
   if (!customerToken) {
     return authenticationRequired(resourceMetadataUrl, "missing_token");
