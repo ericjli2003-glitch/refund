@@ -1,0 +1,74 @@
+<div
+  id="refund-site-tools-{{ block.id }}"
+  class="refund-site-tools"
+  data-refund-site-tools
+  data-shop-domain="{{ shop.permanent_domain | escape }}"
+  data-shop-name="{{ shop.name | escape }}"
+  data-account-url="{{ routes.account_url | escape }}"
+  data-customer-authenticated="{% if customer %}true{% else %}false{% endif %}"
+  data-intent-prefix="{{ 'refund_site_tools.intent_prefix' | t | escape }}"
+  {{ block.shopify_attributes }}
+>
+  {% if block.settings.show_launcher %}
+    <button
+      type="button"
+      class="refund-site-tools__launcher"
+      data-refund-launcher
+      aria-expanded="false"
+      aria-controls="refund-site-tools-dialog-{{ block.id }}"
+    >
+      {{ 'refund_site_tools.launcher' | t }}
+    </button>
+  {% endif %}
+
+  <dialog
+    id="refund-site-tools-dialog-{{ block.id }}"
+    class="refund-site-tools__dialog"
+    data-refund-dialog
+    aria-labelledby="refund-site-tools-heading-{{ block.id }}"
+  >
+    <button
+      type="button"
+      class="refund-site-tools__close"
+      data-refund-close
+      aria-label="{{ 'refund_site_tools.close' | t | escape }}"
+    >
+      &times;
+    </button>
+    <h2 id="refund-site-tools-heading-{{ block.id }}">
+      {{ 'refund_site_tools.heading' | t }}
+    </h2>
+    <p data-refund-status>
+      {% if customer %}
+        {{ 'refund_site_tools.signed_in_body' | t }}
+      {% else %}
+        {{ 'refund_site_tools.signed_out_body' | t }}
+      {% endif %}
+    </p>
+    <a class="refund-site-tools__account-link" href="{{ routes.account_url }}">
+      {% if customer %}
+        {{ 'refund_site_tools.view_orders' | t }}
+      {% else %}
+        {{ 'refund_site_tools.sign_in' | t }}
+      {% endif %}
+    </a>
+  </dialog>
+</div>
+
+{% schema %}
+{
+  "name": "t:refund_site_tools.name",
+  "target": "body",
+  "javascript": "refund-site-tools.js",
+  "stylesheet": "refund-site-tools.css",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "show_launcher",
+      "label": "t:refund_site_tools.settings.show_launcher",
+      "default": true
+    }
+  ]
+}
+{% endschema %}
+

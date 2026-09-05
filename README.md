@@ -1,9 +1,11 @@
 # Refund
 
-Refund is a Shopify app and remote MCP server for customer-confirmed returns in
-ChatGPT, Claude, and other compatible assistants. A customer authenticates with
-the retailer's Shopify customer account, selects their own eligible line items,
-reviews Shopify's calculated amount, and explicitly confirms. Refund then opens
+Refund is a Shopify app for customer-confirmed returns in compatible AI
+browsers. A merchant installs Refund once and enables its storefront app embed;
+customers do not install a connector or plugin. When an AI opens that storefront,
+WebMCP page tools advertise return support and can open the store's visible
+return flow. A customer signs in with the retailer, selects eligible line items,
+reviews Shopify's calculated amount, and explicitly confirms before Refund opens
 the return and submits an idempotent refund to the original payment method.
 
 ## What the app does
@@ -57,7 +59,21 @@ npm run lint
 npm run build
 ```
 
-## Customer-agent connector
+## Storefront WebMCP
+
+The `refund-site-tools` theme app extension registers two page-scoped tools in
+browsers that support WebMCP:
+
+- `get_store_return_options` advertises return support and the store's secure
+  customer-account entry point.
+- `start_store_return` opens the same visible return panel a shopper can use
+  directly. It does not create a return or issue a refund.
+
+After deploying the extension, each merchant enables **AI return assistance**
+once from the theme app-embed settings. Unsupported browsers retain the visible
+return button and normal customer-account flow.
+
+## Optional remote MCP connector
 
 Each installed shop receives this endpoint after deployment:
 
@@ -65,11 +81,12 @@ Each installed shop receives this endpoint after deployment:
 https://YOUR_APP_HOST/mcp/SHOP.myshopify.com
 ```
 
-The bearer token must be a Shopify Customer Account API token for that shop. The
+The connector is an optional integration path, not a customer requirement. Its
+bearer token must be a Shopify Customer Account API token for that shop. The
 required customer scope is `openid email customer-account-api:full`. Configure
 customer accounts, protected customer data access, a Customer Account OAuth
-client, and the exact callback URLs required by the assistant host before
-distributing the connector.
+client, and the exact callback URLs required by the assistant host before using
+this path.
 
 ## Production deployment
 
