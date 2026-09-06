@@ -15,6 +15,7 @@
       ).toString(),
       customerAuthenticated:
         root.dataset.customerAuthenticated === "true",
+      portalUrl: root.dataset.portalUrl,
     };
   }
 
@@ -23,6 +24,12 @@
     const launcher = root.querySelector("[data-refund-launcher]");
     const status = root.querySelector("[data-refund-status]");
     const requestedItem = request.itemName || request.orderName;
+    const link = root.querySelector(".refund-site-tools__account-link");
+    const url = new URL(root.dataset.portalUrl);
+    for (const field of ["orderName", "itemName"]) {
+      if (typeof request[field] === "string") url.searchParams.set(field, request[field].slice(0, 120));
+    }
+    if (link) link.href = url.toString();
 
     if (status && requestedItem) {
       const prefix = root.dataset.intentPrefix || "Return request for";
@@ -75,9 +82,9 @@
         returnsSupported: true,
         customerAuthenticated: store.customerAuthenticated,
         accountUrl: store.accountUrl,
-        nextStep: store.customerAuthenticated
-          ? "Open the customer's orders and choose the item to return."
-          : "Ask the customer to sign in before accessing their orders.",
+        portalUrl: store.portalUrl,
+        portalAuthenticationRequired: true,
+        nextStep: "Use start_store_return, then follow the visible link to the Refund customer portal. Storefront login alone does not authorize Refund to access purchases.",
       }),
     },
     {
@@ -111,9 +118,8 @@
           storeName: store.name,
           customerAuthenticated: store.customerAuthenticated,
           accountUrl: store.accountUrl,
-          nextStep: store.customerAuthenticated
-            ? "Continue in the visible return panel and select an order."
-            : "Ask the customer to use the visible sign-in link, then continue.",
+          portalUrl: root.querySelector(".refund-site-tools__account-link")?.href,
+          nextStep: "Click the visible return link to continue in the Refund customer portal. After customer sign-in, use its find_returnable_items and quote_return tools. Never submit until the customer explicitly confirms the quoted amount.",
           confirmationRequired: true,
         };
       },
@@ -126,4 +132,3 @@
     });
   }
 })();
-

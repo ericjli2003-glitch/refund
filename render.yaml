@@ -18,7 +18,7 @@ services:
       - key: SHOPIFY_APP_URL
         sync: false
       - key: SCOPES
-        value: read_orders,write_orders,read_returns,write_returns
+        value: read_orders,write_orders,read_returns,write_returns,customer_read_customers,customer_read_orders,customer_write_orders
       - key: PUBLIC_SUPPORT_EMAIL
         sync: false
 

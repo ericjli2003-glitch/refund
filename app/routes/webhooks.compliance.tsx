@@ -36,6 +36,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
     }
     await prisma.$transaction([
+      prisma.customerReturnSession.deleteMany({ where: { shop, customerSubjectHash } }),
       prisma.agentReturn.deleteMany({ where: { shop, customerSubjectHash } }),
       prisma.privacyRequest.deleteMany({
         where: { shop, customerSubjectHash },
@@ -84,6 +85,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (topic === "SHOP_REDACT") {
     await prisma.$transaction([
+      prisma.customerReturnSession.deleteMany({ where: { shop } }),
       prisma.agentReturn.deleteMany({ where: { shop } }),
       prisma.privacyRequest.deleteMany({ where: { shop } }),
       prisma.webhookReceipt.deleteMany({ where: { shop } }),

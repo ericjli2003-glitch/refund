@@ -7,7 +7,7 @@ embedded = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_orders,write_orders,read_returns,write_returns"
+scopes = "read_orders,write_orders,read_returns,write_returns,customer_read_customers,customer_read_orders,customer_write_orders"
 
 [webhooks]
 api_version = "2026-07"
@@ -34,6 +34,10 @@ api_version = "2026-07"
 
 [auth]
 redirect_urls = [ "https://refund-ztxz.onrender.com/auth/callback" ]
+
+[customer_authentication]
+redirect_uris = [ "https://refund-ztxz.onrender.com/customer/callback" ]
+javascript_origins = [ "https://refund-ztxz.onrender.com" ]
 
 [build]
 automatically_update_urls_on_dev = true

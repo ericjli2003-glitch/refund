@@ -2,11 +2,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 
 import {
-  calculateReturn,
-  executeAutomaticReturn,
   getReturnableOrders,
 } from "./services/automatic-return.server";
 import { CustomerAccountApiError } from "./services/customer-account.server";
+import { createReturnQuote, submitReturnQuote } from "./services/return-quote.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -152,22 +151,14 @@ export function createCustomerReturnsMcpServer({
     },
     async ({ orderId, items }) => {
       try {
-        const quote = await calculateReturn(
-          shop,
-          customerToken,
-          orderId,
-          items,
-        );
+        const quote = await createReturnQuote(shop, customerToken, { orderId, items });
         return {
           content: [
             {
               type: "text",
               text: JSON.stringify(
                 {
-                  orderId,
-                  items: quote.returnLineItems.nodes,
-                  expectedRefund:
-                    quote.financialSummary.returnTotalSet.presentmentMoney,
+                  ...quote,
                   nextStep:
                     "Ask the customer to explicitly confirm this exact return and amount before using confirm_return.",
                 },
@@ -190,16 +181,11 @@ export function createCustomerReturnsMcpServer({
       description:
         "After the authenticated customer explicitly confirms the exact items and quoted amount, requests and opens the Shopify return and submits an idempotent refund to the original payment method. This is consequential and must never be called speculatively.",
       inputSchema: {
-        orderId: z.string().min(1),
-        items: itemsSchema,
+        quoteToken: z.string().min(1).max(32_000).describe("The unmodified quoteToken returned by quote_return; reuse it for retries"),
         customerNote: z.string().max(300).optional(),
         customerConfirmed: z
           .literal(true)
           .describe("Must be true only after explicit customer confirmation"),
-        idempotencyKey: z
-          .string()
-          .uuid()
-          .describe("A new UUID for this exact confirmed return"),
       },
       annotations: {
         readOnlyHint: false,
@@ -209,16 +195,9 @@ export function createCustomerReturnsMcpServer({
       },
       _meta: { securitySchemes: oauthSecuritySchemes },
     },
-    async ({ orderId, items, customerNote, idempotencyKey }) => {
+    async ({ quoteToken, customerNote, customerConfirmed }) => {
       try {
-        const result = await executeAutomaticReturn({
-          shop,
-          customerToken,
-          orderId,
-          items,
-          customerNote,
-          idempotencyKey,
-        });
+        const result = await submitReturnQuote(shop, customerToken, { quoteToken, customerNote, customerConfirmed });
         return {
           content: [
             {

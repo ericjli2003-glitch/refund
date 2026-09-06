@@ -40,7 +40,7 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
     confirmationSchema?.required?.includes("customerConfirmed"),
     true,
   );
-  assert.equal(confirmationSchema?.required?.includes("idempotencyKey"), true);
+  assert.equal(confirmationSchema?.required?.includes("quoteToken"), true);
   assert.deepEqual(
     tools.find((tool) => tool.name === "confirm_return")?._meta
       ?.securitySchemes,

@@ -5,6 +5,7 @@
   data-shop-domain="{{ shop.permanent_domain | escape }}"
   data-shop-name="{{ shop.name | escape }}"
   data-account-url="{{ routes.account_url | escape }}"
+  data-portal-url="https://refund-ztxz.onrender.com/returns/{{ shop.permanent_domain | escape }}"
   data-customer-authenticated="{% if customer %}true{% else %}false{% endif %}"
   data-intent-prefix="{{ 'refund_site_tools.intent_prefix' | t | escape }}"
   {{ block.shopify_attributes }}
@@ -45,7 +46,7 @@
         {{ 'refund_site_tools.signed_out_body' | t }}
       {% endif %}
     </p>
-    <a class="refund-site-tools__account-link" href="{{ routes.account_url }}">
+    <a class="refund-site-tools__account-link" href="https://refund-ztxz.onrender.com/returns/{{ shop.permanent_domain | escape }}">
       {% if customer %}
         {{ 'refund_site_tools.view_orders' | t }}
       {% else %}
@@ -71,4 +72,3 @@
   ]
 }
 {% endschema %}
-
