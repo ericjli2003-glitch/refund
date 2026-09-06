@@ -17,7 +17,7 @@ import {
 
 export type { RequestedItem } from "./return-guards.server";
 
-type Money = { amount: string; currencyCode: string };
+export type Money = { amount: string; currencyCode: string };
 type UserError = { field?: string[]; message: string };
 
 type CustomerOrdersResponse = {
@@ -49,7 +49,7 @@ type CustomerOrdersResponse = {
 type ReturnCalculationResponse = {
   returnCalculate: {
     financialSummary: {
-      returnTotalSet: { presentmentMoney: Money };
+      returnTotalSet: { presentmentMoney: Money; shopMoney: Money };
     };
     returnLineItems: {
       nodes: Array<{ lineItem: { id: string }; quantity: number }>;
@@ -95,7 +95,10 @@ const CALCULATE_RETURN_QUERY = `#graphql
       returnLineItems: $returnLineItems
     }) {
       financialSummary {
-        returnTotalSet { presentmentMoney { amount currencyCode } }
+        returnTotalSet {
+          presentmentMoney { amount currencyCode }
+          shopMoney { amount currencyCode }
+        }
       }
       returnLineItems(first: 50) {
         nodes { lineItem { id } quantity }
@@ -212,6 +215,7 @@ export async function executeAutomaticReturn({
   items,
   customerNote,
   idempotencyKey,
+  expectedRefund,
 }: {
   shop: string;
   customerToken: string;
@@ -219,6 +223,7 @@ export async function executeAutomaticReturn({
   items: RequestedItem[];
   customerNote?: string;
   idempotencyKey: string;
+  expectedRefund: Money;
 }) {
   const policy = await prisma.storePolicy.findUnique({ where: { shop } });
   if (!policy?.automaticRefundsEnabled) {
@@ -266,12 +271,12 @@ export async function executeAutomaticReturn({
       entry.quantity,
     ]),
   );
-  if (hasDuplicateLineItems(items)) {
+  if (!items.length || items.length > 50 || hasDuplicateLineItems(items)) {
     throw new Error("Each line item can appear only once in a return request.");
   }
   for (const item of items) {
     const available = returnable.get(item.lineItemId) ?? 0;
-    if (item.quantity < 1 || item.quantity > available) {
+    if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > available) {
       throw new Error(
         "One or more requested quantities are not currently returnable.",
       );
@@ -285,12 +290,14 @@ export async function executeAutomaticReturn({
     items,
   );
   const quote = calculation.financialSummary.returnTotalSet.presentmentMoney;
-  if (quote.currencyCode !== policy.currencyCode) {
+  assertConfirmedAmount(quote, expectedRefund);
+  const policyAmount = calculation.financialSummary.returnTotalSet.shopMoney;
+  if (policyAmount.currencyCode !== policy.currencyCode) {
     throw new Error(
-      `Automatic refunds are currently limited to ${policy.currencyCode} orders.`,
+      `The store's automatic-refund policy currency (${policy.currencyCode}) does not match its Shopify currency (${policyAmount.currencyCode}). Nothing was submitted.`,
     );
   }
-  if (moneyIsAbove(quote.amount, policy.maxAutoRefundAmount)) {
+  if (moneyIsAbove(policyAmount.amount, policy.maxAutoRefundAmount)) {
     throw new Error(
       `The ${quote.amount} ${quote.currencyCode} refund exceeds this store's automatic refund limit.`,
     );
@@ -496,5 +503,12 @@ export async function executeAutomaticReturn({
       },
     });
     throw error;
+  }
+}
+
+export function assertConfirmedAmount(actual: Money, expected: Money) {
+  if (!expected || actual.currencyCode !== expected.currencyCode ||
+      !moneyAmountsMatch(actual.amount, expected.amount) || Number(actual.amount) <= 0) {
+    throw new Error("The refund amount changed or is invalid. Nothing was submitted. Request a new quote and confirm it again.");
   }
 }

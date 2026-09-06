@@ -56,6 +56,13 @@ export default function Privacy() {
           collect debit or credit card numbers. Shopify and the merchant&apos;s
           payment provider process refunds to the original payment method.
         </p>
+        <p>
+          The customer return portal stores access tokens encrypted in a separate,
+          short-lived session. The browser receives an opaque, HttpOnly session
+          cookie, not the token. Portal sessions expire within four hours and are
+          removed on sign-out, expiry cleanup, applicable redaction requests, or
+          app uninstall.
+        </p>
 
         <h2>Sharing and service providers</h2>
         <p>

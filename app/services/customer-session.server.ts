@@ -1,0 +1,278 @@
+import { createCookie, redirect } from "react-router";
+import { createRemoteJWKSet, jwtVerify } from "jose";
+import prisma from "../db.server";
+import {
+  normalizeShopDomain,
+  verifyCustomerAccess,
+} from "./customer-account.server";
+import { hashCustomerId } from "./return-guards.server";
+import {
+  appOrigin,
+  digest,
+  privateHeaders,
+  randomToken,
+  safeEqual,
+  seal,
+  unseal,
+} from "./customer-security.server";
+
+const cookie = createCookie("__Host-refund_customer", {
+  httpOnly: true,
+  secure: true,
+  sameSite: "lax",
+  path: "/",
+  maxAge: 14_400,
+});
+
+type Discovery = {
+  issuer: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  jwks_uri: string;
+};
+type PendingLogin = { verifier: string; nonce: string; discovery: Discovery };
+
+export async function requireInstalledShop(value: string) {
+  const shop = normalizeShopDomain(value);
+  if (
+    !(await prisma.session.findFirst({
+      where: { shop, isOnline: false },
+      select: { id: true },
+    }))
+  ) {
+    throw new Response("This store has not connected Refund.", {
+      status: 404,
+      headers: privateHeaders,
+    });
+  }
+  return shop;
+}
+
+async function readSession(request: Request) {
+  const raw: unknown = await cookie.parse(request.headers.get("Cookie"));
+  if (typeof raw !== "string" || !/^[\w-]{43}$/.test(raw)) return null;
+  const session = await prisma.customerReturnSession.findUnique({
+    where: { id: digest(raw) },
+  });
+  return session && session.expiresAt.getTime() > Date.now() ? session : null;
+}
+
+export async function getCustomerSession(request: Request, shop: string) {
+  const session = await readSession(request);
+  if (
+    !session ||
+    session.shop !== shop ||
+    !session.accessToken ||
+    !session.customerSubjectHash
+  )
+    return null;
+  return {
+    ...session,
+    customerToken: unseal(session.accessToken, `${session.id}:${shop}`),
+  };
+}
+
+// Discovery is anchored in the validated myshopify domain. Reject credential-bearing
+// endpoints and non-Shopify hosts before sending codes or access tokens anywhere.
+async function discover(shop: string): Promise<Discovery> {
+  const response = await fetch(
+    `https://${shop}/.well-known/openid-configuration`,
+    {
+      headers: { Accept: "application/json" },
+      redirect: "error",
+      signal: AbortSignal.timeout(8_000),
+    },
+  );
+  if (!response.ok)
+    throw new Error("Customer sign-in is not available for this store.");
+  const result = (await response.json()) as Discovery;
+  for (const value of [
+    result.issuer,
+    result.authorization_endpoint,
+    result.token_endpoint,
+    result.jwks_uri,
+  ]) {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.username ||
+      url.password ||
+      url.port ||
+      !(
+        url.hostname === "shopify.com" ||
+        url.hostname.endsWith(".shopify.com") ||
+        url.hostname === shop
+      )
+    ) {
+      throw new Error(
+        "Shopify returned an unsupported authentication endpoint.",
+      );
+    }
+  }
+  return result;
+}
+
+export async function startCustomerLogin(request: Request) {
+  const url = new URL(request.url);
+  const shop = await requireInstalledShop(url.searchParams.get("shop") || "");
+  const clientId = process.env.SHOPIFY_API_KEY;
+  if (!clientId) throw new Error("Customer sign-in is not configured.");
+  const discovery = await discover(shop);
+  const raw = randomToken();
+  const id = digest(raw);
+  const state = randomToken();
+  const verifier = randomToken();
+  const nonce = randomToken();
+  const old = await readSession(request);
+  await prisma.$transaction([
+    prisma.customerReturnSession.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: new Date() } },
+          ...(old ? [{ id: old.id }] : []),
+        ],
+      },
+    }),
+    prisma.customerReturnSession.create({
+      data: {
+        id,
+        shop,
+        csrfToken: randomToken(),
+        stateHash: digest(state),
+        sealedState: seal(
+          JSON.stringify({ verifier, nonce, discovery }),
+          `${id}:${shop}`,
+        ),
+        orderHint: url.searchParams.get("orderName")?.slice(0, 120),
+        itemHint: url.searchParams.get("itemName")?.slice(0, 120),
+        expiresAt: new Date(Date.now() + 600_000),
+      },
+    }),
+  ]);
+  const authUrl = new URL(discovery.authorization_endpoint);
+  authUrl.search = new URLSearchParams({
+    client_id: clientId,
+    response_type: "code",
+    scope: "openid email customer-account-api:full",
+    redirect_uri: `${appOrigin()}/customer/callback`,
+    state,
+    nonce,
+    code_challenge: digest(verifier),
+    code_challenge_method: "S256",
+  }).toString();
+  return redirect(authUrl.toString(), {
+    headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
+  });
+}
+
+export async function finishCustomerLogin(request: Request) {
+  const url = new URL(request.url);
+  const pending = await readSession(request);
+  const state = url.searchParams.get("state") || "";
+  if (
+    !pending?.stateHash ||
+    !pending.sealedState ||
+    !safeEqual(pending.stateHash, digest(state))
+  ) {
+    throw new Response(
+      "Sign-in expired or did not match this browser. Please start again.",
+      { status: 400, headers: privateHeaders },
+    );
+  }
+  await requireInstalledShop(pending.shop);
+  // Claim the callback exactly once, including errors and concurrent requests.
+  const claimed = await prisma.customerReturnSession.updateMany({
+    where: { id: pending.id, stateHash: pending.stateHash },
+    data: { stateHash: null, sealedState: null },
+  });
+  if (claimed.count !== 1)
+    throw new Response("This sign-in was already used.", {
+      status: 400,
+      headers: privateHeaders,
+    });
+  if (url.searchParams.has("error") || !url.searchParams.get("code")) {
+    return redirect(`/returns/${pending.shop}?loginError=1`, {
+      headers: privateHeaders,
+    });
+  }
+  const { verifier, nonce, discovery } = JSON.parse(
+    unseal(pending.sealedState, `${pending.id}:${pending.shop}`),
+  ) as PendingLogin;
+  const clientId = process.env.SHOPIFY_API_KEY!;
+  const response = await fetch(discovery.token_endpoint, {
+    method: "POST",
+    redirect: "error",
+    signal: AbortSignal.timeout(15_000),
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+      Origin: appOrigin(),
+    },
+    body: new URLSearchParams({
+      grant_type: "authorization_code",
+      client_id: clientId,
+      redirect_uri: `${appOrigin()}/customer/callback`,
+      code: url.searchParams.get("code")!,
+      code_verifier: verifier,
+    }),
+  });
+  if (!response.ok)
+    throw new Response(
+      "Shopify could not finish sign-in. Please start again.",
+      { status: 502, headers: privateHeaders },
+    );
+  const tokens = (await response.json()) as {
+    access_token?: string;
+    id_token?: string;
+    expires_in?: number;
+  };
+  if (
+    !tokens.access_token ||
+    !tokens.id_token ||
+    !Number.isFinite(tokens.expires_in) ||
+    tokens.expires_in! <= 60
+  ) {
+    throw new Error("Shopify returned an incomplete customer session.");
+  }
+  const { payload } = await jwtVerify(
+    tokens.id_token,
+    createRemoteJWKSet(new URL(discovery.jwks_uri)),
+    {
+      issuer: discovery.issuer,
+      audience: clientId,
+      algorithms: ["RS256"],
+      requiredClaims: ["exp", "iat", "sub", "nonce"],
+    },
+  );
+  if (payload.nonce !== nonce)
+    throw new Error("Customer sign-in verification failed.");
+  const customerId = await verifyCustomerAccess(
+    pending.shop,
+    tokens.access_token,
+  );
+  const raw = randomToken();
+  const id = digest(raw);
+  await prisma.$transaction([
+    prisma.customerReturnSession.delete({ where: { id: pending.id } }),
+    prisma.customerReturnSession.create({
+      data: {
+        id,
+        shop: pending.shop,
+        csrfToken: randomToken(),
+        accessToken: seal(tokens.access_token, `${id}:${pending.shop}`),
+        customerSubjectHash: hashCustomerId(
+          customerId,
+          process.env.SHOPIFY_API_SECRET!,
+        ),
+        orderHint: pending.orderHint,
+        itemHint: pending.itemHint,
+        expiresAt: new Date(
+          Date.now() + Math.min(tokens.expires_in! - 60, 14_400) * 1000,
+        ),
+      },
+    }),
+  ]);
+  return redirect(`/returns/${pending.shop}`, {
+    headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
+  });
+}

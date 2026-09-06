@@ -45,10 +45,15 @@ use Shopify Billing and update the listing, terms, and reviewer instructions.
 | `write_orders`  | Submit the refund against the original order transaction after explicit confirmation.  |
 | `read_returns`  | Read returnable fulfillments, calculate suggestions, and reconcile return status.      |
 | `write_returns` | Request, approve, open, and manage the confirmed Shopify return.                       |
+| `customer_read_customers` | Verify the signed-in customer's identity in their own account. |
+| `customer_read_orders` | Read that customer's purchases and calculate return quotes. |
+| `customer_write_orders` | Request the customer-confirmed return in their own account. |
 
 Request protected customer data access for order and customer fields used in the
 workflow. The app hashes the customer identifier in operational records and does
 not store Customer Account access tokens there.
+Short-lived portal tokens are encrypted in `CustomerReturnSession`, separate
+from operational records, and are purged by redaction and uninstall handlers.
 
 ## Reviewer test instructions
 

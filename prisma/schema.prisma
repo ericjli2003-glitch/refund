@@ -43,6 +43,24 @@ model StorePolicy {
   updatedAt               DateTime @updatedAt
 }
 
+// Only a random opaque identifier reaches the browser. OAuth material is encrypted.
+model CustomerReturnSession {
+  id                  String   @id
+  shop                String
+  stateHash           String?  @unique
+  sealedState         String?
+  accessToken         String?
+  customerSubjectHash String?
+  csrfToken           String
+  orderHint           String?
+  itemHint            String?
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+
+  @@index([shop, customerSubjectHash])
+  @@index([expiresAt])
+}
+
 model AgentReturn {
   id                  String   @id @default(cuid())
   shop                String

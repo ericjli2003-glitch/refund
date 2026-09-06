@@ -3,11 +3,10 @@
     "launcher": "Start a return",
     "close": "Close return assistant",
     "heading": "Start your return",
-    "signed_in_body": "View your orders and choose the item you want to return.",
+    "signed_in_body": "Continue securely to Refund to find your purchases and get a quote. Nothing is submitted until you confirm.",
     "signed_out_body": "Sign in to securely find your orders and choose an item to return.",
-    "view_orders": "View my orders",
-    "sign_in": "Sign in to continue",
+    "view_orders": "Continue to my return",
+    "sign_in": "Continue to my return",
     "intent_prefix": "Return request for"
   }
 }
-
