@@ -7,6 +7,7 @@ import {
   requireInstalledShop,
 } from "../services/customer-session.server";
 import { privateHeaders } from "../services/customer-security.server";
+import { returnHints } from "../services/return-intake.server";
 import type {
   createReturnQuote,
   submitReturnQuote,
@@ -31,14 +32,20 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const session = await getCustomerSession(request, shop);
   const url = new URL(request.url);
   const query = new URLSearchParams({ shop });
+  const hints = returnHints(url, shop);
+  const hasNewHints = Boolean(
+    hints.orderName || hints.itemName || url.searchParams.has("continuation"),
+  );
   const orderHint =
-    session?.orderHint ||
-    url.searchParams.get("orderName")?.slice(0, 120) ||
-    "";
-  const itemHint =
-    session?.itemHint || url.searchParams.get("itemName")?.slice(0, 120) || "";
+    hints.orderName || (!hasNewHints && session?.orderHint) || "";
+  const itemHint = hints.itemName || (!hasNewHints && session?.itemHint) || "";
   if (orderHint) query.set("orderName", orderHint);
   if (itemHint) query.set("itemName", itemHint);
+  if (url.searchParams.has("continuation")) {
+    query.delete("orderName");
+    query.delete("itemName");
+    query.set("continuation", url.searchParams.get("continuation")!);
+  }
   let orders: Orders = [];
   let error = url.searchParams.has("loginError")
     ? "Sign-in was not completed. Please try again."
@@ -241,13 +248,19 @@ export default function CustomerReturns() {
       )}
       {!initial.authenticated ? (
         <section>
-          <h2>Sign in to your store account</h2>
+          <h2>Verify your purchase</h2>
           <p>
-            Your purchases stay private. Shopify handles sign-in; your password
-            and card details are never shared with the assistant.
+            Use the email address you used at checkout. Shopify will verify it
+            with a sign-in code or another sign-in option offered by this store.
+            You do not need a Shopify merchant account or a new password.
+          </p>
+          <p>
+            Enter sign-in codes only on Shopify’s secure page. After
+            verification, you can review your purchases here with your
+            assistant.
           </p>
           <a className="return-button" href={initial.loginUrl}>
-            Sign in with Shopify
+            Continue to verify my purchase
           </a>
         </section>
       ) : (

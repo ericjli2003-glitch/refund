@@ -16,6 +16,8 @@
       customerAuthenticated:
         root.dataset.customerAuthenticated === "true",
       portalUrl: root.dataset.portalUrl,
+      intakeApiUrl: root.dataset.intakeApiUrl,
+      intakeMcpUrl: root.dataset.intakeMcpUrl,
     };
   }
 
@@ -83,6 +85,13 @@
         customerAuthenticated: store.customerAuthenticated,
         accountUrl: store.accountUrl,
         portalUrl: store.portalUrl,
+        publicIntake: {
+          httpEndpoint: store.intakeApiUrl,
+          mcpEndpoint: store.intakeMcpUrl,
+          tool: "start_return",
+          merchant: store.domain,
+          authenticationRequired: false,
+        },
         portalAuthenticationRequired: true,
         nextStep: "Use start_store_return, then follow the visible link to the Refund customer portal. Storefront login alone does not authorize Refund to access purchases.",
       }),

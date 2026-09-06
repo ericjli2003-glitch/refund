@@ -1,0 +1,85 @@
+# Public merchant return intake
+
+An agent that can reach Refund may call one public tool to prepare the customer's
+return workflow. The API is an intake service, not an inbox that monitors private
+AI conversations. The calling agent identifies the return intent and sends the
+merchant website explicitly. There is no separate LLM classifier or model key.
+
+## Interfaces
+
+- Streamable HTTP MCP: `POST /mcp`, tool `start_return`.
+- JSON: `POST /api/return-intake` with `Content-Type: application/json`.
+- Browser: `GET /start-return` (form) or with merchant/order/item query hints.
+- Authenticated browser portal: `/returns/SHOP.myshopify.com`.
+
+Input example:
+
+```json
+{"merchant":"testing-bl7vdfur.myshopify.com","orderName":"#1001","itemName":"Snowboard"}
+```
+
+Possible results:
+
+- `verification_required`: includes canonical merchant identity, an expiring
+  `continueUrl`, `authenticationRequired: true`, `confirmationRequired: true`,
+  and explicit `returnSubmitted: false` / `refundSubmitted: false`.
+- `merchant_not_resolved`: no orders, private account information, or assertions
+  about the customer's purchase are returned. Check the exact merchant domain
+  or use the merchant's own published return instructions.
+- Errors: malformed/oversized JSON receives 400/413; non-JSON receives 415.
+  Unavailable merchant verification receives a generic 503 through HTTP or an
+  MCP tool error without disclosing internal credentials or database errors.
+
+Never send passwords, OTPs, payment details, customer tokens, or a refund
+confirmation in this public request. Input only contains order/item *hints*.
+The continuation is an encrypted request description, not a customer session.
+
+## Customer and merchant boundaries
+
+1. Merchant installation records the canonical store and its Shopify-reported
+   primary domain. Opening Refund registers existing stores too.
+2. Intake resolves only a known domain. A custom domain is rechecked with the
+   canonical installed shop; arbitrary URLs are never fetched.
+3. The continuation expires after 30 minutes, uses authenticated encryption,
+   and fails if used for another store. It can be revisited until expiry because
+   it authorizes no action. No unauthenticated customer session is persisted.
+4. The portal sends the customer through its existing Shopify PKCE flow. The
+   pending session retains hints; successful login rotates the opaque session
+   cookie. Cancellation offers a retry with the same hints.
+5. Customer-specific tools query only the authenticated customer's purchases.
+   The supplied order and item must be reconciled with Shopify's actual data.
+6. A signed quote and explicit customer confirmation are still required by the
+   existing return service. Refunds go to the original payment method.
+
+## Rollout and acceptance
+
+- Run the database migration, then deploy the backend.
+- Open the merchant dashboard to register a current primary custom domain.
+- Publish the updated storefront extension. Leave its visible launcher off if
+  desired; its WebMCP tools remain available in supported browsers.
+- Invoke anonymous `start_return` and follow `continueUrl`.
+- Confirm the requested item and order survive verification and a cancelled
+  sign-in. Login must show only the customer's own purchases.
+- Quote the actual item, show the precise amount/currency, and stop before
+  submission until the customer explicitly confirms.
+
+Automated tests exercise anonymous routing, encrypted/expired/cross-store
+continuations, HTTP and MCP behavior, unsupported merchants, and the handoff
+into the pending Shopify OAuth session. They do not replace a successful live
+Shopify login or a confirmed test return.
+
+## Remaining native chat integration
+
+The global MCP service deliberately exposes only public intake. Browser login
+does not silently grant the requesting remote agent access. Supporting protected
+actions directly in ChatGPT/Claude still needs a registered OAuth integration
+that binds the customer, merchant, client, scopes, and token audience. Use an
+established OAuth provider, keep Shopify tokens server-side, and verify each
+host's callback and continuation behavior. Authentication metadata alone cannot
+make an unconnected chatbot discover or invoke the endpoint.
+
+References:
+
+- https://developers.openai.com/plugins/build/auth
+- https://shopify.dev/docs/api/admin-graphql/2026-07/objects/Shop
+- https://shopify.dev/docs/api/customer/2026-07

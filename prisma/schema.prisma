@@ -43,6 +43,14 @@ model StorePolicy {
   updatedAt               DateTime @updatedAt
 }
 
+// Populated only from the authenticated Shopify Admin API.
+model MerchantDirectory {
+  shop          String   @id
+  primaryDomain String   @unique
+  name          String
+  verifiedAt    DateTime @default(now())
+}
+
 // Only a random opaque identifier reaches the browser. OAuth material is encrypted.
 model CustomerReturnSession {
   id                  String   @id

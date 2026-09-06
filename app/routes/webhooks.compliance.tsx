@@ -85,6 +85,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (topic === "SHOP_REDACT") {
     await prisma.$transaction([
+      prisma.merchantDirectory.deleteMany({ where: { shop } }),
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
       prisma.agentReturn.deleteMany({ where: { shop } }),
       prisma.privacyRequest.deleteMany({ where: { shop } }),

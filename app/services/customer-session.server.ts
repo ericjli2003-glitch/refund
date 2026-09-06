@@ -6,6 +6,7 @@ import {
   verifyCustomerAccess,
 } from "./customer-account.server";
 import { hashCustomerId } from "./return-guards.server";
+import { makeContinuation, returnHints } from "./return-intake.server";
 import {
   appOrigin,
   digest,
@@ -115,6 +116,7 @@ async function discover(shop: string): Promise<Discovery> {
 export async function startCustomerLogin(request: Request) {
   const url = new URL(request.url);
   const shop = await requireInstalledShop(url.searchParams.get("shop") || "");
+  const hints = returnHints(url, shop);
   const clientId = process.env.SHOPIFY_API_KEY;
   if (!clientId) throw new Error("Customer sign-in is not configured.");
   const discovery = await discover(shop);
@@ -143,8 +145,8 @@ export async function startCustomerLogin(request: Request) {
           JSON.stringify({ verifier, nonce, discovery }),
           `${id}:${shop}`,
         ),
-        orderHint: url.searchParams.get("orderName")?.slice(0, 120),
-        itemHint: url.searchParams.get("itemName")?.slice(0, 120),
+        orderHint: hints.orderName,
+        itemHint: hints.itemName,
         expiresAt: new Date(Date.now() + 600_000),
       },
     }),
@@ -191,7 +193,14 @@ export async function finishCustomerLogin(request: Request) {
       headers: privateHeaders,
     });
   if (url.searchParams.has("error") || !url.searchParams.get("code")) {
-    return redirect(`/returns/${pending.shop}?loginError=1`, {
+    const retry = new URLSearchParams({
+      loginError: "1",
+      continuation: makeContinuation(pending.shop, {
+        orderName: pending.orderHint || undefined,
+        itemName: pending.itemHint || undefined,
+      }),
+    });
+    return redirect(`/returns/${pending.shop}?${retry}`, {
       headers: privateHeaders,
     });
   }
