@@ -380,7 +380,7 @@ export default function CustomerReturns() {
               {!order.returnInformation.returnableLineItems.nodes.length && (
                 <p>
                   No items are currently eligible for a return.{" "}
-                  {order.returnInformation.nonReturnableSummary.nonReturnableReasons.join(
+                  {order.returnInformation.nonReturnableSummary?.nonReturnableReasons.join(
                     ", ",
                   )}
                 </p>

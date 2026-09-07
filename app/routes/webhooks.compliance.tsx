@@ -36,7 +36,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       );
     }
     await prisma.$transaction([
-      prisma.customerReturnSession.deleteMany({ where: { shop, customerSubjectHash } }),
+      prisma.customerReturnSession.deleteMany({
+        where: { shop, customerSubjectHash },
+      }),
       prisma.agentReturn.deleteMany({ where: { shop, customerSubjectHash } }),
       prisma.privacyRequest.deleteMany({
         where: { shop, customerSubjectHash },
@@ -65,11 +67,31 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         updatedAt: true,
       },
     });
-    const reportData = records.map((record) => ({
+    const returns = records.map((record) => ({
       ...record,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),
     }));
+    const grants = await prisma.agentAccessGrant.findMany({
+      where: { shop, customerSubjectHash },
+      select: {
+        clientId: true,
+        resource: true,
+        scopes: true,
+        createdAt: true,
+        expiresAt: true,
+        revokedAt: true,
+      },
+    });
+    const reportData = {
+      returns,
+      assistantAccess: grants.map((grant) => ({
+        ...grant,
+        createdAt: grant.createdAt.toISOString(),
+        expiresAt: grant.expiresAt.toISOString(),
+        revokedAt: grant.revokedAt?.toISOString() ?? null,
+      })),
+    };
     await prisma.privacyRequest.upsert({
       where: { id: webhookId },
       create: {

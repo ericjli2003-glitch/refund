@@ -8,7 +8,7 @@ export const intakeHeaders = {
   "Access-Control-Expose-Headers": "mcp-protocol-version",
 };
 
-export async function readIntakeBody(request: Request) {
+export async function readIntakeBody(request: Request, maxBytes = 16_384) {
   if (
     request.headers.get("Content-Type")?.split(";")[0].trim() !==
     "application/json"
@@ -20,11 +20,11 @@ export async function readIntakeBody(request: Request) {
   let length = 0;
   const chunks: Uint8Array[] = [];
   try {
-    while (length <= 16_384) {
+    while (length <= maxBytes) {
       const { done, value } = await reader.read();
       if (done) break;
       length += value.byteLength;
-      if (length > 16_384) {
+      if (length > maxBytes) {
         await reader.cancel();
         throw new Response("Request too large.", { status: 413 });
       }

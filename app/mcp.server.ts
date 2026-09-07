@@ -1,11 +1,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 
-import {
-  getReturnableOrders,
-} from "./services/automatic-return.server";
+import { getReturnableOrders } from "./services/automatic-return.server";
 import { CustomerAccountApiError } from "./services/customer-account.server";
-import { createReturnQuote, submitReturnQuote } from "./services/return-quote.server";
+import {
+  createReturnQuote,
+  submitReturnQuote,
+} from "./services/return-quote.server";
+import {
+  AgentAccessError,
+  agentChallenge,
+  type AgentScope,
+} from "./services/agent-access.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -25,14 +31,20 @@ const itemsSchema = z
     "Each line item can appear only once",
   );
 
-const oauthSecuritySchemes = [
-  {
-    type: "oauth2",
-    scopes: ["openid", "email", "customer-account-api:full"],
-  },
+const securitySchemes = (scope: AgentScope) => [
+  { type: "oauth2", scopes: [scope] },
 ];
 
 function toolError(error: unknown, resourceMetadataUrl: string) {
+  if (error instanceof AgentAccessError) {
+    return {
+      isError: true as const,
+      content: [{ type: "text" as const, text: error.message }],
+      _meta: {
+        "mcp/www_authenticate": [agentChallenge(resourceMetadataUrl, error)],
+      },
+    };
+  }
   const message =
     error instanceof Error ? error.message : "The return action failed.";
   return {
@@ -51,17 +63,17 @@ function toolError(error: unknown, resourceMetadataUrl: string) {
 }
 
 export function createCustomerReturnsMcpServer({
-  shop,
-  customerToken,
+  authorize,
   resourceMetadataUrl,
 }: {
-  shop: string;
-  customerToken: string;
+  authorize: (
+    scope: AgentScope,
+  ) => Promise<{ shop: string; customerToken: string }>;
   resourceMetadataUrl: string;
 }) {
   const server = new McpServer({
     name: "Shopify customer returns",
-    version: "0.2.0",
+    version: "0.3.0",
   });
 
   server.registerTool(
@@ -83,10 +95,11 @@ export function createCustomerReturnsMcpServer({
         idempotentHint: true,
         openWorldHint: true,
       },
-      _meta: { securitySchemes: oauthSecuritySchemes },
+      _meta: { securitySchemes: securitySchemes("returns:read") },
     },
     async ({ query }) => {
       try {
+        const { shop, customerToken } = await authorize("returns:read");
         const { orders } = await getReturnableOrders(shop, customerToken);
         const normalizedQuery = query?.trim().toLowerCase();
         const matches = orders
@@ -103,7 +116,8 @@ export function createCustomerReturnsMcpServer({
               }),
             ),
             nonReturnableReasons:
-              order.returnInformation.nonReturnableSummary.nonReturnableReasons,
+              order.returnInformation.nonReturnableSummary
+                ?.nonReturnableReasons ?? [],
           }))
           .filter(
             (order) =>
@@ -147,11 +161,15 @@ export function createCustomerReturnsMcpServer({
         idempotentHint: true,
         openWorldHint: true,
       },
-      _meta: { securitySchemes: oauthSecuritySchemes },
+      _meta: { securitySchemes: securitySchemes("returns:quote") },
     },
     async ({ orderId, items }) => {
       try {
-        const quote = await createReturnQuote(shop, customerToken, { orderId, items });
+        const { shop, customerToken } = await authorize("returns:quote");
+        const quote = await createReturnQuote(shop, customerToken, {
+          orderId,
+          items,
+        });
         return {
           content: [
             {
@@ -181,7 +199,13 @@ export function createCustomerReturnsMcpServer({
       description:
         "After the authenticated customer explicitly confirms the exact items and quoted amount, requests and opens the Shopify return and submits an idempotent refund to the original payment method. This is consequential and must never be called speculatively.",
       inputSchema: {
-        quoteToken: z.string().min(1).max(32_000).describe("The unmodified quoteToken returned by quote_return; reuse it for retries"),
+        quoteToken: z
+          .string()
+          .min(1)
+          .max(32_000)
+          .describe(
+            "The unmodified quoteToken returned by quote_return; reuse it for retries",
+          ),
         customerNote: z.string().max(300).optional(),
         customerConfirmed: z
           .literal(true)
@@ -193,11 +217,16 @@ export function createCustomerReturnsMcpServer({
         idempotentHint: true,
         openWorldHint: true,
       },
-      _meta: { securitySchemes: oauthSecuritySchemes },
+      _meta: { securitySchemes: securitySchemes("returns:submit") },
     },
     async ({ quoteToken, customerNote, customerConfirmed }) => {
       try {
-        const result = await submitReturnQuote(shop, customerToken, { quoteToken, customerNote, customerConfirmed });
+        const { shop, customerToken } = await authorize("returns:submit");
+        const result = await submitReturnQuote(shop, customerToken, {
+          quoteToken,
+          customerNote,
+          customerConfirmed,
+        });
         return {
           content: [
             {

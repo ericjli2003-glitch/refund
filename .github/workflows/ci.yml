@@ -12,8 +12,22 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: refund
+          POSTGRES_PASSWORD: refund
+          POSTGRES_DB: refund_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U refund -d refund_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      DATABASE_URL: postgresql://refund:refund@localhost:5432/refund?schema=public
+      DATABASE_URL: postgresql://refund:refund@localhost:5432/refund_ci?schema=public
       SHOPIFY_API_KEY: test_key
       SHOPIFY_API_SECRET: test_secret
       SHOPIFY_APP_URL: http://localhost:3000
@@ -26,6 +40,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run prisma:validate
+      - run: npx prisma migrate deploy
+      - run: node scripts/test-grant-cascade.mjs
       - run: npm test
       - run: npm run typecheck
       - run: npm run lint

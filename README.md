@@ -132,23 +132,30 @@ these tools, or a compatible browser must visit the store. Verification happens
 on Shopify's secure page. The current continuation resumes in the customer
 portal; it does **not** link a ChatGPT/Claude account, issue an agent access token,
 or resume protected remote tools. A Refund OAuth provider and host registration
-remain separate work, and the existing live Shopify scope error must be
-resolved before claiming an end-to-end authenticated rollout.
+remain separate work. The browser sign-in and exact-quote flow has been verified
+in the development store; native remote-agent authorization is not live yet.
 
 ### Protected store tools
 
-Each installed shop receives this endpoint after deployment:
+The protected store endpoint is reserved for customer-approved Refund grants:
 
 ```text
 https://YOUR_APP_HOST/mcp/SHOP.myshopify.com
 ```
 
-The connector is an optional integration path, not a customer requirement. Its
-bearer token must be a Shopify Customer Account API token for that shop. The
-required customer scope is `openid email customer-account-api:full`. Configure
-customer accounts, protected customer data access, a Customer Account OAuth
-client, and the exact callback URLs required by the assistant host before using
-this path.
+**This is not ready to connect in ChatGPT/Claude yet.** The legacy Shopify-token
+pass-through has been removed. Cookies, Shopify tokens, intake links and quotes
+cannot authorize this endpoint. It accepts only separate, expiring Refund grants
+bound to an approved client, customer session, store and resource, with per-tool
+`returns:read`, `returns:quote`, or `returns:submit` permissions. Submission still
+requires the exact signed quote and affirmative customer confirmation.
+
+The grant issuance/revocation primitives are server-internal; no HTTP or MCP
+operation exposes token minting. The OAuth consent screen, registered-client
+validation, PKCE code exchange, and host integration remain to be implemented.
+Until then, `/oauth/resource/:shop` returns a clear 503 instead of incorrectly
+advertising Shopify as Refund's authorization server. Use the public intake and
+browser portal for current tests. See [agent access](docs/AGENT_ACCESS.md).
 
 ## Production deployment
 
