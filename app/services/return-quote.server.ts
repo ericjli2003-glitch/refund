@@ -105,13 +105,19 @@ export async function createReturnQuote(
     throw new Error(
       `This store's automatic-refund policy is configured for ${policy.currencyCode}, but its Shopify currency is ${policyAmount.currencyCode}. Nothing was submitted.`,
     );
-  if (
-    moneyIsAbove(policyAmount.amount, policy.maxAutoRefundAmount) ||
-    !Number.isFinite(Number(expectedRefund.amount)) ||
-    Number(expectedRefund.amount) <= 0
-  ) {
+  if (!Number.isFinite(Number(expectedRefund.amount))) {
     throw new Error(
-      "This amount is outside the store's automatic-refund limit. Nothing was submitted.",
+      "Shopify did not return a valid refund amount. Nothing was submitted.",
+    );
+  }
+  if (Number(expectedRefund.amount) <= 0) {
+    throw new Error(
+      `Shopify calculated ${expectedRefund.amount} ${expectedRefund.currencyCode}, not a positive refund. Check the store's return fees and rules. Nothing was submitted.`,
+    );
+  }
+  if (moneyIsAbove(policyAmount.amount, policy.maxAutoRefundAmount)) {
+    throw new Error(
+      `This amount is outside the store's automatic-refund limit: ${policyAmount.amount} ${policyAmount.currencyCode}, compared with the ${policy.maxAutoRefundAmount} ${policy.currencyCode} maximum. Nothing was submitted.`,
     );
   }
   const quote = {
