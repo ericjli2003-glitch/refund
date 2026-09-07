@@ -5,7 +5,9 @@
   data-shop-domain="{{ shop.permanent_domain | escape }}"
   data-shop-name="{{ shop.name | escape }}"
   data-account-url="{{ routes.account_url | escape }}"
-  data-portal-url="https://refund-ztxz.onrender.com/returns/{{ shop.permanent_domain | escape }}"
+  data-portal-url="https://refund-ztxz.onrender.com/start-return?merchant={{ shop.permanent_domain | url_encode }}"
+  data-intake-api-url="https://refund-ztxz.onrender.com/api/return-intake"
+  data-intake-mcp-url="https://refund-ztxz.onrender.com/mcp"
   data-customer-authenticated="{% if customer %}true{% else %}false{% endif %}"
   data-intent-prefix="{{ 'refund_site_tools.intent_prefix' | t | escape }}"
   {{ block.shopify_attributes }}
@@ -46,7 +48,7 @@
         {{ 'refund_site_tools.signed_out_body' | t }}
       {% endif %}
     </p>
-    <a class="refund-site-tools__account-link" href="https://refund-ztxz.onrender.com/returns/{{ shop.permanent_domain | escape }}">
+    <a class="refund-site-tools__account-link" href="https://refund-ztxz.onrender.com/start-return?merchant={{ shop.permanent_domain | url_encode }}">
       {% if customer %}
         {{ 'refund_site_tools.view_orders' | t }}
       {% else %}

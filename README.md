@@ -94,6 +94,49 @@ return shipping labels.
 
 ## Optional remote MCP connector
 
+### Public merchant intake
+
+`/mcp` now exposes a single anonymous `start_return` tool. It accepts a merchant
+website plus optional `orderName` and `itemName` hints and returns a secure
+`continueUrl`. The same operation is available as JSON POST `/api/return-intake`.
+`/start-return` provides a human-readable entry page and accepts the same three
+query parameters for storefront handoffs. No customer account or Refund
+connector authorization is needed to prepare this link.
+
+The link carries encrypted, authenticated hints, expires after 30 minutes, and
+is bound to one shop. It does not contain customer credentials, prove purchase
+ownership, or authorize any return/refund. Hints survive the Shopify sign-in
+flow, including cancellation/retry. The portal still requires customer
+authentication, a fresh exact quote, and explicit confirmation.
+
+Canonical installed `*.myshopify.com` domains work immediately. Primary custom
+domains are recorded from Shopify on app authentication and whenever the
+merchant opens the Refund dashboard. Custom-domain requests are rechecked
+against that installed shop's Admin API; Refund never fetches a caller-supplied
+website to infer the shop. Store names alone and unregistered aliases are not
+resolved. An unresolved store is not a determination of return eligibility.
+
+The merchant directory migration must run before serving the updated app.
+Open Refund in each existing store once to register its primary custom domain.
+New installations register during authentication; uninstall and shop redaction
+remove the mapping. Keep request-rate limits at the hosting edge for the public
+endpoints; the app bounds JSON request bodies to 16 KiB.
+
+The theme's `get_store_return_options` advertises the public HTTP/MCP addresses.
+Its launcher now goes through `/start-return`, and can remain hidden. Publish
+the updated theme extension after the backend deployment is live.
+
+**Availability boundary:** anonymous MCP means no customer authentication for
+intake, not automatic discovery in every chat. The host still needs access to
+these tools, or a compatible browser must visit the store. Verification happens
+on Shopify's secure page. The current continuation resumes in the customer
+portal; it does **not** link a ChatGPT/Claude account, issue an agent access token,
+or resume protected remote tools. A Refund OAuth provider and host registration
+remain separate work, and the existing live Shopify scope error must be
+resolved before claiming an end-to-end authenticated rollout.
+
+### Protected store tools
+
 Each installed shop receives this endpoint after deployment:
 
 ```text

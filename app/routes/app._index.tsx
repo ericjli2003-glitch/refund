@@ -9,6 +9,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
+import { syncMerchantDirectory } from "../services/merchant-directory.server";
 
 const DASHBOARD_ORDER_LIMIT = 25;
 
@@ -39,6 +40,7 @@ type OrdersQueryResponse = {
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
+  await syncMerchantDirectory(session.shop, admin);
   const url = new URL(request.url);
   const query = url.searchParams.get("query")?.trim() ?? "";
 

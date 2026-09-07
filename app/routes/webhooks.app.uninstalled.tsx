@@ -10,6 +10,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // Deletions are idempotent, including when Shopify retries after the session
   // was removed by an earlier delivery.
   await db.$transaction([
+    db.merchantDirectory.deleteMany({ where: { shop } }),
     db.customerReturnSession.deleteMany({ where: { shop } }),
     db.agentReturn.deleteMany({ where: { shop } }),
     db.privacyRequest.deleteMany({ where: { shop } }),
