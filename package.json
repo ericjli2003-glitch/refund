@@ -15,7 +15,7 @@
     "prisma:validate": "prisma validate",
     "lint": "eslint --ignore-path .gitignore --cache --cache-location ./node_modules/.cache/eslint .",
     "test": "vite-node --script app/test.ts",
-    "test:oauth": "vite-node --script tests/agent-oauth.integration.ts",
+    "test:oauth": "vite-node --config vite.test.config.ts tests/agent-oauth.integration.ts",
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
