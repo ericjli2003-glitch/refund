@@ -43,6 +43,7 @@ jobs:
       - run: npx prisma migrate deploy
       - run: node scripts/test-grant-cascade.mjs
       - run: npm test
+      - run: npm run test:oauth
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build

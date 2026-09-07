@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import type { Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { normalizeShopDomain } from "./customer-account.server";
 import {
@@ -54,15 +55,19 @@ const approvedGrantSchema = z
 export async function issueApprovedAgentGrant(
   input: unknown,
   now = Date.now(),
+  db: Pick<
+    Prisma.TransactionClient,
+    "customerReturnSession" | "session" | "agentAccessGrant"
+  > = prisma,
 ) {
   const approved = approvedGrantSchema.parse(input);
   const shop = normalizeShopDomain(approved.shop);
   if (approved.resource !== agentResource(shop))
     throw new AgentAccessError("invalid_token");
-  const session = await prisma.customerReturnSession.findUnique({
+  const session = await db.customerReturnSession.findUnique({
     where: { id: approved.sessionId },
   });
-  const installed = await prisma.session.findFirst({
+  const installed = await db.session.findFirst({
     where: { shop, isOnline: false },
     select: { id: true },
   });
@@ -80,7 +85,7 @@ export async function issueApprovedAgentGrant(
   const expiresAt = new Date(
     Math.min(now + 60 * 60_000, session.expiresAt.getTime()),
   );
-  await prisma.agentAccessGrant.create({
+  await db.agentAccessGrant.create({
     data: {
       tokenHash: digest(accessToken),
       sessionId: session.id,
@@ -153,6 +158,33 @@ export async function revokeAgentGrant(tokenHash: string, sessionId: string) {
     where: { tokenHash, sessionId, revokedAt: null },
     data: { revokedAt: new Date() },
   });
+}
+
+export async function listAgentGrants(sessionId: string) {
+  const grants = await prisma.agentAccessGrant.findMany({
+    where: { sessionId, revokedAt: null, expiresAt: { gt: new Date() } },
+    select: { tokenHash: true, clientId: true, scopes: true, expiresAt: true },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  return Promise.all(
+    grants.map(async (grant) => {
+      const client = await prisma.agentOAuthClient.findUnique({
+        where: { id: grant.clientId },
+      });
+      const info = client
+        ? (JSON.parse(
+            unseal(client.sealedInformation, `agent-client:${grant.clientId}`),
+          ) as { client_name?: string })
+        : null;
+      return {
+        id: grant.tokenHash,
+        name: info?.client_name || "Assistant",
+        scopes: grant.scopes,
+        expiresAt: grant.expiresAt.toISOString(),
+      };
+    }),
+  );
 }
 
 export function agentChallenge(

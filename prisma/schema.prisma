@@ -53,20 +53,53 @@ model MerchantDirectory {
 
 // Only a random opaque identifier reaches the browser. OAuth material is encrypted.
 model CustomerReturnSession {
-  id                  String             @id
+  id                  String              @id
   shop                String
-  stateHash           String?            @unique
+  stateHash           String?             @unique
   sealedState         String?
   accessToken         String?
   customerSubjectHash String?
   csrfToken           String
   orderHint           String?
   itemHint            String?
+  agentRequestId      String?
   expiresAt           DateTime
-  createdAt           DateTime           @default(now())
+  createdAt           DateTime            @default(now())
   agentGrants         AgentAccessGrant[]
+  agentAuthorizations AgentOAuthRequest[]
 
   @@index([shop, customerSubjectHash])
+  @@index([expiresAt])
+}
+
+model AgentOAuthClient {
+  id                String   @id
+  sealedInformation String
+  createdAt         DateTime @default(now())
+}
+
+model AgentOAuthRequest {
+  id            String                 @id
+  clientId      String
+  shop          String
+  resource      String
+  redirectUri   String
+  scopes        String[]
+  sealedState   String?
+  codeChallenge String
+  browserHash   String
+  csrfToken     String
+  status        String                 @default("PENDING")
+  codeHash      String?                @unique
+  codeExpiresAt DateTime?
+  grantHash     String?
+  sessionId     String?
+  session       CustomerReturnSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  expiresAt     DateTime
+  createdAt     DateTime               @default(now())
+
+  @@index([sessionId])
+  @@index([shop])
   @@index([expiresAt])
 }
 

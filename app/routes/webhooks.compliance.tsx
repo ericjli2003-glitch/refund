@@ -83,8 +83,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         revokedAt: true,
       },
     });
+    const authorizations = await prisma.agentOAuthRequest.findMany({
+      where: { shop, session: { customerSubjectHash } },
+      select: {
+        clientId: true,
+        resource: true,
+        scopes: true,
+        status: true,
+        createdAt: true,
+        expiresAt: true,
+      },
+    });
     const reportData = {
       returns,
+      assistantAuthorizations: authorizations.map((value) => ({
+        ...value,
+        createdAt: value.createdAt.toISOString(),
+        expiresAt: value.expiresAt.toISOString(),
+      })),
       assistantAccess: grants.map((grant) => ({
         ...grant,
         createdAt: grant.createdAt.toISOString(),
@@ -109,6 +125,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await prisma.$transaction([
       prisma.merchantDirectory.deleteMany({ where: { shop } }),
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
+      prisma.agentOAuthRequest.deleteMany({ where: { shop } }),
       prisma.agentReturn.deleteMany({ where: { shop } }),
       prisma.privacyRequest.deleteMany({ where: { shop } }),
       prisma.webhookReceipt.deleteMany({ where: { shop } }),

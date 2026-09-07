@@ -6,6 +6,8 @@ import {
   AgentAccessError,
   agentChallenge,
   authorizeAgent,
+  agentScopes,
+  type AgentScope,
 } from "../services/agent-access.server";
 import {
   appOrigin,
@@ -54,8 +56,29 @@ async function handleMcpRequest(request: Request, shopParam: string) {
     const resourceMetadataUrl = new URL(`/oauth/resource/${shop}`, appOrigin())
       .href;
     const authorization = request.headers.get("Authorization");
+    let parsedBody: unknown;
     try {
       await authorizeAgent(authorization, shop);
+      parsedBody = await readIntakeBody(request, 65_536);
+      const call = parsedBody as {
+        method?: string;
+        params?: { name?: string };
+      } | null;
+      const scopesByTool: Record<string, AgentScope> = {
+        find_returnable_items: "returns:read",
+        quote_return: "returns:quote",
+        confirm_return: "returns:submit",
+      };
+      if (
+        call?.method === "tools/call" &&
+        typeof call.params?.name === "string" &&
+        Object.hasOwn(scopesByTool, call.params.name)
+      )
+        await authorizeAgent(
+          authorization,
+          shop,
+          scopesByTool[call.params.name],
+        );
     } catch (error) {
       if (!(error instanceof AgentAccessError)) throw error;
       return privateResponse(
@@ -64,18 +87,21 @@ async function handleMcpRequest(request: Request, shopParam: string) {
             error: error.code,
             message: error.message,
             continueUrl: new URL(`/returns/${shop}`, appOrigin()).href,
-            note: "Browser sign-in does not grant remote assistant access. Remote OAuth connection is not available yet.",
+            note: "Complete Shopify sign-in and assistant consent through the OAuth connection. No return has been submitted.",
           },
           {
-            status: 401,
+            status: error.code === "insufficient_scope" ? 403 : 401,
             headers: {
-              "WWW-Authenticate": agentChallenge(resourceMetadataUrl, error),
+              "WWW-Authenticate":
+                agentChallenge(resourceMetadataUrl, error) +
+                (error.requiredScope
+                  ? ""
+                  : `, scope="${agentScopes.join(" ")}"`),
             },
           },
         ),
       );
     }
-    const parsedBody = await readIntakeBody(request, 65_536);
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,

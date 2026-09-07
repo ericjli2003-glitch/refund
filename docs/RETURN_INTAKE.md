@@ -94,11 +94,11 @@ to work around a sign-convention error.
 
 The global MCP service deliberately exposes only public intake. Browser login
 does not silently grant the requesting remote agent access. Supporting protected
-actions directly in ChatGPT/Claude still needs a registered OAuth integration
-that binds the customer, merchant, client, scopes, and token audience. Use an
-established OAuth provider, keep Shopify tokens server-side, and verify each
-host's callback and continuation behavior. Authentication metadata alone cannot
-make an unconnected chatbot discover or invoke the endpoint.
+actions directly in ChatGPT/Claude now use a separate merchant-specific OAuth
+connection with durable client registration, Shopify login, explicit assistant
+consent, and resource-bound grants. See [direct connection setup](AGENT_ACCESS.md).
+Each host still needs a live acceptance test. Authentication metadata alone
+cannot make an unconnected chatbot discover or invoke the endpoint.
 
 References:
 
