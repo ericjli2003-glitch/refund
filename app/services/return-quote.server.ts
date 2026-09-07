@@ -6,7 +6,11 @@ import {
   executeAutomaticReturn,
   getReturnableOrders,
 } from "./automatic-return.server";
-import { hashCustomerId, moneyIsAbove } from "./return-guards.server";
+import {
+  hashCustomerId,
+  moneyIsAbove,
+  refundFromReturnTotal,
+} from "./return-guards.server";
 import { signQuote, verifyQuoteSignature } from "./customer-security.server";
 
 export const returnItemsSchema = z
@@ -98,20 +102,19 @@ export async function createReturnQuote(
     orderId,
     items,
   );
-  const expectedRefund =
-    calculation.financialSummary.returnTotalSet.presentmentMoney;
-  const policyAmount = calculation.financialSummary.returnTotalSet.shopMoney;
+  const expectedRefund = refundFromReturnTotal(
+    calculation.financialSummary.returnTotalSet.presentmentMoney,
+  );
+  const policyAmount = refundFromReturnTotal(
+    calculation.financialSummary.returnTotalSet.shopMoney,
+  );
   if (policyAmount.currencyCode !== policy.currencyCode)
     throw new Error(
       `This store's automatic-refund policy is configured for ${policy.currencyCode}, but its Shopify currency is ${policyAmount.currencyCode}. Nothing was submitted.`,
     );
-  if (
-    moneyIsAbove(policyAmount.amount, policy.maxAutoRefundAmount) ||
-    !Number.isFinite(Number(expectedRefund.amount)) ||
-    Number(expectedRefund.amount) <= 0
-  ) {
+  if (moneyIsAbove(policyAmount.amount, policy.maxAutoRefundAmount)) {
     throw new Error(
-      "This amount is outside the store's automatic-refund limit. Nothing was submitted.",
+      `This amount is outside the store's automatic-refund limit: ${policyAmount.amount} ${policyAmount.currencyCode}, compared with the ${policy.maxAutoRefundAmount} ${policy.currencyCode} maximum. Nothing was submitted.`,
     );
   }
   const quote = {

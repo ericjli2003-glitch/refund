@@ -7,6 +7,7 @@ import {
   hashCustomerId,
   moneyAmountsMatch,
   moneyIsAbove,
+  refundFromReturnTotal,
   sameReturnItems,
   type RequestedItem,
 } from "./return-guards.server";
@@ -289,9 +290,9 @@ export async function executeAutomaticReturn({
     orderId,
     items,
   );
-  const quote = calculation.financialSummary.returnTotalSet.presentmentMoney;
+  const quote = refundFromReturnTotal(calculation.financialSummary.returnTotalSet.presentmentMoney);
   assertConfirmedAmount(quote, expectedRefund);
-  const policyAmount = calculation.financialSummary.returnTotalSet.shopMoney;
+  const policyAmount = refundFromReturnTotal(calculation.financialSummary.returnTotalSet.shopMoney);
   if (policyAmount.currencyCode !== policy.currencyCode) {
     throw new Error(
       `The store's automatic-refund policy currency (${policy.currencyCode}) does not match its Shopify currency (${policyAmount.currencyCode}). Nothing was submitted.`,

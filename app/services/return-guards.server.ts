@@ -41,6 +41,28 @@ export function moneyAmountsMatch(left: string, right: string) {
   );
 }
 
+// Customer Account returnCalculate expresses customer credits as negative totals.
+// Never use Math.abs: a positive total means the customer owes money, not a refund.
+export function refundFromReturnTotal(total: {
+  amount: string;
+  currencyCode: string;
+}) {
+  if (
+    !/^-?\d+(\.\d+)?$/.test(total.amount) ||
+    !Number.isFinite(Number(total.amount))
+  ) {
+    throw new Error(
+      "Shopify did not return a valid refund amount. Nothing was submitted.",
+    );
+  }
+  if (Number(total.amount) >= 0) {
+    throw new Error(
+      `Shopify calculated a return balance of ${total.amount} ${total.currencyCode}, with no money owed back to you. Nothing was submitted.`,
+    );
+  }
+  return { ...total, amount: total.amount.slice(1) };
+}
+
 export function hashCustomerId(customerId: string, secret: string) {
   if (!secret) {
     throw new Error("A secret is required for customer identity hashing.");
