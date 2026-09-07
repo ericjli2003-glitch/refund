@@ -13,8 +13,10 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
   const [clientTransport, serverTransport] =
     InMemoryTransport.createLinkedPair();
   const server = createCustomerReturnsMcpServer({
-    shop: "example.myshopify.com",
-    customerToken: "customer-token",
+    authorize: async () => ({
+      shop: "example.myshopify.com",
+      customerToken: "customer-token",
+    }),
     resourceMetadataUrl:
       "https://refund.test/oauth/resource/example.myshopify.com",
   });
@@ -47,11 +49,134 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
     [
       {
         type: "oauth2",
-        scopes: ["openid", "email", "customer-account-api:full"],
+        scopes: ["returns:submit"],
       },
     ],
   );
 
   await client.close();
   await server.close();
+});
+
+test("every private tool checks its own permission before any Shopify call", async (t) => {
+  const { createCustomerReturnsMcpServer } = await import("./mcp.server");
+  const { AgentAccessError } = await import("./services/agent-access.server");
+  const calls: string[] = [];
+  const upstream = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("No upstream request is allowed");
+  });
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const server = createCustomerReturnsMcpServer({
+    authorize: async (scope) => {
+      calls.push(scope);
+      throw new AgentAccessError("insufficient_scope", scope);
+    },
+    resourceMetadataUrl:
+      "https://refund.test/oauth/resource/example.myshopify.com",
+  });
+  const client = new Client({ name: "scope-test", version: "1" });
+  t.after(async () => {
+    await client.close();
+    await server.close();
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  for (const [name, args, scope] of [
+    ["find_returnable_items", {}, "returns:read"],
+    [
+      "quote_return",
+      { orderId: "order", items: [{ lineItemId: "item", quantity: 1 }] },
+      "returns:quote",
+    ],
+    [
+      "confirm_return",
+      { quoteToken: "unused", customerConfirmed: true },
+      "returns:submit",
+    ],
+  ] as const) {
+    const result = await client.callTool({ name, arguments: args });
+    assert.equal(result.isError, true);
+    assert.match(JSON.stringify(result._meta), /insufficient_scope/);
+    assert.match(JSON.stringify(result._meta), new RegExp(scope));
+  }
+  assert.deepEqual(calls, ["returns:read", "returns:quote", "returns:submit"]);
+  assert.equal(upstream.mock.callCount(), 0);
+});
+
+test("returnable order discovery accepts Shopify's null non-returnable summary", async (t) => {
+  const { createCustomerReturnsMcpServer } = await import("./mcp.server");
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: string | URL | Request, options?: RequestInit) => {
+      if (!options?.body)
+        return Response.json({
+          graphql_api: "https://shopify.com/customer/api/2026-07/graphql",
+        });
+      return Response.json({
+        data: {
+          customer: {
+            id: "customer",
+            orders: {
+              nodes: [
+                {
+                  id: "order",
+                  name: "#1001",
+                  processedAt: "2026-09-01T00:00:00Z",
+                  returnInformation: {
+                    nonReturnableSummary: null,
+                    returnableLineItems: {
+                      nodes: [
+                        {
+                          quantity: 1,
+                          lineItem: {
+                            id: "item",
+                            presentmentTitle: "Refund Test Product",
+                            currentTotalPrice: {
+                              amount: "14.00",
+                              currencyCode: "CAD",
+                            },
+                          },
+                        },
+                      ],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+    },
+  );
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const server = createCustomerReturnsMcpServer({
+    authorize: async () => ({
+      shop: "null-summary.myshopify.com",
+      customerToken: "test-token",
+    }),
+    resourceMetadataUrl:
+      "https://refund.test/oauth/resource/null-summary.myshopify.com",
+  });
+  const client = new Client({ name: "null-test", version: "1" });
+  t.after(async () => {
+    await client.close();
+    await server.close();
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  const result = await client.callTool({
+    name: "find_returnable_items",
+    arguments: { query: "#1001" },
+  });
+  assert.notEqual(result.isError, true);
+  assert.match(JSON.stringify(result.content), /Refund Test Product/);
+  assert.doesNotMatch(JSON.stringify(result.content), /test-token/);
+  const content = result.content as Array<{ text: string }>;
+  assert.deepEqual(
+    JSON.parse(content[0].text).orders[0].nonReturnableReasons,
+    [],
+  );
 });

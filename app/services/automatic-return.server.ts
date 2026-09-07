@@ -30,7 +30,7 @@ type CustomerOrdersResponse = {
         name: string;
         processedAt: string;
         returnInformation: {
-          nonReturnableSummary: { nonReturnableReasons: string[] };
+          nonReturnableSummary: { nonReturnableReasons: string[] } | null;
           returnableLineItems: {
             nodes: Array<{
               quantity: number;
