@@ -9,6 +9,12 @@ import {
 import { privateHeaders } from "../services/customer-security.server";
 import { returnHints } from "../services/return-intake.server";
 import { listAgentGrants } from "../services/agent-access.server";
+import {
+  registerBrowserReturnTools,
+  returnSessionTool,
+  type BrowserModelContext,
+  type BrowserTool,
+} from "../browser-return-tools";
 import type {
   createReturnQuote,
   submitReturnQuote,
@@ -18,13 +24,6 @@ import "../styles/customer-returns.css";
 type Orders = Awaited<ReturnType<typeof getReturnableOrders>>["orders"];
 type Quote = Awaited<ReturnType<typeof createReturnQuote>>;
 type Result = Awaited<ReturnType<typeof submitReturnQuote>>;
-type BrowserTool = {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  annotations: Record<string, boolean>;
-  execute: (input: Record<string, unknown>) => Promise<unknown>;
-};
 
 export const headers = () => privateHeaders;
 
@@ -89,6 +88,9 @@ export default function CustomerReturns() {
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [grants, setGrants] = useState(initial.grants);
+  const [browserTools, setBrowserTools] = useState<
+    "checking" | "unavailable" | "ready" | "failed"
+  >("checking");
 
   async function call(operation: string, input: Record<string, unknown> = {}) {
     setBusy(true);
@@ -130,13 +132,9 @@ export default function CustomerReturns() {
   useEffect(() => {
     const context = (
       document as Document & {
-        modelContext?: {
-          registerTool: (tool: BrowserTool) => unknown;
-          unregisterTool?: (name: string) => void;
-        };
+        modelContext?: BrowserModelContext;
       }
     ).modelContext;
-    if (!context?.registerTool) return;
     const items = {
       type: "array",
       minItems: 1,
@@ -171,6 +169,11 @@ export default function CustomerReturns() {
         }
       };
     const tools: BrowserTool[] = [
+      returnSessionTool({
+        shop: initial.shop,
+        authenticated: initial.authenticated,
+        loginUrl: new URL(initial.loginUrl, window.location.origin).href,
+      }),
       {
         name: "find_returnable_items",
         description:
@@ -180,7 +183,11 @@ export default function CustomerReturns() {
           properties: {},
           additionalProperties: false,
         },
-        annotations: { readOnlyHint: true, destructiveHint: false },
+        annotations: {
+          readOnlyHint: true,
+          consequentialHint: false,
+          untrustedContentHint: true,
+        },
         execute: run("list"),
       },
       {
@@ -193,7 +200,11 @@ export default function CustomerReturns() {
           required: ["orderId", "items"],
           additionalProperties: false,
         },
-        annotations: { readOnlyHint: true, destructiveHint: false },
+        annotations: {
+          readOnlyHint: true,
+          consequentialHint: false,
+          untrustedContentHint: true,
+        },
         execute: run("quote"),
       },
       {
@@ -212,16 +223,15 @@ export default function CustomerReturns() {
         },
         annotations: {
           readOnlyHint: false,
+          consequentialHint: true,
+          untrustedContentHint: true,
           destructiveHint: true,
           idempotentHint: true,
         },
         execute: run("confirm"),
       },
     ];
-    for (const tool of tools) context.registerTool(tool);
-    return () => {
-      for (const tool of tools) context.unregisterTool?.(tool.name);
-    };
+    return registerBrowserReturnTools(context, tools, setBrowserTools);
     // The registration closes over only stable session information; state setters are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initial.authenticated, initial.csrf, initial.shop, initial.loginUrl]);
@@ -236,6 +246,15 @@ export default function CustomerReturns() {
       <p className="return-intro">
         Securely connected to {initial.shop}. Nothing is submitted until you
         confirm the items and refund amount.
+      </p>
+      <p role="status">
+        {browserTools === "checking" && "Checking browser return-tool support…"}
+        {browserTools === "ready" &&
+          "Return tools are available to a compatible agent in this browser. No Refund connector is needed here; customer sign-in and refund confirmation are still required."}
+        {browserTools === "unavailable" &&
+          "This browser does not expose WebMCP page tools. You can use the return form below; automatic tool access depends on your browser and assistant."}
+        {browserTools === "failed" &&
+          "Browser return tools could not be registered. You can still use the return form below."}
       </p>
       {(initial.orderHint || initial.itemHint) && (
         <p>

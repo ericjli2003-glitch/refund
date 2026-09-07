@@ -8,6 +8,12 @@ return flow. A customer signs in with the retailer, selects eligible line items,
 reviews Shopify's calculated amount, and explicitly confirms before Refund opens
 the return and submits an idempotent refund to the original payment method.
 
+This is capability discovery, not background AI-visitor detection. The browser
+and assistant must support WebMCP; ordinary ChatGPT/Claude chats do not gain tools
+just by mentioning a merchant. See the priority
+[connector-free merchant handoff](docs/MERCHANT_BROWSER_HANDOFF.md) and its live
+acceptance checklist.
+
 ## What the app does
 
 1. `find_returnable_items` reads recent returnable purchases from the
@@ -80,8 +86,11 @@ once from the theme app-embed settings. The separate **Show the return button**
 setting may remain off; the page tools stay available. The panel links to
 `/returns/SHOP.myshopify.com` on the hosted app, not the native orders page.
 The customer signs in to authorize this app (a storefront login alone is not
-app authorization). The portal registers `find_returnable_items`, `quote_return`,
-and `confirm_return`; it also works as a normal customer-facing page.
+app authorization). The portal registers `get_return_session`,
+`find_returnable_items`, `quote_return`, and `confirm_return`; it also works as a
+normal customer-facing page. Its support indicator distinguishes registered
+browser tools from missing support or registration failure. Successful page
+registration is not proof that a particular assistant can use those tools.
 
 Quotes expire after ten minutes and are bound to the customer, shop, items,
 quantities, amount, and currency. Login and quote requests perform no Shopify
