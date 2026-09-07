@@ -172,6 +172,30 @@ export default function CustomerReturns() {
       };
     const tools: BrowserTool[] = [
       {
+        name: "get_return_session",
+        description:
+          "Resume the signed-in customer's latest return draft. Returns only this customer's draft, quote expiry, safe status, and recovery instructions. It never creates a return or refund.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: true, destructiveHint: false },
+        execute: run("get_session"),
+      },
+      {
+        name: "check_return_status",
+        description:
+          "Check the signed-in customer's current Refund draft or submitted return status. Use after a retry, interruption, or uncertain response before attempting any later action.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: true, destructiveHint: false },
+        execute: run("status"),
+      },
+      {
         name: "find_returnable_items",
         description:
           "Read the signed-in customer's recent orders, returnable products, and ineligibility reasons. Match the customer's requested order and item; never substitute another product without asking.",
@@ -186,7 +210,7 @@ export default function CustomerReturns() {
       {
         name: "quote_return",
         description:
-          "Calculate a return quote without submitting anything. Show the customer the exact order, products, quantities, currency, amount, and shipping instructions, then ask for explicit confirmation.",
+          "Calculate and persist a resumable return quote without submitting anything. Show the customer the exact order, products, quantities, currency, amount, correlation ID, and shipping instructions, then stop and ask for explicit confirmation.",
         inputSchema: {
           type: "object",
           properties: { orderId: { type: "string" }, items },

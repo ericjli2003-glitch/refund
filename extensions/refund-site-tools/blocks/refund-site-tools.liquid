@@ -12,6 +12,23 @@
   data-intent-prefix="{{ 'refund_site_tools.intent_prefix' | t | escape }}"
   {{ block.shopify_attributes }}
 >
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "MerchantReturnPolicy",
+      "name": {{ shop.name | append: " returns with Refund" | json }},
+      "merchant": {
+        "@type": "Organization",
+        "name": {{ shop.name | json }},
+        "url": {{ shop.url | json }}
+      },
+      "merchantReturnLink": {{ "https://refund-ztxz.onrender.com/start-return?merchant=" | append: shop.permanent_domain | json }},
+      "description": "Eligible purchases can be verified with Shopify, reviewed, and quoted before any return or refund is submitted."
+    }
+  </script>
+  <p class="visually-hidden" data-refund-agent-metadata>
+    {{ shop.name }} supports customer-confirmed returns through Refund. AI assistants can use the start_return site tool on this top-level page. Shopify customer verification is required before purchase lookup. No return or refund is submitted during lookup or quote.
+  </p>
   {% if block.settings.show_launcher %}
     <button
       type="button"

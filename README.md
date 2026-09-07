@@ -70,18 +70,31 @@ npm run build
 The `refund-site-tools` theme app extension registers two page-scoped tools in
 browsers that support WebMCP:
 
-- `get_store_return_options` advertises return support and the store's secure
-  customer-return portal entry point.
-- `start_store_return` opens the same visible return panel a shopper can use
-  directly. It does not create a return or issue a refund.
+- `get_store_return_options` advertises verified merchant readiness, return
+  support, and recovery guidance.
+- `start_return` calls the anonymous intake endpoint and returns a short-lived
+  Shopify verification URL plus a privacy-safe correlation ID. It also updates
+  the visible return link. It does not read purchases, create a return, or issue
+  a refund.
+
+Both tools are registered by JavaScript in the top-level storefront page, not
+inside an iframe. The embed also publishes merchant/return metadata in the page
+for browser discovery. `/api/merchant-readiness?merchant=STORE` checks whether
+the store is connected and whether its quote policy is enabled without exposing
+customer data.
 
 After deploying the extension, each merchant enables **AI return assistance**
 once from the theme app-embed settings. The separate **Show the return button**
 setting may remain off; the page tools stay available. The panel links to
 `/returns/SHOP.myshopify.com` on the hosted app, not the native orders page.
 The customer signs in to authorize this app (a storefront login alone is not
-app authorization). The portal registers `find_returnable_items`, `quote_return`,
-and `confirm_return`; it also works as a normal customer-facing page.
+app authorization). The portal registers `get_return_session`,
+`check_return_status`, `find_returnable_items`, `quote_return`, and
+`confirm_return`; it also works as a normal customer-facing page. The first two
+tools are protected, read-only recovery operations. A quoted draft is stored for
+14 days, keyed to a hashed customer identity and merchant. Its signed quote
+credential is encrypted at rest and only restored while valid. Fresh Shopify
+verification is still required after the browser session expires.
 
 Quotes expire after ten minutes and are bound to the customer, shop, items,
 quantities, amount, and currency. Login and quote requests perform no Shopify
@@ -179,6 +192,32 @@ The app uses PostgreSQL and runs Prisma migrations before starting the server.
 
 The `/health` route checks database connectivity and returns HTTP 503 if the app
 cannot reach PostgreSQL.
+
+## Connector-free ChatGPT desktop test (stop after quote)
+
+1. Deploy the backend migration and theme extension, then open Refund in the
+   Testing store admin once. Enable automatic returns with a test-safe limit and
+   activate **AI return assistance** in the published theme.
+2. Use the latest ChatGPT desktop app with Site tools enabled. Choose GPT-5.6
+   Sol or GPT-5.6 Terra. Do not install or enable the Refund connector.
+3. Start a blank Work/Codex conversation with no storefront tab open and say:
+   `Return the snowboard I bought from Testing Storefront. Navigate to the store
+   yourself, use its site tools, and stop after showing me the quote. Do not
+   submit a return or refund.`
+4. Confirm that ChatGPT navigates to the Testing storefront and that the address
+   bar lists `get_store_return_options` and `start_return` as site tools.
+5. Let ChatGPT call `start_return` and open its `continueUrl`. Complete Shopify
+   customer verification yourself; never give the assistant the sign-in code.
+6. Back in the Refund portal, confirm its site tools include
+   `get_return_session`, `check_return_status`, `find_returnable_items`, and
+   `quote_return`. Let ChatGPT find the snowboard and calculate the quote.
+7. Stop when the exact item, quantity, currency, amount, expiry, and correlation
+   ID are shown. Do not call `confirm_return` and do not click **Confirm return
+   and refund**.
+8. To test recovery, close and reopen the portal while the customer session is
+   valid, then ask: `Use get_return_session to resume my draft. Do not submit
+   it.` The same correlation ID and quote should return until expiry; an expired
+   quote must instruct the agent to run `quote_return` again.
 
 > The previous local SQLite database is not compatible with the PostgreSQL
 > migration history. Use PostgreSQL; do not point these migrations at SQLite.

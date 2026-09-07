@@ -1,4 +1,5 @@
 import * as z from "zod/v4";
+import { randomUUID } from "node:crypto";
 import { appOrigin, seal, unseal } from "./customer-security.server";
 import { resolveMerchant } from "./merchant-directory.server";
 
@@ -79,10 +80,12 @@ export function returnHints(url: URL, shop: string) {
 
 export async function startReturnIntake(input: unknown) {
   const { merchant, orderName, itemName } = intakeSchema.parse(input);
+  const correlationId = randomUUID();
   const store = await resolveMerchant(merchant);
   if (!store)
     return {
       status: "merchant_not_resolved" as const,
+      correlationId,
       message:
         "Refund could not verify this store as connected. Check the website address or use the merchant's published return page. This does not establish whether the purchase is returnable.",
     };
@@ -91,6 +94,7 @@ export async function startReturnIntake(input: unknown) {
   url.searchParams.set("continuation", continuation);
   return {
     status: "verification_required" as const,
+    correlationId,
     merchant: store,
     continueUrl: url.href,
     expiresInSeconds: 1800,
@@ -99,6 +103,6 @@ export async function startReturnIntake(input: unknown) {
     returnSubmitted: false,
     refundSubmitted: false,
     nextStep:
-      "Open continueUrl for the customer to verify the email used at checkout. Keep passwords and sign-in codes on the merchant's Shopify sign-in page. A browser agent can then use the portal's find_returnable_items and quote_return tools. Ask for explicit confirmation of the exact quote before any submission. This link does not authorize remote MCP access.",
+      "Open continueUrl in the browser. Ask the customer to complete Shopify verification themselves and keep passwords and sign-in codes on Shopify's page. When the portal returns, use get_return_session, find_returnable_items, and quote_return. Stop after showing the exact quote; do not submit unless the customer later gives explicit confirmation. If interrupted, reopen continueUrl and use get_return_session. Give support the correlationId, never credentials.",
   };
 }

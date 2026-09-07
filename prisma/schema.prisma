@@ -72,6 +72,29 @@ model CustomerReturnSession {
   @@index([expiresAt])
 }
 
+// One resumable, authenticated draft per customer and store. Quote credentials
+// remain encrypted at rest and are only returned to that verified customer.
+model ReturnDraft {
+  id                  String   @id @default(uuid())
+  shop                String
+  customerSubjectHash String
+  stage               String   @default("PURCHASES_FOUND")
+  orderId             String?
+  orderName           String?
+  selectedItems       Json?
+  quoteSnapshot       Json?
+  sealedQuoteToken    String?
+  quoteId             String?
+  quoteExpiresAt      DateTime?
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([shop, customerSubjectHash])
+  @@index([expiresAt])
+  @@index([shop, quoteId])
+}
+
 model AgentOAuthClient {
   id                String   @id
   sealedInformation String

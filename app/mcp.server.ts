@@ -12,6 +12,12 @@ import {
   agentChallenge,
   type AgentScope,
 } from "./services/agent-access.server";
+import {
+  getReturnSession,
+  markDraftSubmitted,
+  notePurchaseLookup,
+  saveReturnQuote,
+} from "./services/return-draft.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -68,13 +74,56 @@ export function createCustomerReturnsMcpServer({
 }: {
   authorize: (
     scope: AgentScope,
-  ) => Promise<{ shop: string; customerToken: string }>;
+  ) => Promise<{
+    shop: string;
+    customerToken: string;
+    customerSubjectHash?: string;
+  }>;
   resourceMetadataUrl: string;
 }) {
   const server = new McpServer({
     name: "Shopify customer returns",
     version: "0.3.0",
   });
+
+  for (const name of ["get_return_session", "check_return_status"] as const) {
+    server.registerTool(
+      name,
+      {
+        title:
+          name === "get_return_session"
+            ? "Resume a customer return draft"
+            : "Check a customer return status",
+        description:
+          "Reads only the authenticated customer's latest Refund draft and any known submission status. Use after interruption or an uncertain retry. Never creates a return or refund.",
+        inputSchema: {},
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        _meta: { securitySchemes: securitySchemes("returns:read") },
+      },
+      async () => {
+        try {
+          const context = await authorize("returns:read");
+          if (!context.customerSubjectHash)
+            throw new Error("This customer session cannot resume drafts.");
+          const result = await getReturnSession({
+            shop: context.shop,
+            customerSubjectHash: context.customerSubjectHash,
+          });
+          return {
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+            structuredContent: result,
+          };
+        } catch (error) {
+          return toolError(error, resourceMetadataUrl);
+        }
+      },
+    );
+  }
 
   server.registerTool(
     "find_returnable_items",
@@ -99,8 +148,11 @@ export function createCustomerReturnsMcpServer({
     },
     async ({ query }) => {
       try {
-        const { shop, customerToken } = await authorize("returns:read");
+        const { shop, customerToken, customerSubjectHash } =
+          await authorize("returns:read");
         const { orders } = await getReturnableOrders(shop, customerToken);
+        if (customerSubjectHash)
+          await notePurchaseLookup({ shop, customerSubjectHash });
         const normalizedQuery = query?.trim().toLowerCase();
         const matches = orders
           .map((order) => ({
@@ -165,11 +217,15 @@ export function createCustomerReturnsMcpServer({
     },
     async ({ orderId, items }) => {
       try {
-        const { shop, customerToken } = await authorize("returns:quote");
+        const { shop, customerToken, customerSubjectHash } =
+          await authorize("returns:quote");
         const quote = await createReturnQuote(shop, customerToken, {
           orderId,
           items,
         });
+        const draft = customerSubjectHash
+          ? await saveReturnQuote({ shop, customerSubjectHash }, quote)
+          : null;
         return {
           content: [
             {
@@ -177,6 +233,7 @@ export function createCustomerReturnsMcpServer({
               text: JSON.stringify(
                 {
                   ...quote,
+                  correlationId: draft?.id,
                   nextStep:
                     "Ask the customer to explicitly confirm this exact return and amount before using confirm_return.",
                 },
@@ -221,12 +278,15 @@ export function createCustomerReturnsMcpServer({
     },
     async ({ quoteToken, customerNote, customerConfirmed }) => {
       try {
-        const { shop, customerToken } = await authorize("returns:submit");
+        const { shop, customerToken, customerSubjectHash } =
+          await authorize("returns:submit");
         const result = await submitReturnQuote(shop, customerToken, {
           quoteToken,
           customerNote,
           customerConfirmed,
         });
+        if (customerSubjectHash)
+          await markDraftSubmitted({ shop, customerSubjectHash }, result);
         return {
           content: [
             {

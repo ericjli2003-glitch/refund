@@ -18,6 +18,12 @@ import {
   listAgentGrants,
   revokeAgentGrant,
 } from "../services/agent-access.server";
+import {
+  getReturnSession,
+  markDraftSubmitted,
+  notePurchaseLookup,
+  saveReturnQuote,
+} from "../services/return-draft.server";
 
 // A resource route keeps fetch/WebMCP responses JSON, separate from portal HTML.
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -49,7 +55,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
         { headers: privateHeaders },
       );
     }
-    if (body.operation === "list")
+    const customer = {
+      shop,
+      customerSubjectHash: session.customerSubjectHash!,
+    };
+    if (body.operation === "get_session" || body.operation === "status")
+      return Response.json(
+        { session: await getReturnSession(customer) },
+        { headers: privateHeaders },
+      );
+    if (body.operation === "list") {
+      await notePurchaseLookup(customer);
       return Response.json(
         {
           orders: (await getReturnableOrders(shop, session.customerToken))
@@ -57,16 +73,23 @@ export async function action({ request, params }: ActionFunctionArgs) {
         },
         { headers: privateHeaders },
       );
-    if (body.operation === "quote")
+    }
+    if (body.operation === "quote") {
+      const quote = await createReturnQuote(shop, session.customerToken, body);
+      const draft = await saveReturnQuote(customer, quote);
       return Response.json(
-        { quote: await createReturnQuote(shop, session.customerToken, body) },
+        { quote: { ...quote, correlationId: draft.id } },
         { headers: privateHeaders },
       );
-    if (body.operation === "confirm")
+    }
+    if (body.operation === "confirm") {
+      const result = await submitReturnQuote(shop, session.customerToken, body);
+      await markDraftSubmitted(customer, result);
       return Response.json(
-        { result: await submitReturnQuote(shop, session.customerToken, body) },
+        { result },
         { headers: privateHeaders },
       );
+    }
     if (body.operation === "logout") {
       await prisma.customerReturnSession.deleteMany({
         where: { id: session.id },
