@@ -6,6 +6,7 @@ import {
   hashCustomerId,
   moneyAmountsMatch,
   moneyIsAbove,
+  refundFromReturnTotal,
   sameReturnItems,
 } from "./return-guards.server";
 
@@ -55,4 +56,30 @@ test("customer identifiers are stable, secret-keyed hashes", () => {
     hashCustomerId(customerId, "another-secret"),
   );
   assert.throws(() => hashCustomerId(customerId, ""));
+});
+
+test("Shopify return credits become exact positive refunds, never customer charges", () => {
+  assert.deepEqual(
+    refundFromReturnTotal({ amount: "-14.00", currencyCode: "CAD" }),
+    {
+      amount: "14.00",
+      currencyCode: "CAD",
+    },
+  );
+  assert.equal(
+    refundFromReturnTotal({ amount: "-0.001", currencyCode: "KWD" }).amount,
+    "0.001",
+  );
+  for (const amount of [
+    "0",
+    "-0.00",
+    "14.00",
+    "NaN",
+    "Infinity",
+    "-1e2",
+    "",
+    " -14.00",
+  ]) {
+    assert.throws(() => refundFromReturnTotal({ amount, currencyCode: "CAD" }));
+  }
 });

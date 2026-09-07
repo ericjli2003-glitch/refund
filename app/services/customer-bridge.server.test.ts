@@ -301,7 +301,7 @@ test("changed quote stops before any return record or Shopify mutation", async (
             returnCalculate: {
               financialSummary: {
                 returnTotalSet: {
-                  presentmentMoney: { amount: "15.00", currencyCode: "CAD" },
+                  presentmentMoney: { amount: "-15.00", currencyCode: "CAD" },
                 },
               },
             },
@@ -328,7 +328,7 @@ test("changed quote stops before any return record or Shopify mutation", async (
 test("quotes use Shopify shop money for policy limits without changing customer currency", async (t) => {
   const shop = "currency-test.myshopify.com";
   let limit = "100.00";
-  let calculatedAmount = "14.00";
+  let calculatedAmount = "-14.00";
   mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
     automaticRefundsEnabled: true,
     returnWindowDays: 30,
@@ -391,7 +391,7 @@ test("quotes use Shopify shop money for policy limits without changing customer 
                   amount: calculatedAmount,
                   currencyCode: "CAD",
                 },
-                shopMoney: { amount: "10.00", currencyCode: "USD" },
+                shopMoney: { amount: "-10.00", currencyCode: "USD" },
               },
             },
           },
@@ -410,11 +410,11 @@ test("quotes use Shopify shop money for policy limits without changing customer 
     /outside.*limit/,
   );
   limit = "100.00";
-  for (const amount of ["0.00", "-14.00"]) {
+  for (const amount of ["0.00", "14.00"]) {
     calculatedAmount = amount;
     await assert.rejects(
       createReturnQuote(shop, "test-token", input),
-      /not a positive refund/,
+      /no money owed back/,
     );
   }
   calculatedAmount = "invalid";

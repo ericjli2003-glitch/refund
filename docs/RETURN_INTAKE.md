@@ -79,6 +79,17 @@ scope returned `invalid_scope`; the same PKCE flow without it successfully
 authenticated and retrieved the customer's orders. Do not broaden data access
 or bypass identity verification to work around an authorization failure.
 
+### Shopify return balance convention
+
+Customer Account `returnCalculate` expresses credits as negative `returnTotalSet`
+values (see Shopify's [self-serve returns example](https://shopify.dev/docs/apps/build/orders-fulfillment/returns-apps/build-self-serve-returns)).
+Both quoting and submission convert a strictly negative return balance into a
+positive refund, preserving the decimal string and currency. Zero, positive
+(customer owes money), and invalid balances fail closed. Merchant caps compare
+the converted shop-currency refund; customer confirmation uses presentment
+currency. Never apply an unconditional absolute value or increase the store cap
+to work around a sign-convention error.
+
 ## Remaining native chat integration
 
 The global MCP service deliberately exposes only public intake. Browser login
