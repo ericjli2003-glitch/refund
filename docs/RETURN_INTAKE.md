@@ -68,6 +68,17 @@ continuations, HTTP and MCP behavior, unsupported merchants, and the handoff
 into the pending Shopify OAuth session. They do not replace a successful live
 Shopify login or a confirmed test return.
 
+### Customer sign-in scopes
+
+Refund requests `openid customer-account-api:full`. It verifies the ID token and
+then resolves the authenticated Customer Account API customer ID; it does not
+need an email claim to match ownership. The customer's checkout email can still
+be used on Shopify's own sign-in screen without granting Refund the OIDC `email`
+scope. In the Testing development store, requesting the additional `email`
+scope returned `invalid_scope`; the same PKCE flow without it successfully
+authenticated and retrieved the customer's orders. Do not broaden data access
+or bypass identity verification to work around an authorization failure.
+
 ## Remaining native chat integration
 
 The global MCP service deliberately exposes only public intake. Browser login

@@ -155,7 +155,9 @@ export async function startCustomerLogin(request: Request) {
   authUrl.search = new URLSearchParams({
     client_id: clientId,
     response_type: "code",
-    scope: "openid email customer-account-api:full",
+    // Identity/ownership uses the verified customer ID, not an email claim.
+    // Requesting email also makes login depend on separate protected-field access.
+    scope: "openid customer-account-api:full",
     redirect_uri: `${appOrigin()}/customer/callback`,
     state,
     nonce,

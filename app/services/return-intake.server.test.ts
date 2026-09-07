@@ -306,6 +306,12 @@ test("storefront entry carries order and item through OAuth without creating a r
   );
   const response = await startCustomerLogin(new Request(login));
   assert.equal(response.status, 302);
+  const authorization = new URL(response.headers.get("Location")!);
+  assert.equal(
+    authorization.searchParams.get("scope"),
+    "openid customer-account-api:full",
+  );
+  assert.equal(authorization.searchParams.get("code_challenge_method"), "S256");
   assert.equal(pending.orderHint, "#1001");
   assert.equal(pending.itemHint, "Snowboard");
   assert.ok(!response.headers.get("Location")!.includes("Snowboard"));
