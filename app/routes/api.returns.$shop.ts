@@ -14,6 +14,10 @@ import {
   submitReturnQuote,
 } from "../services/return-quote.server";
 import prisma from "../db.server";
+import {
+  listAgentGrants,
+  revokeAgentGrant,
+} from "../services/agent-access.server";
 
 // A resource route keeps fetch/WebMCP responses JSON, separate from portal HTML.
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -36,6 +40,15 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   try {
     const body = JSON.parse(bodyText) as Record<string, unknown>;
+    if (body.operation === "disconnect_assistant") {
+      if (typeof body.grantId !== "string" || !/^[\w-]{43}$/.test(body.grantId))
+        throw new Error("Invalid assistant connection.");
+      await revokeAgentGrant(body.grantId, session.id);
+      return Response.json(
+        { grants: await listAgentGrants(session.id) },
+        { headers: privateHeaders },
+      );
+    }
     if (body.operation === "list")
       return Response.json(
         {

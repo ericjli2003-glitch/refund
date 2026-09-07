@@ -132,8 +132,9 @@ these tools, or a compatible browser must visit the store. Verification happens
 on Shopify's secure page. The current continuation resumes in the customer
 portal; it does **not** link a ChatGPT/Claude account, issue an agent access token,
 or resume protected remote tools. A Refund OAuth provider and host registration
-remain separate work. The browser sign-in and exact-quote flow has been verified
-in the development store; native remote-agent authorization is not live yet.
+are now implemented through a merchant-specific OAuth connection. The browser
+sign-in and exact-quote flow has been verified in the development store; each
+native host still needs its own connection and live acceptance test.
 
 ### Protected store tools
 
@@ -143,19 +144,19 @@ The protected store endpoint is reserved for customer-approved Refund grants:
 https://YOUR_APP_HOST/mcp/SHOP.myshopify.com
 ```
 
-**This is not ready to connect in ChatGPT/Claude yet.** The legacy Shopify-token
+The backend supports hosted ChatGPT/Claude OAuth connection testing. The legacy Shopify-token
 pass-through has been removed. Cookies, Shopify tokens, intake links and quotes
 cannot authorize this endpoint. It accepts only separate, expiring Refund grants
 bound to an approved client, customer session, store and resource, with per-tool
 `returns:read`, `returns:quote`, or `returns:submit` permissions. Submission still
 requires the exact signed quote and affirmative customer confirmation.
 
-The grant issuance/revocation primitives are server-internal; no HTTP or MCP
-operation exposes token minting. The OAuth consent screen, registered-client
-validation, PKCE code exchange, and host integration remain to be implemented.
-Until then, `/oauth/resource/:shop` returns a clear 503 instead of incorrectly
-advertising Shopify as Refund's authorization server. Use the public intake and
-browser portal for current tests. See [agent access](docs/AGENT_ACCESS.md).
+The production HTTP server mounts the MCP SDK's OAuth handlers, durable dynamic
+client registration, and a separate customer consent page. A single-use S256
+PKCE code exchange mints the grant; no MCP tool exposes token minting. The
+metadata points to Refund's issuer, not Shopify. Customer sign-in resumes the
+assistant consent screen, then returns a code to the exact host callback.
+See [connection setup and test limits](docs/AGENT_ACCESS.md).
 
 ## Production deployment
 

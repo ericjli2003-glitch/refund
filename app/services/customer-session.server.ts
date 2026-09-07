@@ -7,6 +7,7 @@ import {
 } from "./customer-account.server";
 import { hashCustomerId } from "./return-guards.server";
 import { makeContinuation, returnHints } from "./return-intake.server";
+import { getAgentAuthorizationRequest } from "./agent-oauth-flow.server";
 import {
   appOrigin,
   digest,
@@ -117,6 +118,15 @@ export async function startCustomerLogin(request: Request) {
   const url = new URL(request.url);
   const shop = await requireInstalledShop(url.searchParams.get("shop") || "");
   const hints = returnHints(url, shop);
+  const agentRequestId = url.searchParams.get("agentRequest");
+  if (agentRequestId) {
+    const flow = await getAgentAuthorizationRequest(request, agentRequestId);
+    if (flow.shop !== shop)
+      throw new Response("Assistant connection belongs to another store.", {
+        status: 400,
+        headers: privateHeaders,
+      });
+  }
   const clientId = process.env.SHOPIFY_API_KEY;
   if (!clientId) throw new Error("Customer sign-in is not configured.");
   const discovery = await discover(shop);
@@ -147,6 +157,7 @@ export async function startCustomerLogin(request: Request) {
         ),
         orderHint: hints.orderName,
         itemHint: hints.itemName,
+        agentRequestId,
         expiresAt: new Date(Date.now() + 600_000),
       },
     }),
@@ -195,6 +206,11 @@ export async function finishCustomerLogin(request: Request) {
       headers: privateHeaders,
     });
   if (url.searchParams.has("error") || !url.searchParams.get("code")) {
+    if (pending.agentRequestId)
+      return redirect(
+        `/agent/authorize/${pending.agentRequestId}?loginError=1`,
+        { headers: privateHeaders },
+      );
     const retry = new URLSearchParams({
       loginError: "1",
       continuation: makeContinuation(pending.shop, {
@@ -283,7 +299,12 @@ export async function finishCustomerLogin(request: Request) {
       },
     }),
   ]);
-  return redirect(`/returns/${pending.shop}`, {
-    headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
-  });
+  return redirect(
+    pending.agentRequestId
+      ? `/agent/authorize/${pending.agentRequestId}`
+      : `/returns/${pending.shop}`,
+    {
+      headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
+    },
+  );
 }

@@ -8,6 +8,7 @@ import {
 } from "../services/customer-session.server";
 import { privateHeaders } from "../services/customer-security.server";
 import { returnHints } from "../services/return-intake.server";
+import { listAgentGrants } from "../services/agent-access.server";
 import type {
   createReturnQuote,
   submitReturnQuote,
@@ -67,6 +68,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     {
       shop,
       authenticated,
+      grants: session && authenticated ? await listAgentGrants(session.id) : [],
       csrf: session?.csrfToken || "",
       orders,
       orderHint,
@@ -86,6 +88,7 @@ export default function CustomerReturns() {
   const [error, setError] = useState(initial.error);
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [grants, setGrants] = useState(initial.grants);
 
   async function call(operation: string, input: Record<string, unknown> = {}) {
     setBusy(true);
@@ -103,6 +106,7 @@ export default function CustomerReturns() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "The request failed.");
       if (payload.orders) setOrders(payload.orders);
+      if (payload.grants) setGrants(payload.grants);
       if (payload.quote) {
         setQuote(payload.quote);
         setConfirmed(false);
@@ -288,6 +292,29 @@ export default function CustomerReturns() {
               </h2>
               <p>{result.message}</p>
               <p>Status: {result.status}</p>
+            </section>
+          )}
+          {grants.length > 0 && (
+            <section aria-label="Connected assistants">
+              <h2>Connected assistants</h2>
+              {grants.map((grant) => (
+                <div key={grant.id}>
+                  <p>
+                    <strong>{grant.name}</strong> · Expires{" "}
+                    {new Date(grant.expiresAt).toLocaleString()}
+                  </p>
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void call("disconnect_assistant", {
+                        grantId: grant.id,
+                      }).catch(() => {})
+                    }
+                  >
+                    Disconnect {grant.name}
+                  </button>
+                </div>
+              ))}
             </section>
           )}
           {quote && (

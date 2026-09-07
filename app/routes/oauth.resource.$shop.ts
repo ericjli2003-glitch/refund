@@ -1,4 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
+import { agentResource, agentScopes } from "../services/agent-access.server";
+import { requireInstalledShop } from "../services/customer-session.server";
 import { normalizeShopDomain } from "../services/customer-account.server";
 import {
   appOrigin,
@@ -13,9 +15,19 @@ export const loader = async ({ params }: LoaderFunctionArgs) => {
   } catch {
     return Response.json({ error: "invalid_store" }, { status: 400, headers });
   }
-  // Shopify is the upstream customer identity provider, NOT Refund's OAuth
-  // authorization server. Do not advertise it as an issuer for our resource.
-  // Replace this response only when the consent + code/PKCE broker is ready.
+  if (process.env.REFUND_OAUTH_HTTP_READY === "1") {
+    await requireInstalledShop(shop);
+    return Response.json(
+      {
+        resource: agentResource(shop),
+        authorization_servers: [appOrigin()],
+        scopes_supported: [...agentScopes],
+        bearer_methods_supported: ["header"],
+        resource_name: `Refund returns for ${shop}`,
+      },
+      { headers },
+    );
+  }
   return Response.json(
     {
       error: "agent_authorization_not_configured",

@@ -12,6 +12,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   await db.$transaction([
     db.merchantDirectory.deleteMany({ where: { shop } }),
     db.customerReturnSession.deleteMany({ where: { shop } }),
+    db.agentOAuthRequest.deleteMany({ where: { shop } }),
     db.agentReturn.deleteMany({ where: { shop } }),
     db.privacyRequest.deleteMany({ where: { shop } }),
     db.webhookReceipt.deleteMany({ where: { shop } }),
