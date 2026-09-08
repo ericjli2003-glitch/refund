@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import prisma from "../db.server";
 import { appOrigin, digest, seal, unseal } from "./customer-security.server";
 import { resolveMerchant } from "./merchant-directory.server";
+import { noteUnresolvedMerchant, stoppedDiscovery } from "./merchant-opportunity.server";
 
 export const intakeSchema = z
   .object({
@@ -12,7 +13,7 @@ export const intakeSchema = z
       .min(1)
       .max(2048)
       .describe(
-        "Merchant website, domain, or exact published store name. If a name is ambiguous, ask the customer which website they mean.",
+        "Merchant website, domain, or exact published store name. If it cannot be uniquely resolved, stop without starting a return.",
       ),
     orderName: z.string().trim().max(120).optional(),
     itemName: z.string().trim().max(120).optional(),
@@ -86,13 +87,16 @@ export async function startReturnIntake(input: unknown) {
   const { merchant, orderName, itemName, idempotencyKey } = intakeSchema.parse(input);
   const correlationId = randomUUID();
   const store = await resolveMerchant(merchant);
-  if (!store)
+  if (!store) {
+    await noteUnresolvedMerchant(merchant, "intake", correlationId);
     return {
+      ...stoppedDiscovery,
       status: "merchant_not_resolved" as const,
       correlationId,
       message:
-        "Refund could not find one connected store matching that name or website. Check /stores for published matches or ask the customer for the store website. This does not establish whether the purchase is returnable.",
+        "The store could not be uniquely identified. Nothing has been submitted.",
     };
+  }
   const hints = JSON.stringify({ orderName, itemName });
   const key = digest(`${store.shop}:${idempotencyKey || randomUUID()}`);
   const inputHash = digest(hints);

@@ -53,6 +53,24 @@ model MerchantDirectory {
   verifiedAt    DateTime @default(now())
 }
 
+// Owner-only, unverified demand signals. Never exposed in merchant/customer APIs.
+// One record per normalized merchant per UTC day; not a unique-customer count.
+model MerchantOpportunity {
+  id            String   @id
+  merchantLabel String
+  kind          String
+  knownShop     String?
+  source        String
+  reviewStatus  String   @default("UNREVIEWED")
+  firstSeenAt   DateTime @default(now())
+  lastSeenAt    DateTime @default(now())
+  expiresAt     DateTime
+
+  @@index([lastSeenAt])
+  @@index([expiresAt])
+  @@index([knownShop])
+}
+
 // Only a random opaque identifier reaches the browser. OAuth material is encrypted.
 model CustomerReturnSession {
   id                  String              @id

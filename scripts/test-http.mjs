@@ -91,6 +91,51 @@ try {
     lookup.merchants[0].returnPage,
     `https://refund.test/stores/${shop}`,
   );
+  const reportingUrl = "http://127.0.0.1:3037/api/merchant-discovery-failure";
+  const beforeDrafts = await prisma.returnDraft.count();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const report = await fetch(reportingUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ merchant: merchantName }),
+    });
+    assert.equal(report.status, 202);
+    const stopped = await report.json();
+    assert.equal(stopped.status, "stopped");
+    assert.equal(stopped.returnSubmitted, false);
+    assert.equal(stopped.refundSubmitted, false);
+    assert.doesNotMatch(
+      JSON.stringify(stopped),
+      /merchantLabel|knownShop|opportunity|continueUrl/i,
+    );
+  }
+  const opportunities = await prisma.merchantOpportunity.findMany({
+    where: { merchantLabel: merchantName },
+  });
+  assert.equal(opportunities.length, 1);
+  assert.equal(opportunities[0].kind, "DISCOVERY_GAP");
+  assert.equal(opportunities[0].knownShop, shop);
+  assert.equal(await prisma.returnDraft.count(), beforeDrafts);
+  assert.equal((await fetch(reportingUrl)).status, 405);
+  const invalidReport = await fetch(reportingUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      merchant: merchantName,
+      email: "private@example.com",
+    }),
+  });
+  assert.equal(invalidReport.status, 400);
+  const formLookup = await fetch("http://127.0.0.1:3037/stores", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Origin: "http://127.0.0.1:3037",
+    },
+    body: new URLSearchParams({ q: merchantName }).toString(),
+  });
+  assert.equal(formLookup.status, 200);
+  assert.ok((await formLookup.text()).includes(`/stores/${shop}`));
   const script = await fetch("http://127.0.0.1:3037/store-tools.js");
   assert.equal(script.status, 200);
   assert.match(script.headers.get("content-type"), /javascript/);
@@ -121,7 +166,11 @@ try {
   );
   assert.equal(metadata.status, 200);
   assert.equal((await metadata.json()).issuer, "https://refund.test");
-  for (const path of ["/api/return-intake", "/mcp"]) {
+  for (const path of [
+    "/api/return-intake",
+    "/mcp",
+    "/api/merchant-discovery-failure",
+  ]) {
     const preflight = await fetch(`http://127.0.0.1:3037${path}`, {
       method: "OPTIONS",
       headers: {
@@ -162,6 +211,9 @@ try {
 } finally {
   server.kill("SIGTERM");
   await closed;
+  await prisma.merchantOpportunity.deleteMany({
+    where: { merchantLabel: merchantName },
+  });
   await prisma.merchantDirectory.deleteMany({ where: { shop } });
   await prisma.session.deleteMany({ where: { shop } });
   await prisma.$disconnect();

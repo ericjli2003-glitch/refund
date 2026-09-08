@@ -13,6 +13,7 @@ COPY package.json package-lock.json* ./
 COPY prisma ./prisma
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/build ./build
+COPY scripts/merchant-opportunities.mjs ./scripts/merchant-opportunities.mjs
 
 EXPOSE 3000
 USER node
