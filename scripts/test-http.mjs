@@ -44,6 +44,17 @@ try {
   );
   assert.equal(metadata.status, 200);
   assert.equal((await metadata.json()).issuer, "https://refund.test");
+  for (const path of ["/api/return-intake", "/mcp"]) {
+    const preflight = await fetch(`http://127.0.0.1:3037${path}`, {
+      method: "OPTIONS",
+      headers: { Origin: "https://testing-bl7vdfur.myshopify.com", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" },
+    });
+    assert.equal(preflight.status, 204, `${path} must accept browser preflight`);
+    assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
+    assert.match(preflight.headers.get("access-control-allow-methods"), /POST/);
+    assert.match(preflight.headers.get("access-control-allow-headers"), /Content-Type/i);
+    assert.equal((await fetch(`http://127.0.0.1:3037${path}`)).status, 405);
+  }
   const protectedResponse = await fetch(
     "http://127.0.0.1:3037/mcp/unconnected.myshopify.com",
     {

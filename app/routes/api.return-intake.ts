@@ -1,4 +1,4 @@
-import type { ActionFunctionArgs } from "react-router";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import {
   intakeSchema,
   startReturnIntake,
@@ -8,9 +8,10 @@ import {
   readIntakeBody,
 } from "../services/public-intake-http.server";
 
-export const loader = () =>
+// Resource-route OPTIONS requests are dispatched to the loader, not the action.
+export const loader = ({ request }: Pick<LoaderFunctionArgs, "request">) =>
   intakeResponse(
-    new Response("Use POST.", {
+    request.method === "OPTIONS" ? new Response(null, { status: 204 }) : new Response("Use POST.", {
       status: 405,
       headers: { Allow: "POST, OPTIONS" },
     }),
@@ -19,7 +20,7 @@ export const loader = () =>
 export async function action({ request }: ActionFunctionArgs) {
   if (request.method === "OPTIONS")
     return intakeResponse(new Response(null, { status: 204 }));
-  if (request.method !== "POST") return loader();
+  if (request.method !== "POST") return loader({ request });
   try {
     const input = intakeSchema.safeParse(await readIntakeBody(request));
     if (!input.success)
