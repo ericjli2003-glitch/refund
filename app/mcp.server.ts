@@ -6,6 +6,7 @@ import { CustomerAccountApiError } from "./services/customer-account.server";
 import {
   createReturnQuote,
   submitReturnQuote,
+  readBoundQuote,
 } from "./services/return-quote.server";
 import {
   AgentAccessError,
@@ -78,6 +79,7 @@ export function createCustomerReturnsMcpServer({
     shop: string;
     customerToken: string;
     customerSubjectHash?: string;
+    draftId?: string | null;
   }>;
   resourceMetadataUrl: string;
 }) {
@@ -113,6 +115,7 @@ export function createCustomerReturnsMcpServer({
           const result = await getReturnSession({
             shop: context.shop,
             customerSubjectHash: context.customerSubjectHash,
+            draftId: context.draftId,
           });
           return {
             content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
@@ -148,11 +151,11 @@ export function createCustomerReturnsMcpServer({
     },
     async ({ query }) => {
       try {
-        const { shop, customerToken, customerSubjectHash } =
+        const { shop, customerToken, customerSubjectHash, draftId } =
           await authorize("returns:read");
         const { orders } = await getReturnableOrders(shop, customerToken);
         if (customerSubjectHash)
-          await notePurchaseLookup({ shop, customerSubjectHash });
+          await notePurchaseLookup({ shop, customerSubjectHash, draftId });
         const normalizedQuery = query?.trim().toLowerCase();
         const matches = orders
           .map((order) => ({
@@ -217,14 +220,14 @@ export function createCustomerReturnsMcpServer({
     },
     async ({ orderId, items }) => {
       try {
-        const { shop, customerToken, customerSubjectHash } =
+        const { shop, customerToken, customerSubjectHash, draftId } =
           await authorize("returns:quote");
         const quote = await createReturnQuote(shop, customerToken, {
           orderId,
           items,
         });
         const draft = customerSubjectHash
-          ? await saveReturnQuote({ shop, customerSubjectHash }, quote)
+          ? await saveReturnQuote({ shop, customerSubjectHash, draftId }, quote)
           : null;
         return {
           content: [
@@ -232,7 +235,7 @@ export function createCustomerReturnsMcpServer({
               type: "text",
               text: JSON.stringify(
                 {
-                  ...quote,
+                  ...(draft?.quote || quote),
                   correlationId: draft?.id,
                   nextStep:
                     "Ask the customer to explicitly confirm this exact return and amount before using confirm_return.",
@@ -286,7 +289,8 @@ export function createCustomerReturnsMcpServer({
           customerConfirmed,
         });
         if (customerSubjectHash)
-          await markDraftSubmitted({ shop, customerSubjectHash }, result);
+          await markDraftSubmitted({ shop, customerSubjectHash }, result,
+            readBoundQuote(quoteToken, shop, customerSubjectHash).id);
         return {
           content: [
             {

@@ -12,6 +12,7 @@ import {
 import {
   createReturnQuote,
   submitReturnQuote,
+  readBoundQuote,
 } from "../services/return-quote.server";
 import prisma from "../db.server";
 import {
@@ -58,6 +59,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const customer = {
       shop,
       customerSubjectHash: session.customerSubjectHash!,
+      draftId: typeof body.draftId === "string" ? body.draftId : session.draftId,
     };
     if (body.operation === "get_session" || body.operation === "status")
       return Response.json(
@@ -65,11 +67,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
         { headers: privateHeaders },
       );
     if (body.operation === "list") {
+      const { orders } = await getReturnableOrders(shop, session.customerToken);
       await notePurchaseLookup(customer);
       return Response.json(
         {
-          orders: (await getReturnableOrders(shop, session.customerToken))
-            .orders,
+          orders,
         },
         { headers: privateHeaders },
       );
@@ -78,13 +80,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
       const quote = await createReturnQuote(shop, session.customerToken, body);
       const draft = await saveReturnQuote(customer, quote);
       return Response.json(
-        { quote: { ...quote, correlationId: draft.id } },
+        { quote: { ...draft.quote, correlationId: draft.id } },
         { headers: privateHeaders },
       );
     }
     if (body.operation === "confirm") {
+      const quote = readBoundQuote(String(body.quoteToken || ""), shop, customer.customerSubjectHash);
       const result = await submitReturnQuote(shop, session.customerToken, body);
-      await markDraftSubmitted(customer, result);
+      await markDraftSubmitted(customer, result, quote.id);
       return Response.json(
         { result },
         { headers: privateHeaders },

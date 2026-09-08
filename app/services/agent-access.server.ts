@@ -155,6 +155,7 @@ export async function authorizeAgent(
     clientId: grant.clientId,
     sessionId: grant.sessionId,
     customerSubjectHash: grant.customerSubjectHash,
+    draftId: grant.session.draftId,
   };
 }
 

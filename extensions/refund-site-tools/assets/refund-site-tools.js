@@ -50,6 +50,7 @@
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Refund is unavailable.");
@@ -69,7 +70,7 @@
   }
 
   const modelContext = document.modelContext;
-  if (!modelContext?.registerTool || window.__refundSiteToolsRegistered) return;
+  if (window.top !== window || !modelContext?.registerTool || window.__refundSiteToolsRegistered) return;
 
   window.__refundSiteToolsRegistered = true;
   const root = roots[0];
@@ -92,6 +93,7 @@
       execute: async () => ({
         ...(await fetch(
           `${new URL(store.intakeApiUrl).origin}/api/merchant-readiness?merchant=${encodeURIComponent(store.domain)}`,
+          { signal: AbortSignal.timeout(15_000) },
         ).then(async (response) => ({
           readiness: await response.json(),
           readinessHttpStatus: response.status,
@@ -117,23 +119,38 @@
         properties: {
           orderName: {
             type: "string",
+            maxLength: 120,
             description: "Optional order number or name mentioned by the customer.",
           },
           itemName: {
             type: "string",
+            maxLength: 120,
             description: "Optional product or item mentioned by the customer.",
           },
         },
         additionalProperties: false,
       },
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
       },
       execute: async (request = {}) => {
         try {
+          // Retry the same intent with the same key, including after navigation.
+          // Store no order/item text or customer credentials in browser storage.
+          const intent = JSON.stringify([store.domain, request.orderName || "", request.itemName || ""]);
+          const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(intent));
+          const fingerprint = Array.from(new Uint8Array(bytes), value => value.toString(16).padStart(2, "0")).join("");
+          const storageKey = `refund-intake:${fingerprint}`;
+          let idempotencyKey = crypto.randomUUID();
+          try {
+            const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+            if (saved?.expiresAt > Date.now()) idempotencyKey = saved.key;
+            sessionStorage.setItem(storageKey, JSON.stringify({ key: idempotencyKey, expiresAt: Date.now() + 25 * 60_000 }));
+          } catch { /* Storage may be unavailable. Starting a new draft cannot submit money. */ }
           const result = await postJson(store.intakeApiUrl, {
+            idempotencyKey,
             merchant: store.domain,
             orderName: request.orderName,
             itemName: request.itemName,
@@ -158,9 +175,16 @@
     },
   ];
 
-  for (const tool of tools) {
-    Promise.resolve(modelContext.registerTool(tool)).catch(() => {
+  (async () => {
+    const registered = [];
+    try {
+      for (const tool of tools) {
+        await modelContext.registerTool(tool);
+        registered.push(tool.name);
+      }
+    } catch {
+      for (const name of registered) modelContext.unregisterTool?.(name);
       window.__refundSiteToolsRegistered = false;
-    });
-  }
+    }
+  })();
 })();

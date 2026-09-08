@@ -70,7 +70,7 @@ npm run build
 The `refund-site-tools` theme app extension registers two page-scoped tools in
 browsers that support WebMCP:
 
-- `get_store_return_options` advertises verified merchant readiness, return
+- `get_store_return_options` reports merchant preflight checks, return
   support, and recovery guidance.
 - `start_return` calls the anonymous intake endpoint and returns a short-lived
   Shopify verification URL plus a privacy-safe correlation ID. It also updates
@@ -80,8 +80,9 @@ browsers that support WebMCP:
 Both tools are registered by JavaScript in the top-level storefront page, not
 inside an iframe. The embed also publishes merchant/return metadata in the page
 for browser discovery. `/api/merchant-readiness?merchant=STORE` checks whether
-the store is connected and whether its quote policy is enabled without exposing
-customer data.
+the store is connected, its quote policy, Shopify discovery endpoints, and public
+theme markup without exposing customer data. Password gates are reported explicitly.
+This cannot certify browser registration or authenticated customer API access.
 
 After deploying the extension, each merchant enables **AI return assistance**
 once from the theme app-embed settings. The separate **Show the return button**
@@ -92,7 +93,10 @@ app authorization). The portal registers `get_return_session`,
 `check_return_status`, `find_returnable_items`, `quote_return`, and
 `confirm_return`; it also works as a normal customer-facing page. The first two
 tools are protected, read-only recovery operations. A quoted draft is stored for
-14 days, keyed to a hashed customer identity and merchant. Its signed quote
+14 days, scoped to a hashed customer identity, merchant, and individual draft.
+Intake creates a durable 30-minute anonymous draft; an idempotency key preserves
+its reference across retries. Shopify verification claims that same draft.
+Submission history remains independent of draft expiry or replacement. Its signed quote
 credential is encrypted at rest and only restored while valid. Fresh Shopify
 verification is still required after the browser session expires.
 
@@ -201,10 +205,12 @@ cannot reach PostgreSQL.
 2. Use the latest ChatGPT desktop app with Site tools enabled. Choose GPT-5.6
    Sol or GPT-5.6 Terra. Do not install or enable the Refund connector.
 3. Start a blank Work/Codex conversation with no storefront tab open and say:
-   `Return the snowboard I bought from Testing Storefront. Navigate to the store
+   `Return the snowboard I bought from Testing Storefront at https://testing-bl7vdfur.myshopify.com/. Navigate to the store
    yourself, use its site tools, and stop after showing me the quote. Do not
    submit a return or refund.`
-4. Confirm that ChatGPT navigates to the Testing storefront and that the address
+4. If prompted, unlock the storefront yourself in the built-in browser. Do not
+   remove the store password just for this test. Confirm that ChatGPT navigates
+   to the Testing storefront and that the address
    bar lists `get_store_return_options` and `start_return` as site tools.
 5. Let ChatGPT call `start_return` and open its `continueUrl`. Complete Shopify
    customer verification yourself; never give the assistant the sign-in code.
@@ -218,6 +224,12 @@ cannot reach PostgreSQL.
    valid, then ask: `Use get_return_session to resume my draft. Do not submit
    it.` The same correlation ID and quote should return until expiry; an expired
    quote must instruct the agent to run `quote_return` again.
+
+Providing the exact URL tests connector-free navigation and tool discovery;
+resolving the generic name "Testing Storefront" alone is a separate, unproven
+merchant-identification test. Site tools are rollout-dependent and are currently
+unavailable with Luna or Enterprise/Edu; if no tools appear, check host support
+before interpreting that as a Refund failure.
 
 > The previous local SQLite database is not compatible with the PostgreSQL
 > migration history. Use PostgreSQL; do not point these migrations at SQLite.

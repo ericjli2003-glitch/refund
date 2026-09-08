@@ -1,6 +1,7 @@
 import * as z from "zod/v4";
 import { randomUUID } from "node:crypto";
-import { appOrigin, seal, unseal } from "./customer-security.server";
+import prisma from "../db.server";
+import { appOrigin, digest, seal, unseal } from "./customer-security.server";
 import { resolveMerchant } from "./merchant-directory.server";
 
 export const intakeSchema = z
@@ -15,11 +16,13 @@ export const intakeSchema = z
       ),
     orderName: z.string().trim().max(120).optional(),
     itemName: z.string().trim().max(120).optional(),
+    idempotencyKey: z.string().uuid().optional(),
   })
   .strict();
 const continuationSchema = z
   .object({
     version: z.literal(1),
+    draftId: z.string().uuid().optional(),
     shop: z.string(),
     expiresAt: z.number(),
     orderName: z.string().max(120).optional(),
@@ -29,7 +32,7 @@ const continuationSchema = z
 
 export function makeContinuation(
   shop: string,
-  hints: { orderName?: string; itemName?: string },
+  hints: { orderName?: string; itemName?: string; draftId?: string },
   now = Date.now(),
 ) {
   return seal(
@@ -73,13 +76,14 @@ export function returnHints(url: URL, shop: string) {
   const token = url.searchParams.get("continuation");
   if (token) return readContinuation(token, shop);
   return {
+    draftId: undefined,
     orderName: url.searchParams.get("orderName")?.slice(0, 120) || undefined,
     itemName: url.searchParams.get("itemName")?.slice(0, 120) || undefined,
   };
 }
 
 export async function startReturnIntake(input: unknown) {
-  const { merchant, orderName, itemName } = intakeSchema.parse(input);
+  const { merchant, orderName, itemName, idempotencyKey } = intakeSchema.parse(input);
   const correlationId = randomUUID();
   const store = await resolveMerchant(merchant);
   if (!store)
@@ -89,12 +93,29 @@ export async function startReturnIntake(input: unknown) {
       message:
         "Refund could not verify this store as connected. Check the website address or use the merchant's published return page. This does not establish whether the purchase is returnable.",
     };
-  const continuation = makeContinuation(store.shop, { orderName, itemName });
+  const hints = JSON.stringify({ orderName, itemName });
+  const key = digest(`${store.shop}:${idempotencyKey || randomUUID()}`);
+  const inputHash = digest(hints);
+  // Delete expired draft data; submission records remain independently available.
+  await prisma.returnDraft.deleteMany({ where: { expiresAt: { lte: new Date() } } });
+  const draft = await prisma.returnDraft.upsert({
+    where: { intakeKeyHash: key },
+    create: {
+      id: correlationId, shop: store.shop, intakeKeyHash: key, inputHash,
+      stage: "VERIFICATION_REQUIRED",
+      sealedHints: seal(hints, `return-intake:${correlationId}:${store.shop}`),
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+    },
+    update: {},
+  });
+  if (draft.inputHash !== inputHash)
+    throw new Response("Retry key was reused with different return details.", { status: 409 });
+  const continuation = makeContinuation(store.shop, { orderName, itemName, draftId: draft.id });
   const url = new URL(`/returns/${store.shop}`, appOrigin());
   url.searchParams.set("continuation", continuation);
   return {
     status: "verification_required" as const,
-    correlationId,
+    correlationId: draft.id,
     merchant: store,
     continueUrl: url.href,
     expiresInSeconds: 1800,

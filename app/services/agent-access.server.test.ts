@@ -77,6 +77,7 @@ test("Refund grants keep Shopify tokens server-side and enforce store/resource/c
       clientId: "registered-client-a",
       sessionId: "session",
       customerSubjectHash: "customer-a",
+      draftId: undefined,
     },
   );
   const invalid = (error: unknown) =>

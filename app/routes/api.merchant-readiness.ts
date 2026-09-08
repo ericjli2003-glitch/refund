@@ -1,5 +1,5 @@
 import type { LoaderFunctionArgs } from "react-router";
-import prisma from "../db.server";
+import { merchantReadiness } from "../services/merchant-readiness.server";
 import { resolveMerchant } from "../services/merchant-directory.server";
 import { intakeHeaders } from "../services/public-intake-http.server";
 
@@ -18,33 +18,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
         },
         { status: 404, headers: intakeHeaders },
       );
-    const policy = await prisma.storePolicy.findUnique({
-      where: { shop: store.shop },
-      select: {
-        automaticRefundsEnabled: true,
-        returnWindowDays: true,
-        currencyCode: true,
-      },
-    });
-    const ready = Boolean(policy?.automaticRefundsEnabled);
+    const readiness = await merchantReadiness(store.shop);
     return Response.json(
       {
-        status: ready ? "ready" : "configuration_required",
+        ...readiness,
         connected: true,
         merchant: store,
         siteTools: {
           topLevelRegistrationRequired: true,
           tools: ["get_store_return_options", "start_return"],
         },
-        quoteAvailable: ready,
-        submissionAvailable: ready,
-        returnWindowDays: policy?.returnWindowDays ?? null,
-        currencyCode: policy?.currencyCode ?? null,
-        recovery: ready
-          ? "Start with start_return. Shopify verification is required before purchase lookup."
-          : "The merchant must enable automatic returns in Refund before quotes can be created.",
       },
-      { status: ready ? 200 : 503, headers: intakeHeaders },
+      { headers: intakeHeaders },
     );
   } catch {
     return Response.json(

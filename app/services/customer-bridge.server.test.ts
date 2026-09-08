@@ -123,11 +123,13 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
   mockDelegate(
     t,
     prisma.returnDraft,
-    "upsert",
-    async ({ create }: { create: Record<string, unknown> }) => {
+    "create",
+    async ({ data }: { data: Record<string, unknown> }) => {
       record = {
         id: "5ec9fa6c-83c4-49ef-a0ac-5d2cd6f5d19f",
-        ...create,
+        quoteId: null,
+        stage: "PURCHASES_FOUND",
+        ...data,
         createdAt: new Date(),
         updatedAt: new Date(),
       };
@@ -137,14 +139,14 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
   mockDelegate(
     t,
     prisma.returnDraft,
-    "update",
+    "updateMany",
     async ({ data }: { data: Record<string, unknown> }) => {
       record = { ...record, ...data };
-      return record;
+      return { count: 1 };
     },
   );
-  mockDelegate(t, prisma.returnDraft, "findUnique", async () => record);
-  mockDelegate(t, prisma.agentReturn, "findUnique", async () => null);
+  mockDelegate(t, prisma.returnDraft, "findFirst", async () => record);
+  mockDelegate(t, prisma.agentReturn, "findMany", async () => []);
   const expiresAt = new Date(Date.now() + 60_000).toISOString();
   const quoteToken = signQuote({
     version: 1,
@@ -171,6 +173,7 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
     expiresAt,
     paymentMethod: "Original payment method",
     returnShipping: "Follow store instructions",
+    nextStep: "Review",
   });
   assert.notEqual(saved.sealedQuoteToken, quoteToken);
   assert.ok(!String(saved.sealedQuoteToken).includes(quoteToken));
