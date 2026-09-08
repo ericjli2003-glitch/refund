@@ -2,6 +2,7 @@
   "name": "refund",
   "private": true,
   "scripts": {
+    "opportunities": "node scripts/merchant-opportunities.mjs",
     "build": "react-router build && node scripts/build-http.mjs",
     "dev": "shopify app dev",
     "config:link": "shopify app config link",

@@ -7,6 +7,7 @@ import {
   intakeResponse,
   readIntakeBody,
 } from "../services/public-intake-http.server";
+import { stoppedDiscovery } from "../services/merchant-opportunity.server";
 
 // Resource-route OPTIONS requests are dispatched to the loader, not the action.
 export const loader = ({ request }: Pick<LoaderFunctionArgs, "request">) =>
@@ -28,7 +29,7 @@ export async function action({ request }: ActionFunctionArgs) {
         Response.json(
           {
             error:
-              "Provide a merchant website and optional orderName/itemName, each at most 120 characters.",
+              "Provide a merchant name or website and optional orderName/itemName, each at most 120 characters.",
           },
           { status: 400 },
         ),
@@ -40,8 +41,9 @@ export async function action({ request }: ActionFunctionArgs) {
         ? error
         : Response.json(
             {
+              ...stoppedDiscovery,
               error:
-                "Could not verify the merchant. Check the website address and try again.",
+                "Could not identify the merchant. Stop without starting a return.",
             },
             { status: 503 },
           ),

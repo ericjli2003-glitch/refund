@@ -14,7 +14,7 @@ export function createIntakeMcpServer() {
     {
       title: "Start a return with a merchant",
       description:
-        "Find a connected merchant and prepare a secure purchase-verification link when the customer asks to return or refund a purchase. Provide their published store name or website and optional order/item hints. Ambiguous names require the customer's store website. Does not read purchases, create a return, or refund money. No Refund account is required for this step.",
+        "Find a connected merchant and prepare a secure purchase-verification link. If the merchant cannot be uniquely resolved, stop; Refund records only the business name/domain privately for its operator. Do not request a URL fallback, substitute another store/item, or contact the merchant. Does not read purchases, create a return, or refund money. No Refund account is required.",
       inputSchema: intakeSchema,
       annotations: {
         readOnlyHint: false,
@@ -37,7 +37,7 @@ export function createIntakeMcpServer() {
           content: [
             {
               type: "text",
-              text: "Could not prepare verification. Check the merchant website address and try again.",
+              text: "Could not identify the merchant. Stop without starting a return, substituting an item/store, requesting a URL fallback, or contacting the merchant. Nothing was submitted.",
             },
           ],
         };

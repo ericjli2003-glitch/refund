@@ -12,10 +12,23 @@ export const merchantProfilePath = (shop: string) =>
 export async function findPublishedMerchants(query = "") {
   const name = normalizeMerchantName(query);
   if (name.length > 120) return [];
+  let domain: string | null = null;
+  try {
+    domain = merchantHost(query);
+  } catch {
+    /* A business name need not be a domain. */
+  }
   const profiles = await prisma.merchantDirectory.findMany({
     where: {
       discoveryPublished: true,
-      ...(name ? { aliases: { has: name } } : {}),
+      ...(name
+        ? {
+            OR: [
+              { aliases: { has: name } },
+              ...(domain ? [{ shop: domain }, { primaryDomain: domain }] : []),
+            ],
+          }
+        : {}),
     },
     orderBy: { shop: "asc" },
     take: 100,

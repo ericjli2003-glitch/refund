@@ -262,10 +262,43 @@ before interpreting that as a Refund failure.
 For the new merchant-discovery acceptance test, start a separate blank conversation
 with just: `I want to return my snowboard from Testing Storefront.` Confirm the
 assistant identifies the exact Shopify domain or its Refund return page before
-authentication. If it cannot find the store, provide the public return page URL
-to test the rest of the flow separately. Stop at the quote. The storefront password
+authentication. If it cannot find the store, stop without starting a return.
+When Refund's `/stores` page is available, call `report_merchant_discovery_failure`
+with only `merchant: "Testing Storefront"`, then stop. Do not use a URL fallback
+to continue the return, substitute another store or product, or contact the merchant.
+When discovery succeeds, stop at the quote. The storefront password
 does not gate the public Refund merchant page; Shopify customer verification remains
 required for all private purchase data.
+
+### Private merchant opportunities
+
+Unresolved intake and explicit store-finder POST searches stop without returning a
+verification link, creating a return draft, looking up purchases, or quoting. Refund
+records a private `MerchantOpportunity` for the owner, never in a merchant dashboard,
+customer response, notification, or merchant outreach. On `/stores`, the top-level
+`find_merchant_return_page` and `report_merchant_discovery_failure` tools provide
+the connector-free lookup/report path. A report always stops—even if the merchant
+is already installed. Failed searches entirely inside ChatGPT are invisible to
+Refund unless the assistant visits Refund or calls the reporting endpoint.
+
+Owner access: run `npm run opportunities` in the trusted Refund backend shell with
+its existing database access (for example, the Render service shell). It lists the
+100 most recently seen, nonexpired records. There is no public read/export API and
+no merchant permission grants access to this report. Entries are unreviewed signals,
+not verified sales leads or unique customer counts. `DISCOVERY_GAP` identifies a
+uniquely matched installed store; `AMBIGUOUS_MATCH` identifies multiple matches;
+`UNRESOLVED_MERCHANT` is a possible merchant opportunity, not proof of noninstallation.
+
+Only a bounded business label or domain, category, source and timestamps are stored.
+URL paths/queries, emails, customer identifiers, item/order hints, conversation text,
+credentials and IP addresses are excluded. Reports deduplicate by normalized label
+per UTC day and expire after 90 days; expired rows are removed during later reporting
+activity. Reporting is capped at 30 accepted attempts per minute per app process;
+this is an abuse guard, not a distributed unique-visitor counter. All reports remain
+untrusted and must be reviewed before any owner-initiated outreach. Known-store rows
+are deleted on uninstall/shop redaction. Passive `/stores` and `/api/merchants` GET
+requests never create opportunities. Diagnostic failures never allow a return to
+proceed; intake stops and emits only a safe correlation ID in server warnings.
 
 > The previous local SQLite database is not compatible with the PostgreSQL
 > migration history. Use PostgreSQL; do not point these migrations at SQLite.

@@ -5,3 +5,4 @@ import "./services/customer-bridge.server.test";
 import "./services/return-intake.server.test";
 import "./services/agent-access.server.test";
 import "./services/merchant-readiness.server.test";
+import "./services/merchant-opportunity.server.test";

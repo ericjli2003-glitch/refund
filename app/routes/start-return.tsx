@@ -38,7 +38,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return data(
       {
         error:
-          "We could not verify that store. Check its website address and try again.",
+          "We could not identify that store. Nothing has been submitted.",
       },
       { status: 503, headers: privateHeaders },
     );
