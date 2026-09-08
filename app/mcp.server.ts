@@ -205,13 +205,13 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Quote a customer return",
       description:
-        "Revalidates selected Shopify line items and calculates the exact expected return total. Show the result to the customer before calling confirm_return.",
+        "Revalidates selected Shopify line items, calculates the expected return total, and persists a resumable quote. Show the result to the customer. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
       inputSchema: {
         orderId: z.string().min(1),
         items: itemsSchema,
       },
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,

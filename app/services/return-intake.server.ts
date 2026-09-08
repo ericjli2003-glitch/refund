@@ -12,7 +12,7 @@ export const intakeSchema = z
       .min(1)
       .max(2048)
       .describe(
-        "Merchant website URL or domain. Ask for the website if only a store name is known.",
+        "Merchant website, domain, or exact published store name. If a name is ambiguous, ask the customer which website they mean.",
       ),
     orderName: z.string().trim().max(120).optional(),
     itemName: z.string().trim().max(120).optional(),
@@ -91,7 +91,7 @@ export async function startReturnIntake(input: unknown) {
       status: "merchant_not_resolved" as const,
       correlationId,
       message:
-        "Refund could not verify this store as connected. Check the website address or use the merchant's published return page. This does not establish whether the purchase is returnable.",
+        "Refund could not find one connected store matching that name or website. Check /stores for published matches or ask the customer for the store website. This does not establish whether the purchase is returnable.",
     };
   const hints = JSON.stringify({ orderName, itemName });
   const key = digest(`${store.shop}:${idempotencyKey || randomUUID()}`);

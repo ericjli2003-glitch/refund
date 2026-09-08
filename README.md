@@ -67,6 +67,34 @@ npm run build
 
 ## Storefront WebMCP
 
+Installing Refund and opening its Shopify app provisions the store identity,
+merchant directory entry, store currency, and initial settings automatically.
+The hosted `/returns/SHOP.myshopify.com` portal supports customer verification,
+purchase lookup, estimates, and resumable drafts without a theme embed or a
+separate Refund account. Shopify customer accounts must be available on the store.
+Automatic refund payments remain optional and off for a new installation. An
+estimate created while they are off has a signed non-submittable flag; enabling
+payments later cannot turn that old estimate into authorization.
+
+The theme embed is an optional extra for discovery directly on merchant pages.
+Shopify requires the merchant to activate it in the theme editor and save; the
+dashboard provides that direct link and checks activation on the published theme.
+Reauthentication never overwrites the merchant's existing financial settings.
+
+### Merchant-name discovery pilot
+
+`/stores` and `/api/merchants?query=Testing%20Storefront` expose only published,
+currently installed merchants. `/stores/testing-bl7vdfur.myshopify.com` is the
+public Testing Storefront return page and registers the same top-level tools as
+the theme embed. The page includes canonical metadata, visible merchant identity,
+structured data, and a sitemap entry. Only Testing is published in this release;
+other installations are not automatically publicly listed.
+
+Intake accepts exact published names/aliases as well as domains. Multiple name
+matches require the customer to identify the website; no match is selected by
+default. Search engines and ChatGPT must still discover/index the public page.
+Publishing it does not guarantee immediate name-only discovery in a blank chat.
+
 The `refund-site-tools` theme app extension registers two page-scoped tools in
 browsers that support WebMCP:
 
@@ -199,9 +227,9 @@ cannot reach PostgreSQL.
 
 ## Connector-free ChatGPT desktop test (stop after quote)
 
-1. Deploy the backend migration and theme extension, then open Refund in the
-   Testing store admin once. Enable automatic returns with a test-safe limit and
-   activate **AI return assistance** in the published theme.
+1. Install Refund and open its Shopify app. The hosted return portal is available
+   without activating automatic payments or the theme embed. For the storefront
+   variant of this test, activate **AI return assistance** in the published theme.
 2. Use the latest ChatGPT desktop app with Site tools enabled. Choose GPT-5.6
    Sol or GPT-5.6 Terra. Do not install or enable the Refund connector.
 3. Start a blank Work/Codex conversation with no storefront tab open and say:
@@ -230,6 +258,14 @@ resolving the generic name "Testing Storefront" alone is a separate, unproven
 merchant-identification test. Site tools are rollout-dependent and are currently
 unavailable with Luna or Enterprise/Edu; if no tools appear, check host support
 before interpreting that as a Refund failure.
+
+For the new merchant-discovery acceptance test, start a separate blank conversation
+with just: `I want to return my snowboard from Testing Storefront.` Confirm the
+assistant identifies the exact Shopify domain or its Refund return page before
+authentication. If it cannot find the store, provide the public return page URL
+to test the rest of the flow separately. Stop at the quote. The storefront password
+does not gate the public Refund merchant page; Shopify customer verification remains
+required for all private purchase data.
 
 > The previous local SQLite database is not compatible with the PostgreSQL
 > migration history. Use PostgreSQL; do not point these migrations at SQLite.

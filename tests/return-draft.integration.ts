@@ -14,7 +14,7 @@ const context = { shop, customerSubjectHash: "verified-a" };
 function quote(number: string) {
   const expiresAt = Date.now() + 600_000;
   const value = {
-    version: 1, id: randomUUID(), shop, subject: context.customerSubjectHash,
+    version: 1, id: randomUUID(), shop, subject: context.customerSubjectHash, submissionAvailable: true,
     orderId: `gid://shopify/Order/${number}`,
     items: [{ lineItemId: `gid://shopify/LineItem/${number}`, quantity: 1 }],
     expectedRefund: { amount: number, currencyCode: "CAD" }, expiresAt,

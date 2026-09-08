@@ -25,7 +25,8 @@ for (const [label, html, expected] of [
     });
     const result = await merchantReadiness(`readiness-${label}.myshopify.com`);
     assert.equal(result.checks.storefront, expected);
-    assert.equal(result.status, label === "embed" ? "preflight_passed" : "action_required");
+    assert.equal(result.status, "preflight_passed");
+    assert.equal(result.storefrontActivationOptional, true);
     assert.equal(result.checks.browserRegistration, "requires_browser_check");
     assert.equal(result.checks.customerAuthorization, "requires_customer_verification");
     const calls = network.mock.callCount();

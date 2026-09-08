@@ -1,6 +1,7 @@
 import prisma from "../db.server";
 import { discoverCustomerLogin } from "./customer-session.server";
 import { discoverCustomerGraphqlEndpoint } from "./customer-account.server";
+import { appOrigin } from "./customer-security.server";
 
 async function inspectStorefront(shop: string) {
   // Only contact the canonical Shopify host. Do not follow arbitrary redirects.
@@ -37,17 +38,18 @@ async function probe(shop: string) {
     inspectStorefront(shop).catch(() => "unavailable"),
   ]);
   return {
-    status: policy?.automaticRefundsEnabled && login === "available" && api === "available" && storefront === "embed_markup_detected" ? "preflight_passed" : "action_required",
-    quotePolicyEnabled: Boolean(policy?.automaticRefundsEnabled),
+    status: login === "available" && api === "available" ? "preflight_passed" : "action_required",
+    quotePolicyEnabled: true,
+    automaticRefundsEnabled: Boolean(policy?.automaticRefundsEnabled),
+    returnPortalUrl: `${appOrigin()}/returns/${shop}`,
+    storefrontActivationOptional: true,
     returnWindowDays: policy?.returnWindowDays ?? null,
     currencyCode: policy?.currencyCode ?? null,
     checks: { customerLoginDiscovery: login, customerApiDiscovery: api, storefront, browserRegistration: "requires_browser_check", customerAuthorization: "requires_customer_verification" },
     checkedAt: new Date().toISOString(),
-    recovery: storefront === "password_protected"
-      ? "Unlock the storefront in the built-in browser, then inspect Available site tools. Complete Shopify customer verification before purchase lookup."
-      : storefront === "embed_not_detected"
-        ? "Enable Refund's AI return assistance app embed in the published theme, then inspect Available site tools."
-        : "Inspect Available site tools in the built-in browser. Customer sign-in, API permissions, and purchase eligibility must still be verified in the actual flow.",
+    recovery: login !== "available" || api !== "available"
+      ? "The merchant needs working Shopify customer accounts before purchase verification. Open the hosted return portal for recovery instructions."
+      : "Open returnPortalUrl and complete Shopify customer verification. The hosted portal works independently of the theme embed or storefront password. Browser registration, API permissions, and purchase eligibility still need checking in the actual flow.",
   };
 }
 

@@ -223,14 +223,14 @@ export default function CustomerReturns() {
       {
         name: "quote_return",
         description:
-          "Calculate and persist a resumable return quote without submitting anything. Show the customer the exact order, products, quantities, currency, amount, correlation ID, and shipping instructions, then stop and ask for explicit confirmation.",
+          "Calculate and persist a resumable return quote without submitting anything. Show the exact order, products, quantities, currency, amount, correlation ID, and shipping instructions. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
         inputSchema: {
           type: "object",
           properties: { orderId: { type: "string" }, items },
           required: ["orderId", "items"],
           additionalProperties: false,
         },
-        annotations: { readOnlyHint: true, destructiveHint: false },
+        annotations: { readOnlyHint: false, destructiveHint: false },
         execute: run("quote"),
       },
       {
@@ -356,7 +356,7 @@ export default function CustomerReturns() {
           )}
           {quote && (
             <section className="return-quote" aria-label="Return quote">
-              <h2>Review before confirming</h2>
+              <h2>{quote.submissionAvailable ? "Review before confirming" : "Your return estimate"}</h2>
               <p>{quote.orderName}</p>
               <ul>
                 {quote.items.map((item) => (
@@ -373,7 +373,8 @@ export default function CustomerReturns() {
               <p>{quote.returnShipping}</p>
               <p>Quote expires at {quote.expiresAt}.</p>
               {quote.correlationId && <p>Return reference: {quote.correlationId}</p>}
-              <label>
+              {!quote.submissionAvailable && <p>{quote.nextStep}</p>}
+              {quote.submissionAvailable && <><label>
                 <input
                   type="checkbox"
                   checked={confirmed}
@@ -392,6 +393,7 @@ export default function CustomerReturns() {
               >
                 Confirm return and refund
               </button>
+              </>}
             </section>
           )}
           <h2>Your recent purchases</h2>

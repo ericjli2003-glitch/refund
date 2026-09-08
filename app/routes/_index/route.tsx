@@ -54,7 +54,7 @@ export default function Index() {
             <div className={styles.installCard}>
               <p className={publicStyles.eyebrow}>Merchant access</p>
               <h2>Open Refund</h2>
-              <p>Enter your permanent Shopify domain to install or sign in.</p>
+              <p>Install Refund to get your return portal. Your store identity and currency are set up automatically.</p>
               <Form className={styles.form} method="post" action="/auth/login">
                 <label className={styles.label}>
                   <span>Shop domain</span>
@@ -73,7 +73,7 @@ export default function Index() {
                 </button>
               </Form>
               <p className={styles.finePrint}>
-                Shopify handles installation and merchant authentication.
+                Shopify handles installation. No separate Refund account is needed. Adding tools to your storefront is optional and requires one theme activation.
               </p>
             </div>
           )}

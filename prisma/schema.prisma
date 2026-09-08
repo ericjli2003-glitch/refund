@@ -48,6 +48,8 @@ model MerchantDirectory {
   shop          String   @id
   primaryDomain String   @unique
   name          String
+  aliases       String[] @default([])
+  discoveryPublished Boolean @default(false)
   verifiedAt    DateTime @default(now())
 }
 
