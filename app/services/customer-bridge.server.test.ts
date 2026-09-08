@@ -159,6 +159,7 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
     expiresAt: Date.parse(expiresAt),
   });
   const saved = await saveReturnQuote(context, {
+    submissionAvailable: true,
     orderId: "gid://shopify/Order/1",
     orderName: "#1001",
     items: [
@@ -399,10 +400,11 @@ test("changed quote stops before any return record or Shopify mutation", async (
 
 test("quotes use Shopify shop money for policy limits without changing customer currency", async (t) => {
   const shop = "currency-test.myshopify.com";
+  let automation = true;
   let limit = "100.00";
   let calculatedAmount = "-14.00";
   mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
-    automaticRefundsEnabled: true,
+    automaticRefundsEnabled: automation,
     returnWindowDays: 30,
     currencyCode: "USD",
     maxAutoRefundAmount: limit,
@@ -481,6 +483,15 @@ test("quotes use Shopify shop money for policy limits without changing customer 
     createReturnQuote(shop, "test-token", input),
     /outside.*limit/,
   );
+  automation = false;
+  const estimate = await createReturnQuote(shop, "test-token", input);
+  assert.equal(estimate.submissionAvailable, false, "Installation provides estimates without enabling payments");
+  // A quote-only credential must remain non-submittable even if the merchant
+  // enables automatic payments later. A fresh quote is required.
+  automation = true;
+  await assert.rejects(submitReturnQuote(shop, "test-token", {
+    quoteToken: estimate.quoteToken, customerConfirmed: true,
+  }), /estimate cannot submit/);
   limit = "100.00";
   for (const amount of ["0.00", "14.00"]) {
     calculatedAmount = amount;

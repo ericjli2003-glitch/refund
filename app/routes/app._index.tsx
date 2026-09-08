@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAppBridge } from "@shopify/app-bridge-react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -9,7 +10,11 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
-import { syncMerchantDirectory } from "../services/merchant-directory.server";
+import {
+  provisionMerchant,
+  merchantProfilePath,
+} from "../services/merchant-directory.server";
+import { appOrigin } from "../services/customer-security.server";
 
 const DASHBOARD_ORDER_LIMIT = 25;
 
@@ -40,7 +45,7 @@ type OrdersQueryResponse = {
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
-  await syncMerchantDirectory(session.shop, admin);
+  const merchant = await provisionMerchant(session.shop, admin);
   const url = new URL(request.url);
   const query = url.searchParams.get("query")?.trim() ?? "";
 
@@ -104,6 +109,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     orders: responseJson.data.orders.nodes,
     query,
     saved: url.searchParams.get("saved") === "true",
+    returnPortalUrl: `${appOrigin()}/returns/${session.shop}`,
+    merchantProfileUrl: merchant.discoveryPublished
+      ? appOrigin() + merchantProfilePath(session.shop)
+      : null,
     privacyResolved: url.searchParams.get("privacyResolved") === "true",
     siteToolsActivationUrl: new URL(
       `/admin/themes/current/editor?context=apps&template=index&activateAppId=${encodeURIComponent(
@@ -239,10 +248,44 @@ export default function RefundDashboard() {
     privacyResolved,
     policy,
     siteToolsActivationUrl,
+    returnPortalUrl,
+    merchantProfileUrl,
     agentReturns,
     privacyRequests,
   } = useLoaderData<typeof loader>();
   const submit = useSubmit();
+  const bridge = useAppBridge();
+  const [storefrontActive, setStorefrontActive] = useState<boolean | null>(
+    null,
+  );
+  useEffect(() => {
+    let disposed = false;
+    const check = async () => {
+      try {
+        const extensions = await bridge.app.extensions();
+        const active = extensions.some(
+          (extension) =>
+            extension.type === "theme_app_extension" &&
+            extension.activations.some(
+              (block) =>
+                "handle" in block &&
+                "status" in block &&
+                block.handle === "refund-site-tools" &&
+                block.status === "active",
+            ),
+        );
+        if (!disposed) setStorefrontActive(active);
+      } catch {
+        /* Hosted portal access does not depend on the theme check. */
+      }
+    };
+    void check();
+    window.addEventListener("focus", check);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", check);
+    };
+  }, [bridge]);
   const [search, setSearch] = useState(query);
   const [automaticRefundsEnabled, setAutomaticRefundsEnabled] = useState(
     policy.automaticRefundsEnabled,
@@ -262,6 +305,31 @@ export default function RefundDashboard() {
       <s-button slot="primary-action" href="shopify:admin/orders">
         View all orders
       </s-button>
+
+      <s-section heading="Refund is installed">
+        <s-stack direction="block" gap="base">
+          <s-paragraph>
+            Your store is connected. Customers can verify purchases and get
+            return estimates through your hosted return portal. No separate
+            Refund account or connector is needed.
+          </s-paragraph>
+          <s-stack direction="inline" gap="base">
+            <s-button href={returnPortalUrl} target="_blank" variant="primary">
+              Open your return portal
+            </s-button>
+            {merchantProfileUrl && (
+              <s-button href={merchantProfileUrl} target="_blank">
+                View your public return page
+              </s-button>
+            )}
+          </s-stack>
+          <s-paragraph color="subdued">
+            Customer sign-in uses Shopify customer accounts. The store identity
+            and currency are configured automatically. Automatic refund payments
+            are an optional setting below.
+          </s-paragraph>
+        </s-stack>
+      </s-section>
 
       <s-section>
         <s-grid
@@ -342,7 +410,7 @@ export default function RefundDashboard() {
         </s-section>
       )}
 
-      <s-section heading="Customer-agent automation">
+      <s-section heading="Automatic refund payments (optional)">
         <form
           method="post"
           onSubmit={(event) => {
@@ -366,9 +434,10 @@ export default function RefundDashboard() {
               }
             ></s-switch>
             <s-paragraph color="subdued">
-              The customer still signs in, selects an eligible item, sees the
-              calculated amount, and confirms it. Shopify then opens the return
-              and sends the refund to the original payment method.
+              Estimates work without enabling this setting. When enabled, the
+              customer signs in, selects an eligible item, sees the calculated
+              amount, and confirms it. Shopify then opens the return and sends
+              the refund to the original payment method.
             </s-paragraph>
             <s-grid
               gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
@@ -403,30 +472,36 @@ export default function RefundDashboard() {
               <s-badge
                 tone={policy.automaticRefundsEnabled ? "success" : "warning"}
               >
-                {policy.automaticRefundsEnabled ? "Active" : "Paused"}
+                {policy.automaticRefundsEnabled
+                  ? "Automatic payments on"
+                  : "Quotes only"}
               </s-badge>
             </s-stack>
           </s-stack>
         </form>
       </s-section>
 
-      <s-section heading="Storefront AI returns">
+      <s-section heading="Add return assistance to your storefront (optional)">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
-            Customers install nothing. Enable Refund once in the theme, and
-            compatible AI browsers can discover return help when they visit
-            this storefront. Customers still sign in and explicitly confirm
-            before a refund is submitted.
+            Your hosted portal already works. To also offer return tools
+            directly on your storefront, Shopify requires you to activate the
+            theme embed and save once.
           </s-paragraph>
           <s-box>
             <s-button
               href={siteToolsActivationUrl}
               target="_top"
-              variant="primary"
+              variant="secondary"
             >
-              Enable storefront AI tools
+              {storefrontActive
+                ? "Manage storefront assistance"
+                : "Activate in theme and save"}
             </s-button>
           </s-box>
+          {storefrontActive && (
+            <s-badge tone="success">Active on your published theme</s-badge>
+          )}
         </s-stack>
       </s-section>
 

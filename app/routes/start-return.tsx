@@ -25,7 +25,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     return data(
       {
         error:
-          "Enter the store website. Order and item details must each be 120 characters or fewer.",
+          "Enter the store name or website. Order and item details must each be 120 characters or fewer.",
       },
       { status: 400, headers: privateHeaders },
     );
@@ -54,7 +54,7 @@ export default function StartReturn() {
       </header>
       <h1>Where did you buy it?</h1>
       <p>
-        Enter the store website to find its return service. You’ll verify your
+        Enter the store name or website to find its return service. You’ll verify your
         purchase with the store before reviewing a refund.
       </p>
       {error && (
@@ -65,13 +65,13 @@ export default function StartReturn() {
       <section>
         <form method="get" className="return-intake-form">
           <label>
-            Store website
+            Store name or website
             <input
               name="merchant"
               type="text"
               required
               maxLength={2048}
-              placeholder="store.example.com"
+              placeholder="Testing Storefront or store.example.com"
               autoComplete="off"
             />
           </label>

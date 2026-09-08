@@ -13,6 +13,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
             Refund
           </Link>
           <nav className={styles.nav} aria-label="Public navigation">
+            <Link to="/stores">Find your store</Link>
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>
             <Link to="/support">Support</Link>
