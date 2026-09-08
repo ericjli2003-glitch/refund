@@ -44,6 +44,7 @@ jobs:
       - run: node scripts/test-grant-cascade.mjs
       - run: npm test
       - run: npm run test:oauth
+      - run: npx vite-node --config vite.test.config.ts tests/return-draft.integration.ts
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build

@@ -17,7 +17,7 @@ export function createIntakeMcpServer() {
         "Find a connected merchant and prepare a secure purchase-verification link when the customer asks to return or refund a purchase. Provide their store website and optional order/item hints. Does not read purchases, create a return, or refund money. No Refund account is required for this step.",
       inputSchema: intakeSchema,
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
         openWorldHint: true,

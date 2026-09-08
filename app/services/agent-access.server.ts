@@ -149,7 +149,14 @@ export async function authorizeAgent(
   } catch {
     throw new AgentAccessError("invalid_token");
   }
-  return { shop, customerToken, clientId: grant.clientId };
+  return {
+    shop,
+    customerToken,
+    clientId: grant.clientId,
+    sessionId: grant.sessionId,
+    customerSubjectHash: grant.customerSubjectHash,
+    draftId: grant.session.draftId,
+  };
 }
 
 export async function revokeAgentGrant(tokenHash: string, sessionId: string) {

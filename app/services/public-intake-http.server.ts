@@ -3,7 +3,7 @@ import { privateHeaders } from "./customer-security.server";
 export const intakeHeaders = {
   ...privateHeaders,
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, mcp-protocol-version",
   "Access-Control-Expose-Headers": "mcp-protocol-version",
 };

@@ -62,6 +62,7 @@ model CustomerReturnSession {
   csrfToken           String
   orderHint           String?
   itemHint            String?
+  draftId             String?
   agentRequestId      String?
   expiresAt           DateTime
   createdAt           DateTime            @default(now())
@@ -70,6 +71,32 @@ model CustomerReturnSession {
 
   @@index([shop, customerSubjectHash])
   @@index([expiresAt])
+}
+
+// Each intake keeps a stable reference, including before verification. Credentials
+// remain encrypted at rest and are only returned to that verified customer.
+model ReturnDraft {
+  id                  String   @id @default(uuid())
+  shop                String
+  customerSubjectHash String?
+  intakeKeyHash       String?  @unique
+  inputHash           String?
+  sealedHints         String?
+  stage               String   @default("PURCHASES_FOUND")
+  orderId             String?
+  orderName           String?
+  selectedItems       Json?
+  quoteSnapshot       Json?
+  sealedQuoteToken    String?
+  quoteId             String?
+  quoteExpiresAt      DateTime?
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([shop, customerSubjectHash, updatedAt])
+  @@index([expiresAt])
+  @@index([shop, quoteId])
 }
 
 model AgentOAuthClient {

@@ -65,6 +65,8 @@ async function handleMcpRequest(request: Request, shopParam: string) {
         params?: { name?: string };
       } | null;
       const scopesByTool: Record<string, AgentScope> = {
+        get_return_session: "returns:read",
+        check_return_status: "returns:read",
         find_returnable_items: "returns:read",
         quote_return: "returns:quote",
         confirm_return: "returns:submit",

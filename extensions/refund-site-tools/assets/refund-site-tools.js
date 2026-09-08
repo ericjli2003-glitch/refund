@@ -45,6 +45,18 @@
     if (launcher) launcher.setAttribute("aria-expanded", "true");
   }
 
+  async function postJson(url, body) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "Refund is unavailable.");
+    return payload;
+  }
+
   for (const root of roots) {
     const dialog = root.querySelector("[data-refund-dialog]");
     const launcher = root.querySelector("[data-refund-launcher]");
@@ -58,7 +70,7 @@
   }
 
   const modelContext = document.modelContext;
-  if (!modelContext?.registerTool || window.__refundSiteToolsRegistered) return;
+  if (window.top !== window || !modelContext?.registerTool || window.__refundSiteToolsRegistered) return;
 
   window.__refundSiteToolsRegistered = true;
   const root = roots[0];
@@ -79,65 +91,100 @@
         readOnlyHint: true,
       },
       execute: async () => ({
+        ...(await fetch(
+          `${new URL(store.intakeApiUrl).origin}/api/merchant-readiness?merchant=${encodeURIComponent(store.domain)}`,
+          { signal: AbortSignal.timeout(15_000) },
+        ).then(async (response) => ({
+          readiness: await response.json(),
+          readinessHttpStatus: response.status,
+        })).catch(() => ({
+          readiness: { status: "unavailable", recovery: "Retry start_return or contact the merchant." },
+          readinessHttpStatus: 503,
+        }))),
         storeName: store.name,
         storeDomain: store.domain,
         returnsSupported: true,
         customerAuthenticated: store.customerAuthenticated,
-        accountUrl: store.accountUrl,
-        portalUrl: store.portalUrl,
-        publicIntake: {
-          httpEndpoint: store.intakeApiUrl,
-          mcpEndpoint: store.intakeMcpUrl,
-          tool: "start_return",
-          merchant: store.domain,
-          authenticationRequired: false,
-        },
         portalAuthenticationRequired: true,
-        nextStep: "Use start_store_return, then follow the visible link to the Refund customer portal. Storefront login alone does not authorize Refund to access purchases.",
+        nextStep: "Use start_return. The customer must complete Shopify verification before purchase lookup.",
       }),
     },
     {
-      name: "start_store_return",
+      name: "start_return",
       description:
-        `Open ${store.name}'s on-site return assistant for the customer. ` +
-        "This starts the flow but does not create a return or issue a refund.",
+        `Start a secure return draft for a purchase from ${store.name}. ` +
+        "Returns a Shopify verification URL and correlation ID. It does not read purchases, create a return, or issue a refund.",
       inputSchema: {
         type: "object",
         properties: {
           orderName: {
             type: "string",
+            maxLength: 120,
             description: "Optional order number or name mentioned by the customer.",
           },
           itemName: {
             type: "string",
+            maxLength: 120,
             description: "Optional product or item mentioned by the customer.",
           },
         },
         additionalProperties: false,
       },
       annotations: {
-        readOnlyHint: true,
+        readOnlyHint: false,
         destructiveHint: false,
         idempotentHint: true,
       },
       execute: async (request = {}) => {
-        openReturnPanel(root, request);
-        return {
-          status: "return_flow_opened",
-          storeName: store.name,
-          customerAuthenticated: store.customerAuthenticated,
-          accountUrl: store.accountUrl,
-          portalUrl: root.querySelector(".refund-site-tools__account-link")?.href,
-          nextStep: "Click the visible return link to continue in the Refund customer portal. After customer sign-in, use its find_returnable_items and quote_return tools. Never submit until the customer explicitly confirms the quoted amount.",
-          confirmationRequired: true,
-        };
+        try {
+          // Retry the same intent with the same key, including after navigation.
+          // Store no order/item text or customer credentials in browser storage.
+          const intent = JSON.stringify([store.domain, request.orderName || "", request.itemName || ""]);
+          const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(intent));
+          const fingerprint = Array.from(new Uint8Array(bytes), value => value.toString(16).padStart(2, "0")).join("");
+          const storageKey = `refund-intake:${fingerprint}`;
+          let idempotencyKey = crypto.randomUUID();
+          try {
+            const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+            if (saved?.expiresAt > Date.now()) idempotencyKey = saved.key;
+            sessionStorage.setItem(storageKey, JSON.stringify({ key: idempotencyKey, expiresAt: Date.now() + 25 * 60_000 }));
+          } catch { /* Storage may be unavailable. Starting a new draft cannot submit money. */ }
+          const result = await postJson(store.intakeApiUrl, {
+            idempotencyKey,
+            merchant: store.domain,
+            orderName: request.orderName,
+            itemName: request.itemName,
+          });
+          openReturnPanel(root, request);
+          const link = root.querySelector(".refund-site-tools__account-link");
+          if (link && result.continueUrl) link.href = result.continueUrl;
+          return {
+            ...result,
+            storeName: store.name,
+            customerAuthenticated: store.customerAuthenticated,
+          };
+        } catch (error) {
+          return {
+            isError: true,
+            status: "temporarily_unavailable",
+            message: error instanceof Error ? error.message : "Refund is unavailable.",
+            recovery: "Retry once. If it still fails, use the visible return link or contact the merchant.",
+          };
+        }
       },
     },
   ];
 
-  for (const tool of tools) {
-    Promise.resolve(modelContext.registerTool(tool)).catch(() => {
+  (async () => {
+    const registered = [];
+    try {
+      for (const tool of tools) {
+        await modelContext.registerTool(tool);
+        registered.push(tool.name);
+      }
+    } catch {
+      for (const name of registered) modelContext.unregisterTool?.(name);
       window.__refundSiteToolsRegistered = false;
-    });
-  }
+    }
+  })();
 })();

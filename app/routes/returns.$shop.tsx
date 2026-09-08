@@ -9,6 +9,8 @@ import {
 import { privateHeaders } from "../services/customer-security.server";
 import { returnHints } from "../services/return-intake.server";
 import { listAgentGrants } from "../services/agent-access.server";
+import prisma from "../db.server";
+import { claimIntakeDraft, getReturnSession } from "../services/return-draft.server";
 import type {
   createReturnQuote,
   submitReturnQuote,
@@ -16,7 +18,7 @@ import type {
 import "../styles/customer-returns.css";
 
 type Orders = Awaited<ReturnType<typeof getReturnableOrders>>["orders"];
-type Quote = Awaited<ReturnType<typeof createReturnQuote>>;
+type Quote = Awaited<ReturnType<typeof createReturnQuote>> & { correlationId?: string | null };
 type Result = Awaited<ReturnType<typeof submitReturnQuote>>;
 type BrowserTool = {
   name: string;
@@ -34,6 +36,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const query = new URLSearchParams({ shop });
   const hints = returnHints(url, shop);
+  if (session && hints.draftId) {
+    await claimIntakeDraft({ shop, customerSubjectHash: session.customerSubjectHash!, draftId: hints.draftId });
+    await prisma.customerReturnSession.update({ where: { id: session.id }, data: { draftId: hints.draftId } });
+  }
+  const draftId = hints.draftId || session?.draftId;
   const hasNewHints = Boolean(
     hints.orderName || hints.itemName || url.searchParams.has("continuation"),
   );
@@ -73,6 +80,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       orders,
       orderHint,
       itemHint,
+      draftId: draftId || null,
+      returnSession: session && authenticated ? await getReturnSession({ shop, customerSubjectHash: session.customerSubjectHash!, draftId }) : null,
       loginUrl: `/customer/login?${query}`,
       error,
     },
@@ -83,7 +92,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export default function CustomerReturns() {
   const initial = useLoaderData<typeof loader>();
   const [orders, setOrders] = useState(initial.orders);
-  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(initial.returnSession?.quote ? { ...initial.returnSession.quote, correlationId: initial.returnSession.correlationId } : null);
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState(initial.error);
   const [busy, setBusy] = useState(false);
@@ -101,7 +110,7 @@ export default function CustomerReturns() {
           "Content-Type": "application/json",
           "X-Return-CSRF": initial.csrf,
         },
-        body: JSON.stringify({ ...input, operation }),
+        body: JSON.stringify({ ...input, operation, draftId: initial.draftId }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "The request failed.");
@@ -115,6 +124,10 @@ export default function CustomerReturns() {
       if (payload.result) {
         setResult(payload.result);
         setQuote(null);
+      }
+      if (payload.session) {
+        setQuote(payload.session.quote ? { ...payload.session.quote, correlationId: payload.session.correlationId } : null);
+        setConfirmed(false);
       }
       return payload;
     } catch (cause) {
@@ -172,6 +185,30 @@ export default function CustomerReturns() {
       };
     const tools: BrowserTool[] = [
       {
+        name: "get_return_session",
+        description:
+          "Resume the signed-in customer's latest return draft. Returns only this customer's draft, quote expiry, safe status, and recovery instructions. It never creates a return or refund.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: true, destructiveHint: false },
+        execute: run("get_session"),
+      },
+      {
+        name: "check_return_status",
+        description:
+          "Check the signed-in customer's current Refund draft or submitted return status. Use after a retry, interruption, or uncertain response before attempting any later action.",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+        annotations: { readOnlyHint: true, destructiveHint: false },
+        execute: run("status"),
+      },
+      {
         name: "find_returnable_items",
         description:
           "Read the signed-in customer's recent orders, returnable products, and ineligibility reasons. Match the customer's requested order and item; never substitute another product without asking.",
@@ -186,7 +223,7 @@ export default function CustomerReturns() {
       {
         name: "quote_return",
         description:
-          "Calculate a return quote without submitting anything. Show the customer the exact order, products, quantities, currency, amount, and shipping instructions, then ask for explicit confirmation.",
+          "Calculate and persist a resumable return quote without submitting anything. Show the customer the exact order, products, quantities, currency, amount, correlation ID, and shipping instructions, then stop and ask for explicit confirmation.",
         inputSchema: {
           type: "object",
           properties: { orderId: { type: "string" }, items },
@@ -224,7 +261,7 @@ export default function CustomerReturns() {
     };
     // The registration closes over only stable session information; state setters are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial.authenticated, initial.csrf, initial.shop, initial.loginUrl]);
+  }, [initial.authenticated, initial.csrf, initial.shop, initial.loginUrl, initial.draftId]);
 
   return (
     <main className="customer-returns">
@@ -335,6 +372,7 @@ export default function CustomerReturns() {
               <p>{quote.paymentMethod}</p>
               <p>{quote.returnShipping}</p>
               <p>Quote expires at {quote.expiresAt}.</p>
+              {quote.correlationId && <p>Return reference: {quote.correlationId}</p>}
               <label>
                 <input
                   type="checkbox"
