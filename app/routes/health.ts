@@ -7,7 +7,7 @@ export const loader = async () => {
     await prisma.merchantDirectory.findFirst({ select: { discoveryPublished: true, aliases: true } });
     await prisma.merchantOpportunity.findFirst({ select: { id: true } });
     return Response.json(
-      { status: "ok", release: "private-merchant-opportunities-v4", commit: process.env.RENDER_GIT_COMMIT || null },
+      { status: "ok", release: "chat-return-handoff-v5", commit: process.env.RENDER_GIT_COMMIT || null },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch {

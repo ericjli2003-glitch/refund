@@ -95,6 +95,36 @@ matches require the customer to identify the website; no match is selected by
 default. Search engines and ChatGPT must still discover/index the public page.
 Publishing it does not guarantee immediate name-only discovery in a blank chat.
 
+### Continue in chat after verification
+
+After successful top-level Site Tools registration, the authenticated portal
+shows “You’re connected. Continue in chat.” Purchases are expandable for a
+customer who prefers the form. Quotes, errors, sign-out, and submission status
+remain visible. Without Site Tools, the ordinary purchase form stays expanded.
+The intake and portal tools ask the assistant to present results in the
+conversation and keep the portal loaded in a background tab where supported.
+Refund cannot hide ChatGPT's browser panel or focus the chat itself. Closing or
+navigating the page can remove its tools; Shopify sign-in remains a visible
+customer action. See [OpenAI Site Tools](https://learn.chatgpt.com/docs/webmcp).
+
+### Crawl rules are discovery support, not tool registration
+
+Shopify already provides `robots.txt`. Do not replace merchant rules or add a
+mandatory theme-edit step during installation. Refund's own `/robots.txt` allows
+public merchant profiles and advertises `/sitemap.xml`, while excluding private
+return, customer, and API routes. OAI-SearchBot uses the existing wildcard group;
+no additional agent-specific allow-all group is needed. Crawl permission does
+not guarantee indexing, enable WebMCP, authorize a return, or bypass sign-in.
+See [OpenAI crawler roles](https://developers.openai.com/api/docs/bots) and
+[Shopify robots.txt customization](https://shopify.dev/docs/storefronts/themes/seo/robots-txt).
+
+On 2026-09-08, Testing's public `robots.txt` already allowed public crawling and
+linked Shopify shopping-agent/UCP discovery pages. Its `/agents.md` URL returned
+the password-protected storefront page to an unauthenticated request. Those
+comments do not register Refund tools. A future merchant-specific crawl-rule
+adjustment should follow an observed block and preserve existing/default rules;
+the public Refund profile remains the current discovery surface for this pilot.
+
 The `refund-site-tools` theme app extension registers two page-scoped tools in
 browsers that support WebMCP:
 
