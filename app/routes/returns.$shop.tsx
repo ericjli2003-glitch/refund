@@ -98,6 +98,8 @@ export default function CustomerReturns() {
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [grants, setGrants] = useState(initial.grants);
+  const [siteToolsReady, setSiteToolsReady] = useState(false);
+  const continueInChat = initial.authenticated && siteToolsReady;
 
   async function call(operation: string, input: Record<string, unknown> = {}) {
     setBusy(true);
@@ -149,7 +151,7 @@ export default function CustomerReturns() {
         };
       }
     ).modelContext;
-    if (!context?.registerTool) return;
+    if (window.top !== window || !context?.registerTool) return;
     const items = {
       type: "array",
       minItems: 1,
@@ -187,7 +189,7 @@ export default function CustomerReturns() {
       {
         name: "get_return_session",
         description:
-          "Resume the signed-in customer's latest return draft. Returns only this customer's draft, quote expiry, safe status, and recovery instructions. It never creates a return or refund.",
+          "Resume the signed-in customer's latest return draft. Returns only this customer's draft, quote expiry, safe status, and recovery instructions. Continue the conversation in chat using the page tools; the customer does not need to use the purchase form. Keep this page loaded, in the background if the browser supports it. Never close or navigate it away while using its tools. It never creates a return or refund.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -223,7 +225,7 @@ export default function CustomerReturns() {
       {
         name: "quote_return",
         description:
-          "Calculate and persist a resumable return quote without submitting anything. Show the exact order, products, quantities, currency, amount, correlation ID, and shipping instructions. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
+          "Calculate and persist a resumable return quote without submitting anything. Show the exact order, products, quantities, currency, amount, correlation ID, and shipping instructions in the conversation; do not require the customer to click the page's quote button. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
         inputSchema: {
           type: "object",
           properties: { orderId: { type: "string" }, items },
@@ -255,9 +257,28 @@ export default function CustomerReturns() {
         execute: run("confirm"),
       },
     ];
-    for (const tool of tools) context.registerTool(tool);
+    let cancelled = false;
+    const registered: string[] = [];
+    setSiteToolsReady(false);
+    void (async () => {
+      try {
+        for (const tool of tools) {
+          await context.registerTool(tool);
+          if (cancelled) {
+            context.unregisterTool?.(tool.name);
+            return;
+          }
+          registered.push(tool.name);
+        }
+        setSiteToolsReady(true);
+      } catch {
+        // Retain the ordinary purchase form if the browser rejects registration.
+        for (const name of registered) context.unregisterTool?.(name);
+      }
+    })();
     return () => {
-      for (const tool of tools) context.unregisterTool?.(tool.name);
+      cancelled = true;
+      for (const name of registered) context.unregisterTool?.(name);
     };
     // The registration closes over only stable session information; state setters are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -269,11 +290,18 @@ export default function CustomerReturns() {
         <a href={`https://${initial.shop}`}>← Back to store</a>
         <span>REFUND · CUSTOMER RETURNS</span>
       </header>
-      <h1>Let’s find your return.</h1>
+      <h1>{continueInChat ? "You’re connected. Continue in chat." : "Let’s find your return."}</h1>
       <p className="return-intro">
         Securely connected to {initial.shop}. Nothing is submitted until you
         confirm the items and refund amount.
       </p>
+      {continueInChat && (
+        <p className="return-chat-handoff" role="status">
+          Your assistant can find your purchase and show your quote in the
+          conversation. Keep this tab open while you continue in chat. You only
+          need the purchase form below if you prefer to continue here.
+        </p>
+      )}
       {(initial.orderHint || initial.itemHint) && (
         <p>
           Looking for:{" "}
@@ -396,6 +424,8 @@ export default function CustomerReturns() {
               </>}
             </section>
           )}
+          <details className="return-purchases" open={!continueInChat}>
+          <summary>View purchases or continue here</summary>
           <h2>Your recent purchases</h2>
           {!orders.length && !error && (
             <p>No recent orders are available for this account.</p>
@@ -454,6 +484,7 @@ export default function CustomerReturns() {
               )}
             </section>
           ))}
+          </details>
         </>
       )}
       <footer>
