@@ -18,13 +18,18 @@ for (let index = 0; index < args.length; index++) {
       throw new Error("Provide a Shopify app configuration after --config.");
     config = value;
     index--;
-  } else if (args[index].startsWith("--config=") || args[index].startsWith("-c=")) {
+  } else if (
+    args[index].startsWith("--config=") ||
+    args[index].startsWith("-c=")
+  ) {
     config = args.splice(index, 1)[0].split("=").slice(1).join("=");
     if (!config)
       throw new Error("Provide a Shopify app configuration after --config.");
     index--;
   } else if (args[index].startsWith("-c") && !args[index].startsWith("--")) {
-    throw new Error("Use --config staging or -c staging to select an app configuration.");
+    throw new Error(
+      "Use --config staging or -c staging to select an app configuration.",
+    );
   }
 }
 const path = config.endsWith(".toml") ? config : `shopify.app.${config}.toml`;

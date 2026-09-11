@@ -7,6 +7,7 @@ import prisma from "../app/db.server";
 import {
   consumePublicRateLimit,
   prunePublicRateLimits,
+  publicRateLimitKey,
 } from "../app/services/public-rate-limit.server";
 import {
   refreshInstalledMerchants,
@@ -34,23 +35,24 @@ test("public infrastructure enforces shared limits and maintains installed merch
     async () => {
       const policy = { bucket: `ci-${randomUUID()}`, limit: 7, seconds: 60 };
       const identity = randomUUID();
-      const results = await Promise.all(
-        Array.from({ length: 40 }, () =>
-          consumePublicRateLimit(identity, policy),
-        ),
-      );
-      assert.equal(results.filter((result) => result.allowed).length, 7);
-      assert.ok(
-        results.every(
-          (result) => result.retryAfter > 0 && result.retryAfter <= 60,
-        ),
-      );
-      const rows = await prisma.publicRateLimit.findMany({
-        where: { hits: 8 },
-      });
-      assert.equal(rows.length, 1);
-      const key = rows[0].key;
+      const key = publicRateLimitKey(identity, policy.bucket);
       try {
+        const results = await Promise.all(
+          Array.from({ length: 40 }, () =>
+            consumePublicRateLimit(identity, policy),
+          ),
+        );
+        assert.equal(results.filter((result) => result.allowed).length, 7);
+        assert.ok(
+          results.every(
+            (result) => result.retryAfter > 0 && result.retryAfter <= 60,
+          ),
+        );
+        assert.equal(
+          (await prisma.publicRateLimit.findUniqueOrThrow({ where: { key } }))
+            .hits,
+          8,
+        );
         assert.ok(!key.includes(identity));
         await prunePublicRateLimits();
         assert.equal(
@@ -87,8 +89,8 @@ test("public infrastructure enforces shared limits and maintains installed merch
         publicRatePolicy("/mcp")?.bucket,
         publicRatePolicy("/api/return-intake/")?.bucket,
       );
-    assert.equal(publicRatePolicy("/REGISTER/")?.bucket, "register");
-    assert.equal(publicRatePolicy("/start-return.data")?.bucket, "intake");
+      assert.equal(publicRatePolicy("/REGISTER/")?.bucket, "register");
+      assert.equal(publicRatePolicy("/start-return.data")?.bucket, "intake");
       assert.equal(publicRatePolicy("/health"), null);
       assert.equal(trustedProxyHops("0"), 0);
       assert.throws(() => trustedProxyHops("true"));

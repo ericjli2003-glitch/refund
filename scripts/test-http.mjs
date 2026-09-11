@@ -218,14 +218,31 @@ try {
   }
   assert.equal(limited.status, 429, "Production must mount the shared limiter");
   assert.ok(Number(limited.headers.get("Retry-After")) > 0);
-  assert.equal((await fetch("http://127.0.0.1:3037/mcp", {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
-  })).status, 429, "Switching intake transports must not reset the quota");
-  assert.equal((await fetch("http://127.0.0.1:3037/api/return-intake", {
-    method: "OPTIONS",
-  })).status, 204, "An exhausted quota must not block browser preflight");
-  assert.equal((await fetch("http://127.0.0.1:3037/start-return.data")).status,
-    429, "Single-fetch navigation must share the browser intake quota");
+  assert.equal(
+    (
+      await fetch("http://127.0.0.1:3037/mcp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      })
+    ).status,
+    429,
+    "Switching intake transports must not reset the quota",
+  );
+  assert.equal(
+    (
+      await fetch("http://127.0.0.1:3037/api/return-intake", {
+        method: "OPTIONS",
+      })
+    ).status,
+    204,
+    "An exhausted quota must not block browser preflight",
+  );
+  assert.equal(
+    (await fetch("http://127.0.0.1:3037/start-return.data")).status,
+    429,
+    "Single-fetch navigation must share the browser intake quota",
+  );
   console.log(
     "Production HTTP startup, discovery, MCP challenge, shared intake rate limits and browser preflight passed.",
   );
