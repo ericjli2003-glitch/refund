@@ -48,7 +48,43 @@ model MerchantDirectory {
   shop          String   @id
   primaryDomain String   @unique
   name          String
+  aliases       String[] @default([])
+  discoveryPublished Boolean @default(false)
   verifiedAt    DateTime @default(now())
+}
+
+// Shared across HTTP replicas. No raw IP addresses are persisted.
+model PublicRateLimit {
+  key       String   @id
+  hits      Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+// Expiring ownership prevents overlapping maintenance runs across replicas.
+model MaintenanceLease {
+  key       String   @id
+  owner     String
+  expiresAt DateTime
+}
+
+// Owner-only, unverified demand signals. Never exposed in merchant/customer APIs.
+// One record per normalized merchant per UTC day; not a unique-customer count.
+model MerchantOpportunity {
+  id            String   @id
+  merchantLabel String
+  kind          String
+  knownShop     String?
+  source        String
+  reviewStatus  String   @default("UNREVIEWED")
+  firstSeenAt   DateTime @default(now())
+  lastSeenAt    DateTime @default(now())
+  expiresAt     DateTime
+
+  @@index([lastSeenAt])
+  @@index([expiresAt])
+  @@index([knownShop])
 }
 
 // Only a random opaque identifier reaches the browser. OAuth material is encrypted.
@@ -62,6 +98,7 @@ model CustomerReturnSession {
   csrfToken           String
   orderHint           String?
   itemHint            String?
+  draftId             String?
   agentRequestId      String?
   expiresAt           DateTime
   createdAt           DateTime            @default(now())
@@ -70,6 +107,32 @@ model CustomerReturnSession {
 
   @@index([shop, customerSubjectHash])
   @@index([expiresAt])
+}
+
+// Each intake keeps a stable reference, including before verification. Credentials
+// remain encrypted at rest and are only returned to that verified customer.
+model ReturnDraft {
+  id                  String   @id @default(uuid())
+  shop                String
+  customerSubjectHash String?
+  intakeKeyHash       String?  @unique
+  inputHash           String?
+  sealedHints         String?
+  stage               String   @default("PURCHASES_FOUND")
+  orderId             String?
+  orderName           String?
+  selectedItems       Json?
+  quoteSnapshot       Json?
+  sealedQuoteToken    String?
+  quoteId             String?
+  quoteExpiresAt      DateTime?
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([shop, customerSubjectHash, updatedAt])
+  @@index([expiresAt])
+  @@index([shop, quoteId])
 }
 
 model AgentOAuthClient {

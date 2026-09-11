@@ -8,6 +8,7 @@ import {
 import { hashCustomerId } from "./return-guards.server";
 import { makeContinuation, returnHints } from "./return-intake.server";
 import { getAgentAuthorizationRequest } from "./agent-oauth-flow.server";
+import { claimIntakeDraft } from "./return-draft.server";
 import {
   appOrigin,
   digest,
@@ -76,7 +77,7 @@ export async function getCustomerSession(request: Request, shop: string) {
 
 // Discovery is anchored in the validated myshopify domain. Reject credential-bearing
 // endpoints and non-Shopify hosts before sending codes or access tokens anywhere.
-async function discover(shop: string): Promise<Discovery> {
+export async function discoverCustomerLogin(shop: string): Promise<Discovery> {
   const response = await fetch(
     `https://${shop}/.well-known/openid-configuration`,
     {
@@ -129,7 +130,7 @@ export async function startCustomerLogin(request: Request) {
   }
   const clientId = process.env.SHOPIFY_API_KEY;
   if (!clientId) throw new Error("Customer sign-in is not configured.");
-  const discovery = await discover(shop);
+  const discovery = await discoverCustomerLogin(shop);
   const raw = randomToken();
   const id = digest(raw);
   const state = randomToken();
@@ -157,6 +158,7 @@ export async function startCustomerLogin(request: Request) {
         ),
         orderHint: hints.orderName,
         itemHint: hints.itemName,
+        draftId: hints.draftId,
         agentRequestId,
         expiresAt: new Date(Date.now() + 600_000),
       },
@@ -216,6 +218,7 @@ export async function finishCustomerLogin(request: Request) {
       continuation: makeContinuation(pending.shop, {
         orderName: pending.orderHint || undefined,
         itemName: pending.itemHint || undefined,
+        draftId: pending.draftId || undefined,
       }),
     });
     return redirect(`/returns/${pending.shop}?${retry}`, {
@@ -277,6 +280,9 @@ export async function finishCustomerLogin(request: Request) {
     pending.shop,
     tokens.access_token,
   );
+  const customerSubjectHash = hashCustomerId(customerId, process.env.SHOPIFY_API_SECRET!);
+  if (pending.draftId)
+    await claimIntakeDraft({ shop: pending.shop, customerSubjectHash, draftId: pending.draftId });
   const raw = randomToken();
   const id = digest(raw);
   await prisma.$transaction([
@@ -293,6 +299,7 @@ export async function finishCustomerLogin(request: Request) {
         ),
         orderHint: pending.orderHint,
         itemHint: pending.itemHint,
+        draftId: pending.draftId,
         expiresAt: new Date(
           Date.now() + Math.min(tokens.expires_in! - 60, 14_400) * 1000,
         ),

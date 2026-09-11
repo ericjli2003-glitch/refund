@@ -37,7 +37,8 @@ The continuation is an encrypted request description, not a customer session.
 ## Customer and merchant boundaries
 
 1. Merchant installation records the canonical store and its Shopify-reported
-   primary domain. Opening Refund registers existing stores too.
+   primary domain. Background maintenance backfills existing installations and
+   refreshes domains every six hours; opening Refund also refreshes the mapping.
 2. Intake resolves only a known domain. A custom domain is rechecked with the
    canonical installed shop; arbitrary URLs are never fetched.
 3. The continuation expires after 30 minutes, uses authenticated encryption,

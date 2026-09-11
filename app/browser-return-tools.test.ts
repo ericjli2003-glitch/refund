@@ -40,6 +40,25 @@ test("unsupported browsers report unavailable without registering anything", () 
   assert.deepEqual(states, ["unavailable"]);
 });
 
+test("the session tool resumes authenticated drafts but never invokes recovery before sign-in", async () => {
+  let calls = 0;
+  const resume = async () => {
+    calls++;
+    return { status: "quoted", quoteValid: true };
+  };
+  await returnSessionTool({ ...session, resume }).execute({});
+  assert.equal(calls, 0);
+  assert.deepEqual(
+    await returnSessionTool({
+      ...session,
+      authenticated: true,
+      resume,
+    }).execute({}),
+    { status: "quoted", quoteValid: true },
+  );
+  assert.equal(calls, 1);
+});
+
 test("modern registrations are removed by their own AbortSignal and can remount", async () => {
   const active = new Map<string, BrowserTool>();
   active.set("merchant_unrelated_tool", tool);

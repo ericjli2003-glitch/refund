@@ -1,6 +1,9 @@
 import * as z from "zod/v4";
-import { appOrigin, seal, unseal } from "./customer-security.server";
+import { randomUUID } from "node:crypto";
+import prisma from "../db.server";
+import { appOrigin, digest, seal, unseal } from "./customer-security.server";
 import { resolveMerchant } from "./merchant-directory.server";
+import { noteUnresolvedMerchant, stoppedDiscovery } from "./merchant-opportunity.server";
 
 export const intakeSchema = z
   .object({
@@ -10,15 +13,17 @@ export const intakeSchema = z
       .min(1)
       .max(2048)
       .describe(
-        "Merchant website URL or domain. Ask for the website if only a store name is known.",
+        "Merchant website, domain, or exact published store name. If it cannot be uniquely resolved, stop without starting a return.",
       ),
     orderName: z.string().trim().max(120).optional(),
     itemName: z.string().trim().max(120).optional(),
+    idempotencyKey: z.string().uuid().optional(),
   })
   .strict();
 const continuationSchema = z
   .object({
     version: z.literal(1),
+    draftId: z.string().uuid().optional(),
     shop: z.string(),
     expiresAt: z.number(),
     orderName: z.string().max(120).optional(),
@@ -28,7 +33,7 @@ const continuationSchema = z
 
 export function makeContinuation(
   shop: string,
-  hints: { orderName?: string; itemName?: string },
+  hints: { orderName?: string; itemName?: string; draftId?: string },
   now = Date.now(),
 ) {
   return seal(
@@ -72,25 +77,49 @@ export function returnHints(url: URL, shop: string) {
   const token = url.searchParams.get("continuation");
   if (token) return readContinuation(token, shop);
   return {
+    draftId: undefined,
     orderName: url.searchParams.get("orderName")?.slice(0, 120) || undefined,
     itemName: url.searchParams.get("itemName")?.slice(0, 120) || undefined,
   };
 }
 
 export async function startReturnIntake(input: unknown) {
-  const { merchant, orderName, itemName } = intakeSchema.parse(input);
+  const { merchant, orderName, itemName, idempotencyKey } = intakeSchema.parse(input);
+  const correlationId = randomUUID();
   const store = await resolveMerchant(merchant);
-  if (!store)
+  if (!store) {
+    await noteUnresolvedMerchant(merchant, "intake", correlationId);
     return {
+      ...stoppedDiscovery,
       status: "merchant_not_resolved" as const,
+      correlationId,
       message:
-        "Refund could not verify this store as connected. Check the website address or use the merchant's published return page. This does not establish whether the purchase is returnable.",
+        "The store could not be uniquely identified. Nothing has been submitted.",
     };
-  const continuation = makeContinuation(store.shop, { orderName, itemName });
+  }
+  const hints = JSON.stringify({ orderName, itemName });
+  const key = digest(`${store.shop}:${idempotencyKey || randomUUID()}`);
+  const inputHash = digest(hints);
+  // Delete expired draft data; submission records remain independently available.
+  await prisma.returnDraft.deleteMany({ where: { expiresAt: { lte: new Date() } } });
+  const draft = await prisma.returnDraft.upsert({
+    where: { intakeKeyHash: key },
+    create: {
+      id: correlationId, shop: store.shop, intakeKeyHash: key, inputHash,
+      stage: "VERIFICATION_REQUIRED",
+      sealedHints: seal(hints, `return-intake:${correlationId}:${store.shop}`),
+      expiresAt: new Date(Date.now() + 30 * 60_000),
+    },
+    update: {},
+  });
+  if (draft.inputHash !== inputHash)
+    throw new Response("Retry key was reused with different return details.", { status: 409 });
+  const continuation = makeContinuation(store.shop, { orderName, itemName, draftId: draft.id });
   const url = new URL(`/returns/${store.shop}`, appOrigin());
   url.searchParams.set("continuation", continuation);
   return {
     status: "verification_required" as const,
+    correlationId: draft.id,
     merchant: store,
     continueUrl: url.href,
     expiresInSeconds: 1800,
@@ -99,6 +128,6 @@ export async function startReturnIntake(input: unknown) {
     returnSubmitted: false,
     refundSubmitted: false,
     nextStep:
-      "Open continueUrl for the customer to verify the email used at checkout. Keep passwords and sign-in codes on the merchant's Shopify sign-in page. A browser agent can then use the portal's find_returnable_items and quote_return tools. Ask for explicit confirmation of the exact quote before any submission. This link does not authorize remote MCP access.",
+      "Open continueUrl in the browser. If the browser supports background tabs, prefer one until customer interaction is needed. Ask the customer to complete Shopify verification themselves in a visible page and keep passwords and sign-in codes on Shopify's page. When the portal returns, use get_return_session, find_returnable_items, and quote_return, and present the results in the conversation without asking the customer to use the purchase form. Keep the portal loaded in the background if supported; do not close it or navigate it away while using its Site Tools. Refund cannot control the host browser panel's visibility. Stop after showing the exact quote; do not submit unless the customer later gives explicit confirmation. If interrupted, reopen continueUrl and use get_return_session. Give support the correlationId, never credentials.",
   };
 }

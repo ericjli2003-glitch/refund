@@ -92,8 +92,20 @@ revocation, and logout. It creates no real Shopify order or refund.
 
 Before broad customer rollout, complete each host's actual connection/quote
 acceptance test, review the authentication implementation, and size distributed
-rate limiting and client storage for expected traffic. An automated protocol
+client storage and rate-limit budgets for expected traffic. The production HTTP
+server now uses PostgreSQL counters across replicas for registration (20/hour),
+authorization (60/10 minutes), and token/revocation requests (120/minute), per
+trusted client IP. Public intake shares 120/minute across MCP, JSON and browser
+entry points; public discovery allows 60/minute. `REFUND_TRUST_PROXY_HOPS` must
+match the deployment's proxy topology. An automated protocol
 test is not evidence that the host UI or Shopify live login was exercised.
+
+Run `npm run test:live-discovery` with `REFUND_TEST_APP_URL` set to the deployed
+HTTPS origin and `REFUND_TEST_SHOP` set to an installed canonical shop. This checks
+the running server's public MCP handshake/tool list, OAuth metadata, rejection of
+unauthenticated protected calls and browser preflight. It does not register a
+client, invoke intake, create a draft, or submit a financial action. The separate
+host sign-in and exact-quote checklist above still needs the customer's browser.
 
 References: [OpenAI authentication](https://developers.openai.com/plugins/build/auth),
 [Claude authentication](https://claude.com/docs/connectors/building/authentication),

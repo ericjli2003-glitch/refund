@@ -11,7 +11,7 @@ export default function Privacy() {
       <main className={styles.legal}>
         <p className={styles.eyebrow}>Legal</p>
         <h1>Privacy policy</h1>
-        <p className={styles.updated}>Effective September 3, 2026</p>
+        <p className={styles.updated}>Effective September 8, 2026</p>
 
         <p>
           Refund helps Shopify merchants offer customer-confirmed returns
@@ -48,6 +48,17 @@ export default function Privacy() {
           protect the service, and meet legal obligations.
         </p>
 
+        <h2>Merchant discovery records</h2>
+        <p>
+          When a store cannot be found, Refund may retain its business name or
+          domain, issue category, source, and timestamps for private service
+          improvement and merchant opportunity review. These records are not
+          shared with merchants and do not trigger outreach. They exclude
+          customer identifiers, order/item details, conversation text, and URL
+          paths or queries. Reports are grouped by merchant per day, remain
+          unverified, and expire after 90 days; expired records are removed
+          during subsequent reporting activity.
+        </p>
         <h2>Customer authentication and payments</h2>
         <p>
           Customer Account access tokens are used to validate the request and

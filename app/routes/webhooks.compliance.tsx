@@ -39,6 +39,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       prisma.customerReturnSession.deleteMany({
         where: { shop, customerSubjectHash },
       }),
+      prisma.returnDraft.deleteMany({ where: { shop, customerSubjectHash } }),
       prisma.agentReturn.deleteMany({ where: { shop, customerSubjectHash } }),
       prisma.privacyRequest.deleteMany({
         where: { shop, customerSubjectHash },
@@ -63,6 +64,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         amount: true,
         currencyCode: true,
         requestedLineItems: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    const drafts = await prisma.returnDraft.findMany({
+      where: { shop, customerSubjectHash },
+      select: {
+        id: true,
+        stage: true,
+        orderId: true,
+        orderName: true,
+        selectedItems: true,
+        quoteSnapshot: true,
+        quoteExpiresAt: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -96,6 +111,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     });
     const reportData = {
       returns,
+      returnDrafts: drafts.map((value) => ({
+        ...value,
+        quoteExpiresAt: value.quoteExpiresAt?.toISOString() ?? null,
+        createdAt: value.createdAt.toISOString(),
+        updatedAt: value.updatedAt.toISOString(),
+      })),
       assistantAuthorizations: authorizations.map((value) => ({
         ...value,
         createdAt: value.createdAt.toISOString(),
@@ -123,8 +144,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   if (topic === "SHOP_REDACT") {
     await prisma.$transaction([
+      prisma.merchantOpportunity.deleteMany({ where: { knownShop: shop } }),
       prisma.merchantDirectory.deleteMany({ where: { shop } }),
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
+      prisma.returnDraft.deleteMany({ where: { shop } }),
       prisma.agentOAuthRequest.deleteMany({ where: { shop } }),
       prisma.agentReturn.deleteMany({ where: { shop } }),
       prisma.privacyRequest.deleteMany({ where: { shop } }),

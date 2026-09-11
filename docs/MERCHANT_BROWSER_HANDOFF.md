@@ -9,12 +9,12 @@ connector. It is separate from the optional remote ChatGPT/Claude OAuth connecto
 1. The customer asks their assistant to return a purchase from a merchant.
 2. The assistant opens the merchant's storefront in a browser that exposes
    WebMCP tools. The merchant's enabled Refund embed publishes
-   `get_store_return_options` and `start_store_return`, even with the launcher off.
-3. The assistant invokes `start_store_return` with order/item hints. This opens
+   `get_store_return_options` and `start_return`, even with the launcher off.
+3. The assistant invokes `start_return` with order/item hints. This opens
    the return panel and provides a visible link to the merchant's Refund portal.
    It does not read orders or submit a return.
 4. On the portal, `get_return_session` reports whether customer verification is
-   needed. The customer completes Shopify sign-in themselves. Credentials and
+   needed, or restores the verified customer's draft and quote. The customer completes Shopify sign-in themselves. Credentials and
    verification codes must not be requested in chat.
 5. After navigation back, the agent discovers the page's tools again and calls
    `get_return_session`, then `find_returnable_items` and `quote_return`.
@@ -42,6 +42,10 @@ assistant must support the tool path and carry navigation into the verified
 portal. A remote connector, browser automation and browser-native tools are
 different interfaces. Basic browsing or search support alone does not establish
 WebMCP support.
+
+The hosted merchant profiles at `/stores/SHOP.myshopify.com` also provide this
+handoff, so the theme embed is optional for hosted discovery. Public directory
+publication remains merchant-controlled.
 
 The portal reports whether its tools registered, the browser lacks the API, or
 registration failed. “Available” means page registration succeeded, **not** that
@@ -73,3 +77,15 @@ References:
 
 Immediate debit-card payouts and return shipping labels remain separate,
 unimplemented capabilities; this path uses the existing original-payment refund.
+
+## UCP publication boundary
+
+Shopify serves the merchant's `/.well-known/ucp` profile. Its documented
+[Order MCP](https://shopify.dev/docs/agents/orders/order-mcp) currently exposes
+`get_order`, limited to orders placed through the calling agent. Refund's
+Customer Account API flow handles the customer's existing purchases separately.
+The [profile documentation](https://shopify.dev/docs/agents/profiles) describes
+capability negotiation, but provides no app registration API for appending
+Refund's tools to that Shopify-owned profile. A Refund-hosted JSON file alone
+would not publish the app through the merchant's UCP service. Keep the existing
+WebMCP/MCP surfaces until a supported Shopify publication mechanism is available.

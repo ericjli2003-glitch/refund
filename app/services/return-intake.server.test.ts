@@ -38,6 +38,15 @@ function mockDelegate(
   return mock;
 }
 function installedStore(t: TestContext) {
+  mockDelegate(t, prisma.merchantDirectory, "findMany", async () => []);
+  mockDelegate(t, prisma.merchantOpportunity, "deleteMany", async () => ({ count: 0 }));
+  mockDelegate(t, prisma.merchantOpportunity, "upsert", async () => ({}));
+  const drafts = new Map<string, Record<string, unknown>>();
+  mockDelegate(t, prisma.returnDraft, "deleteMany", async () => ({ count: 0 }));
+  mockDelegate(t, prisma.returnDraft, "upsert", async ({ where, create }: { where: { intakeKeyHash: string }; create: Record<string, unknown> }) => {
+    if (!drafts.has(where.intakeKeyHash)) drafts.set(where.intakeKeyHash, create);
+    return drafts.get(where.intakeKeyHash);
+  });
   mockDelegate(t, prisma.merchantDirectory, "findUnique", async () => null);
   mockDelegate(
     t,
@@ -164,10 +173,14 @@ test("anonymous intake issues a link without reading customers or creating retur
     readContinuation(url.searchParams.get("continuation")!, shop).orderName,
     "#1001",
   );
-  assert.equal(
-    (await startReturnIntake({ merchant: "absent.myshopify.com" })).status,
-    "merchant_not_resolved",
-  );
+  assert.equal(readContinuation(url.searchParams.get("continuation")!, shop).draftId, result.correlationId);
+  const stopped = await startReturnIntake({ merchant: "absent.myshopify.com" });
+  assert.equal(stopped.status, "merchant_not_resolved");
+  assert.equal("continueUrl" in stopped, false);
+  assert.equal(stopped.returnSubmitted, false);
+  assert.equal(stopped.refundSubmitted, false);
+  assert.match(stopped.nextStep, /Stop here/);
+  assert.doesNotMatch(JSON.stringify(stopped), /opportunit|UNREVIEWED|merchantLabel/i);
   assert.equal(writes.mock.callCount(), 0);
   assert.equal(fetch.mock.callCount(), 0);
 });

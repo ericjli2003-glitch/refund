@@ -26,6 +26,7 @@ import {
   getCustomerSession,
   startCustomerLogin,
 } from "./customer-session.server";
+import { getReturnSession, saveReturnQuote } from "./return-draft.server";
 
 process.env.SHOPIFY_API_SECRET ||= "test-secret";
 process.env.SHOPIFY_API_KEY ||= "test-key";
@@ -111,6 +112,78 @@ test("signed quotes reject tampering, expiration, and another customer or store"
       quote.subject,
     ),
   );
+});
+
+test("return quotes persist as customer-bound resumable drafts without plaintext credentials", async (t) => {
+  const context = {
+    shop: "example.myshopify.com",
+    customerSubjectHash: "customer-a",
+  };
+  let record: Record<string, unknown> | null = null;
+  mockDelegate(
+    t,
+    prisma.returnDraft,
+    "create",
+    async ({ data }: { data: Record<string, unknown> }) => {
+      record = {
+        id: "5ec9fa6c-83c4-49ef-a0ac-5d2cd6f5d19f",
+        quoteId: null,
+        stage: "PURCHASES_FOUND",
+        ...data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      return record;
+    },
+  );
+  mockDelegate(
+    t,
+    prisma.returnDraft,
+    "updateMany",
+    async ({ data }: { data: Record<string, unknown> }) => {
+      record = { ...record, ...data };
+      return { count: 1 };
+    },
+  );
+  mockDelegate(t, prisma.returnDraft, "findFirst", async () => record);
+  mockDelegate(t, prisma.agentReturn, "findMany", async () => []);
+  const expiresAt = new Date(Date.now() + 60_000).toISOString();
+  const quoteToken = signQuote({
+    version: 1,
+    id: "cc6a89ab-d600-44dd-b917-c1923aa16b44",
+    ...context,
+    subject: context.customerSubjectHash,
+    orderId: "gid://shopify/Order/1",
+    items: [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1 }],
+    expectedRefund: { amount: "14.00", currencyCode: "CAD" },
+    expiresAt: Date.parse(expiresAt),
+  });
+  const saved = await saveReturnQuote(context, {
+    submissionAvailable: true,
+    orderId: "gid://shopify/Order/1",
+    orderName: "#1001",
+    items: [
+      {
+        lineItemId: "gid://shopify/LineItem/1",
+        quantity: 1,
+        title: "Snowboard",
+      },
+    ],
+    expectedRefund: { amount: "14.00", currencyCode: "CAD" },
+    quoteToken,
+    expiresAt,
+    paymentMethod: "Original payment method",
+    returnShipping: "Follow store instructions",
+    nextStep: "Review",
+  });
+  assert.notEqual(saved.sealedQuoteToken, quoteToken);
+  assert.ok(!String(saved.sealedQuoteToken).includes(quoteToken));
+  const resumed = await getReturnSession(context);
+  assert.equal(resumed.status, "quoted");
+  assert.equal(resumed.quoteValid, true);
+  assert.equal(resumed.quoteToken, quoteToken);
+  assert.equal(resumed.submitted, false);
+  assert.equal(resumed.correlationId, saved.id);
 });
 
 test("confirmation cannot omit affirmative consent or use unsafe quantities", async () => {
@@ -327,10 +400,11 @@ test("changed quote stops before any return record or Shopify mutation", async (
 
 test("quotes use Shopify shop money for policy limits without changing customer currency", async (t) => {
   const shop = "currency-test.myshopify.com";
+  let automation = true;
   let limit = "100.00";
   let calculatedAmount = "-14.00";
   mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
-    automaticRefundsEnabled: true,
+    automaticRefundsEnabled: automation,
     returnWindowDays: 30,
     currencyCode: "USD",
     maxAutoRefundAmount: limit,
@@ -409,6 +483,15 @@ test("quotes use Shopify shop money for policy limits without changing customer 
     createReturnQuote(shop, "test-token", input),
     /outside.*limit/,
   );
+  automation = false;
+  const estimate = await createReturnQuote(shop, "test-token", input);
+  assert.equal(estimate.submissionAvailable, false, "Installation provides estimates without enabling payments");
+  // A quote-only credential must remain non-submittable even if the merchant
+  // enables automatic payments later. A fresh quote is required.
+  automation = true;
+  await assert.rejects(submitReturnQuote(shop, "test-token", {
+    quoteToken: estimate.quoteToken, customerConfirmed: true,
+  }), /estimate cannot submit/);
   limit = "100.00";
   for (const amount of ["0.00", "14.00"]) {
     calculatedAmount = amount;

@@ -25,7 +25,8 @@ export function normalizeShopDomain(value: string) {
   return shop;
 }
 
-async function discoverCustomerGraphqlEndpoint(shop: string) {
+export async function discoverCustomerGraphqlEndpoint(shop: string) {
+  shop = normalizeShopDomain(shop);
   const cached = endpointCache.get(shop);
   if (cached) return cached;
 
@@ -33,6 +34,7 @@ async function discoverCustomerGraphqlEndpoint(shop: string) {
     `https://${shop}/.well-known/customer-account-api`,
     {
       headers: { Accept: "application/json" },
+      redirect: "error",
       signal: AbortSignal.timeout(8_000),
     },
   );
@@ -53,7 +55,8 @@ async function discoverCustomerGraphqlEndpoint(shop: string) {
   }
 
   const endpointUrl = new URL(endpoint);
-  if (endpointUrl.protocol !== "https:") {
+  if (endpointUrl.protocol !== "https:" || endpointUrl.username || endpointUrl.password || endpointUrl.port ||
+      !(endpointUrl.hostname === "shopify.com" || endpointUrl.hostname.endsWith(".shopify.com") || endpointUrl.hostname === shop)) {
     throw new CustomerAccountApiError(
       "Shopify returned an invalid Customer Account API endpoint.",
     );
@@ -77,6 +80,7 @@ export async function customerAccountGraphql<T>(
   const endpoint = await discoverCustomerGraphqlEndpoint(shop);
   const response = await fetch(endpoint, {
     method: "POST",
+    redirect: "error",
     headers: {
       Accept: "application/json",
       Authorization: accessToken.replace(/^Bearer\s+/i, ""),

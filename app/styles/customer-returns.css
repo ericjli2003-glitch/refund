@@ -92,6 +92,21 @@
   text-decoration: underline;
   padding: 0 12px;
 }
+.customer-returns .return-chat-handoff {
+  padding: 20px 24px;
+  border-radius: 12px;
+  background: #effaf5;
+}
+.customer-returns .return-purchases summary {
+  cursor: pointer;
+  color: #006a59;
+  padding: 16px 0;
+  font-weight: 600;
+}
+.customer-returns .return-purchases summary:focus-visible {
+  outline: 2px solid #006a59;
+  outline-offset: 4px;
+}
 .customer-returns footer {
   color: #516a62;
   font-size: 13px;

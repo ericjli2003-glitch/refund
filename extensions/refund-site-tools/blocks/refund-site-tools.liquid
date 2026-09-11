@@ -1,3 +1,6 @@
+{%- capture refund_app_origin -%}{%- render 'refund-app-origin' -%}{%- endcapture -%}
+{%- assign refund_merchant = shop.permanent_domain | url_encode -%}
+{%- assign refund_start_url = refund_app_origin | append: '/start-return?merchant=' | append: refund_merchant -%}
 <div
   id="refund-site-tools-{{ block.id }}"
   class="refund-site-tools"
@@ -5,13 +8,30 @@
   data-shop-domain="{{ shop.permanent_domain | escape }}"
   data-shop-name="{{ shop.name | escape }}"
   data-account-url="{{ routes.account_url | escape }}"
-  data-portal-url="https://refund-ztxz.onrender.com/start-return?merchant={{ shop.permanent_domain | url_encode }}"
-  data-intake-api-url="https://refund-ztxz.onrender.com/api/return-intake"
-  data-intake-mcp-url="https://refund-ztxz.onrender.com/mcp"
+  data-portal-url="{{ refund_start_url | escape }}"
+  data-intake-api-url="{{ refund_app_origin | escape }}/api/return-intake"
+  data-intake-mcp-url="{{ refund_app_origin | escape }}/mcp"
   data-customer-authenticated="{% if customer %}true{% else %}false{% endif %}"
   data-intent-prefix="{{ 'refund_site_tools.intent_prefix' | t | escape }}"
   {{ block.shopify_attributes }}
 >
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "MerchantReturnPolicy",
+      "name": {{ shop.name | append: " returns with Refund" | json }},
+      "merchant": {
+        "@type": "Organization",
+        "name": {{ shop.name | json }},
+        "url": {{ shop.url | json }}
+      },
+      "merchantReturnLink": {{ refund_start_url | json }},
+      "description": "Eligible purchases can be verified with Shopify, reviewed, and quoted before any return or refund is submitted."
+    }
+  </script>
+  <p class="visually-hidden" data-refund-agent-metadata>
+    {{ shop.name }} supports customer-confirmed returns through Refund. AI assistants can use the start_return site tool on this top-level page. Shopify customer verification is required before purchase lookup. No return or refund is submitted during lookup or quote.
+  </p>
   {% if block.settings.show_launcher %}
     <button
       type="button"
@@ -48,7 +68,7 @@
         {{ 'refund_site_tools.signed_out_body' | t }}
       {% endif %}
     </p>
-    <a class="refund-site-tools__account-link" href="https://refund-ztxz.onrender.com/start-return?merchant={{ shop.permanent_domain | url_encode }}">
+    <a class="refund-site-tools__account-link" href="{{ refund_start_url | escape }}">
       {% if customer %}
         {{ 'refund_site_tools.view_orders' | t }}
       {% else %}

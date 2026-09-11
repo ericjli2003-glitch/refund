@@ -28,7 +28,13 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name),
-    ["find_returnable_items", "quote_return", "confirm_return"],
+    [
+      "get_return_session",
+      "check_return_status",
+      "find_returnable_items",
+      "quote_return",
+      "confirm_return",
+    ],
   );
   assert.equal(
     tools.find((tool) => tool.name === "confirm_return")?.annotations
@@ -83,6 +89,8 @@ test("every private tool checks its own permission before any Shopify call", asy
   await server.connect(serverTransport);
   await client.connect(clientTransport);
   for (const [name, args, scope] of [
+    ["get_return_session", {}, "returns:read"],
+    ["check_return_status", {}, "returns:read"],
     ["find_returnable_items", {}, "returns:read"],
     [
       "quote_return",
@@ -100,7 +108,13 @@ test("every private tool checks its own permission before any Shopify call", asy
     assert.match(JSON.stringify(result._meta), /insufficient_scope/);
     assert.match(JSON.stringify(result._meta), new RegExp(scope));
   }
-  assert.deepEqual(calls, ["returns:read", "returns:quote", "returns:submit"]);
+  assert.deepEqual(calls, [
+    "returns:read",
+    "returns:read",
+    "returns:read",
+    "returns:quote",
+    "returns:submit",
+  ]);
   assert.equal(upstream.mock.callCount(), 0);
 });
 
