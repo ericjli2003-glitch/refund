@@ -43,10 +43,13 @@ jobs:
       - run: npx prisma migrate deploy
       - run: node scripts/test-grant-cascade.mjs
       - run: npm test
+      - run: node --test scripts/configure-storefront.test.mjs
+      - run: npm run storefront:check
       - run: npm run test:oauth
       - run: npx vite-node --config vite.test.config.ts tests/return-draft.integration.ts
       - run: npx vite-node --config vite.test.config.ts tests/merchant-onboarding.integration.ts
       - run: npx vite-node --config vite.test.config.ts tests/merchant-opportunity.integration.ts
+      - run: npm run test:infrastructure
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build

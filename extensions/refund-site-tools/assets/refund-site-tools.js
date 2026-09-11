@@ -176,14 +176,13 @@
   ];
 
   (async () => {
-    const registered = [];
+    const controller = new AbortController();
     try {
       for (const tool of tools) {
-        await modelContext.registerTool(tool);
-        registered.push(tool.name);
+        await modelContext.registerTool(tool, { signal: controller.signal });
       }
     } catch {
-      for (const name of registered) modelContext.unregisterTool?.(name);
+      controller.abort();
       window.__refundSiteToolsRegistered = false;
     }
   })();

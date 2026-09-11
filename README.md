@@ -8,6 +8,12 @@ return flow. A customer signs in with the retailer, selects eligible line items,
 reviews Shopify's calculated amount, and explicitly confirms before Refund opens
 the return and submits an idempotent refund to the original payment method.
 
+This is capability discovery, not background AI-visitor detection. The browser
+and assistant must support WebMCP; ordinary ChatGPT/Claude chats do not gain tools
+just by mentioning a merchant. See the priority
+[connector-free merchant handoff](docs/MERCHANT_BROWSER_HANDOFF.md) and its live
+acceptance checklist.
+
 ## What the app does
 
 1. `find_returnable_items` reads recent returnable purchases from the
@@ -157,6 +163,9 @@ its reference across retries. Shopify verification claims that same draft.
 Submission history remains independent of draft expiry or replacement. Its signed quote
 credential is encrypted at rest and only restored while valid. Fresh Shopify
 verification is still required after the browser session expires.
+Its support indicator distinguishes registered browser tools from missing support
+or registration failure. Successful page registration is not proof that a
+particular assistant can use those tools.
 
 Quotes expire after ten minutes and are bound to the customer, shop, items,
 quantities, amount, and currency. Login and quote requests perform no Shopify
@@ -185,17 +194,28 @@ flow, including cancellation/retry. The portal still requires customer
 authentication, a fresh exact quote, and explicit confirmation.
 
 Canonical installed `*.myshopify.com` domains work immediately. Primary custom
-domains are recorded from Shopify on app authentication and whenever the
-merchant opens the Refund dashboard. Custom-domain requests are rechecked
+domains are recorded from Shopify on app authentication, whenever the
+merchant opens the Refund dashboard, and by background directory maintenance.
+Custom-domain requests are rechecked
 against that installed shop's Admin API; Refund never fetches a caller-supplied
-website to infer the shop. Store names alone and unregistered aliases are not
-resolved. An unresolved store is not a determination of return eligibility.
+website to infer the shop. Store names resolve only when they uniquely match a
+published merchant profile. An unresolved store is not a determination of return eligibility.
 
 The merchant directory migration must run before serving the updated app.
-Open Refund in each existing store once to register its primary custom domain.
-New installations register during authentication; uninstall and shop redaction
-remove the mapping. Keep request-rate limits at the hosting edge for the public
-endpoints; the app bounds JSON request bodies to 16 KiB.
+The production server automatically backfills existing installations after startup
+and refreshes their domains every six hours. A database lease coordinates replicas;
+failed shops retry after fifteen minutes. The job preserves publication settings
+and merchant policy. New installations register during authentication; uninstall
+and shop redaction remove the mapping.
+
+Public intake, discovery and OAuth entry points use shared PostgreSQL rate limits,
+with hashed client addresses, HTTP 429 and Retry-After. Run the additive
+`20260911000000_public_rate_limits` migration before serving this version. A database
+outage returns 503 at these endpoints. Configure `REFUND_TRUST_PROXY_HOPS` to the
+actual fixed proxy count (1 on Render; 0 for a direct server); the proxy must append
+the real client address. Extra edge protection can reduce database load under abuse.
+JSON intake bodies remain bounded to 16 KiB. These controls run in the production
+HTTP entry point, not the Shopify CLI's plain Vite development server.
 
 The theme's `get_store_return_options` advertises the public HTTP/MCP addresses.
 Its launcher now goes through `/start-return`, and can remain hidden. Publish
@@ -243,12 +263,16 @@ The app uses PostgreSQL and runs Prisma migrations before starting the server.
    `PUBLIC_SUPPORT_EMAIL` in Render. The blueprint supplies `DATABASE_URL`.
 3. Keep `application_url`, the `/auth/callback` admin redirect,
    `[customer_authentication]` `/customer/callback` redirect and JavaScript origin,
-   and the two portal URLs in the theme block aligned to the deployed HTTPS host.
+   aligned to the deployed HTTPS host. Storefront URLs are generated from that
+   configuration's `application_url` by `npm run storefront:configure`.
    Configure the customer scopes in `shopify.app.toml` and `SCOPES`, and request
    the appropriate protected-customer-data access. App-client OAuth uses PKCE;
    no per-merchant Headless OAuth client is needed for this portal.
-4. Run `shopify app config validate`, then `shopify app deploy` to publish the
-   app configuration and webhook subscriptions.
+4. Run `shopify app config validate`, then `npm run deploy` to publish the
+   app configuration and webhook subscriptions. The deploy wrapper regenerates
+   the storefront URLs and pins the same configuration for Shopify CLI. For a
+   separate app use `npm run deploy -- --config staging`; it reads
+   `shopify.app.staging.toml`. Keep that app's backend `SHOPIFY_APP_URL` aligned.
 5. Install on a development store and run the end-to-end checklist in
    `docs/SHOPIFY_APP_STORE_SUBMISSION.md`.
 

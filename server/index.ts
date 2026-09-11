@@ -3,12 +3,15 @@ import { createRequestHandler } from "@react-router/express";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createOAuthRouter } from "./oauth";
+import { createPublicRateLimiter, trustedProxyHops } from "./public-rate-limit";
+import { startMerchantMaintenance } from "../app/services/merchant-maintenance.server";
 
 const app = express();
 app.disable("x-powered-by");
 // Render terminates HTTPS at its reverse proxy; URLs come from SHOPIFY_APP_URL,
 // never from Host/forwarded headers. One trusted hop is used for rate limiting.
-app.set("trust proxy", 1);
+app.set("trust proxy", trustedProxyHops());
+app.use(createPublicRateLimiter());
 app.use(createOAuthRouter());
 process.env.REFUND_OAUTH_HTTP_READY = "1";
 app.use(
@@ -32,6 +35,7 @@ app.use(((error, _req, res, _next) => {
     .set("Cache-Control", "no-store")
     .json({ error: status === 413 ? "request_too_large" : "server_error" });
 }) as express.ErrorRequestHandler);
-app.listen(Number(process.env.PORT || 3000), "0.0.0.0", () =>
-  console.log("Refund HTTP server ready"),
-);
+app.listen(Number(process.env.PORT || 3000), "0.0.0.0", () => {
+  console.log("Refund HTTP server ready");
+  startMerchantMaintenance();
+});

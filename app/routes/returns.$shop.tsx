@@ -9,8 +9,17 @@ import {
 import { privateHeaders } from "../services/customer-security.server";
 import { returnHints } from "../services/return-intake.server";
 import { listAgentGrants } from "../services/agent-access.server";
+import {
+  registerBrowserReturnTools,
+  returnSessionTool,
+  type BrowserModelContext,
+  type BrowserTool,
+} from "../browser-return-tools";
 import prisma from "../db.server";
-import { claimIntakeDraft, getReturnSession } from "../services/return-draft.server";
+import {
+  claimIntakeDraft,
+  getReturnSession,
+} from "../services/return-draft.server";
 import type {
   createReturnQuote,
   submitReturnQuote,
@@ -18,15 +27,10 @@ import type {
 import "../styles/customer-returns.css";
 
 type Orders = Awaited<ReturnType<typeof getReturnableOrders>>["orders"];
-type Quote = Awaited<ReturnType<typeof createReturnQuote>> & { correlationId?: string | null };
-type Result = Awaited<ReturnType<typeof submitReturnQuote>>;
-type BrowserTool = {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  annotations: Record<string, boolean>;
-  execute: (input: Record<string, unknown>) => Promise<unknown>;
+type Quote = Awaited<ReturnType<typeof createReturnQuote>> & {
+  correlationId?: string | null;
 };
+type Result = Awaited<ReturnType<typeof submitReturnQuote>>;
 
 export const headers = () => privateHeaders;
 
@@ -37,8 +41,15 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const query = new URLSearchParams({ shop });
   const hints = returnHints(url, shop);
   if (session && hints.draftId) {
-    await claimIntakeDraft({ shop, customerSubjectHash: session.customerSubjectHash!, draftId: hints.draftId });
-    await prisma.customerReturnSession.update({ where: { id: session.id }, data: { draftId: hints.draftId } });
+    await claimIntakeDraft({
+      shop,
+      customerSubjectHash: session.customerSubjectHash!,
+      draftId: hints.draftId,
+    });
+    await prisma.customerReturnSession.update({
+      where: { id: session.id },
+      data: { draftId: hints.draftId },
+    });
   }
   const draftId = hints.draftId || session?.draftId;
   const hasNewHints = Boolean(
@@ -81,7 +92,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       orderHint,
       itemHint,
       draftId: draftId || null,
-      returnSession: session && authenticated ? await getReturnSession({ shop, customerSubjectHash: session.customerSubjectHash!, draftId }) : null,
+      returnSession:
+        session && authenticated
+          ? await getReturnSession({
+              shop,
+              customerSubjectHash: session.customerSubjectHash!,
+              draftId,
+            })
+          : null,
       loginUrl: `/customer/login?${query}`,
       error,
     },
@@ -92,14 +110,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export default function CustomerReturns() {
   const initial = useLoaderData<typeof loader>();
   const [orders, setOrders] = useState(initial.orders);
-  const [quote, setQuote] = useState<Quote | null>(initial.returnSession?.quote ? { ...initial.returnSession.quote, correlationId: initial.returnSession.correlationId } : null);
+  const [quote, setQuote] = useState<Quote | null>(
+    initial.returnSession?.quote
+      ? {
+          ...initial.returnSession.quote,
+          correlationId: initial.returnSession.correlationId,
+        }
+      : null,
+  );
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState(initial.error);
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [grants, setGrants] = useState(initial.grants);
-  const [siteToolsReady, setSiteToolsReady] = useState(false);
-  const continueInChat = initial.authenticated && siteToolsReady;
+  const [browserTools, setBrowserTools] = useState<
+    "checking" | "unavailable" | "ready" | "failed"
+  >("checking");
+  const continueInChat = initial.authenticated && browserTools === "ready";
 
   async function call(operation: string, input: Record<string, unknown> = {}) {
     setBusy(true);
@@ -128,7 +155,14 @@ export default function CustomerReturns() {
         setQuote(null);
       }
       if (payload.session) {
-        setQuote(payload.session.quote ? { ...payload.session.quote, correlationId: payload.session.correlationId } : null);
+        setQuote(
+          payload.session.quote
+            ? {
+                ...payload.session.quote,
+                correlationId: payload.session.correlationId,
+              }
+            : null,
+        );
         setConfirmed(false);
       }
       return payload;
@@ -145,13 +179,13 @@ export default function CustomerReturns() {
   useEffect(() => {
     const context = (
       document as Document & {
-        modelContext?: {
-          registerTool: (tool: BrowserTool) => unknown;
-          unregisterTool?: (name: string) => void;
-        };
+        modelContext?: BrowserModelContext;
       }
     ).modelContext;
-    if (window.top !== window || !context?.registerTool) return;
+    if (window.top !== window) {
+      setBrowserTools("unavailable");
+      return;
+    }
     const items = {
       type: "array",
       minItems: 1,
@@ -186,18 +220,12 @@ export default function CustomerReturns() {
         }
       };
     const tools: BrowserTool[] = [
-      {
-        name: "get_return_session",
-        description:
-          "Resume the signed-in customer's latest return draft. Returns only this customer's draft, quote expiry, safe status, and recovery instructions. Continue the conversation in chat using the page tools; the customer does not need to use the purchase form. Keep this page loaded, in the background if the browser supports it. Never close or navigate it away while using its tools. It never creates a return or refund.",
-        inputSchema: {
-          type: "object",
-          properties: {},
-          additionalProperties: false,
-        },
-        annotations: { readOnlyHint: true, destructiveHint: false },
-        execute: run("get_session"),
-      },
+      returnSessionTool({
+        shop: initial.shop,
+        authenticated: initial.authenticated,
+        loginUrl: new URL(initial.loginUrl, window.location.origin).href,
+        resume: run("get_session"),
+      }),
       {
         name: "check_return_status",
         description:
@@ -219,7 +247,11 @@ export default function CustomerReturns() {
           properties: {},
           additionalProperties: false,
         },
-        annotations: { readOnlyHint: true, destructiveHint: false },
+        annotations: {
+          readOnlyHint: true,
+          consequentialHint: false,
+          untrustedContentHint: true,
+        },
         execute: run("list"),
       },
       {
@@ -232,7 +264,12 @@ export default function CustomerReturns() {
           required: ["orderId", "items"],
           additionalProperties: false,
         },
-        annotations: { readOnlyHint: false, destructiveHint: false },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          consequentialHint: false,
+          untrustedContentHint: true,
+        },
         execute: run("quote"),
       },
       {
@@ -251,38 +288,25 @@ export default function CustomerReturns() {
         },
         annotations: {
           readOnlyHint: false,
+          consequentialHint: true,
+          untrustedContentHint: true,
           destructiveHint: true,
           idempotentHint: true,
         },
         execute: run("confirm"),
       },
     ];
-    let cancelled = false;
-    const registered: string[] = [];
-    setSiteToolsReady(false);
-    void (async () => {
-      try {
-        for (const tool of tools) {
-          await context.registerTool(tool);
-          if (cancelled) {
-            context.unregisterTool?.(tool.name);
-            return;
-          }
-          registered.push(tool.name);
-        }
-        setSiteToolsReady(true);
-      } catch {
-        // Retain the ordinary purchase form if the browser rejects registration.
-        for (const name of registered) context.unregisterTool?.(name);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      for (const name of registered) context.unregisterTool?.(name);
-    };
+    setBrowserTools("checking");
+    return registerBrowserReturnTools(context, tools, setBrowserTools);
     // The registration closes over only stable session information; state setters are stable.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial.authenticated, initial.csrf, initial.shop, initial.loginUrl, initial.draftId]);
+  }, [
+    initial.authenticated,
+    initial.csrf,
+    initial.shop,
+    initial.loginUrl,
+    initial.draftId,
+  ]);
 
   return (
     <main className="customer-returns">
@@ -290,10 +314,23 @@ export default function CustomerReturns() {
         <a href={`https://${initial.shop}`}>← Back to store</a>
         <span>REFUND · CUSTOMER RETURNS</span>
       </header>
-      <h1>{continueInChat ? "You’re connected. Continue in chat." : "Let’s find your return."}</h1>
+      <h1>
+        {continueInChat
+          ? "You’re connected. Continue in chat."
+          : "Let’s find your return."}
+      </h1>
       <p className="return-intro">
         Securely connected to {initial.shop}. Nothing is submitted until you
         confirm the items and refund amount.
+      </p>
+      <p role="status">
+        {browserTools === "checking" && "Checking browser return-tool support…"}
+        {browserTools === "ready" &&
+          "Return tools are available to a compatible agent in this browser. No Refund connector is needed here; customer sign-in and refund confirmation are still required."}
+        {browserTools === "unavailable" &&
+          "This browser does not expose WebMCP page tools. You can use the return form below; automatic tool access depends on your browser and assistant."}
+        {browserTools === "failed" &&
+          "Browser return tools could not be registered. You can still use the return form below."}
       </p>
       {continueInChat && (
         <p className="return-chat-handoff" role="status">
@@ -384,7 +421,11 @@ export default function CustomerReturns() {
           )}
           {quote && (
             <section className="return-quote" aria-label="Return quote">
-              <h2>{quote.submissionAvailable ? "Review before confirming" : "Your return estimate"}</h2>
+              <h2>
+                {quote.submissionAvailable
+                  ? "Review before confirming"
+                  : "Your return estimate"}
+              </h2>
               <p>{quote.orderName}</p>
               <ul>
                 {quote.items.map((item) => (
@@ -400,90 +441,95 @@ export default function CustomerReturns() {
               <p>{quote.paymentMethod}</p>
               <p>{quote.returnShipping}</p>
               <p>Quote expires at {quote.expiresAt}.</p>
-              {quote.correlationId && <p>Return reference: {quote.correlationId}</p>}
+              {quote.correlationId && (
+                <p>Return reference: {quote.correlationId}</p>
+              )}
               {!quote.submissionAvailable && <p>{quote.nextStep}</p>}
-              {quote.submissionAvailable && <><label>
-                <input
-                  type="checkbox"
-                  checked={confirmed}
-                  onChange={(event) => setConfirmed(event.target.checked)}
-                />{" "}
-                I confirm these items and this refund amount.
-              </label>
-              <button
-                disabled={busy || !confirmed}
-                onClick={() =>
-                  void call("confirm", {
-                    quoteToken: quote.quoteToken,
-                    customerConfirmed: true,
-                  }).catch(() => {})
-                }
-              >
-                Confirm return and refund
-              </button>
-              </>}
+              {quote.submissionAvailable && (
+                <>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={confirmed}
+                      onChange={(event) => setConfirmed(event.target.checked)}
+                    />{" "}
+                    I confirm these items and this refund amount.
+                  </label>
+                  <button
+                    disabled={busy || !confirmed}
+                    onClick={() =>
+                      void call("confirm", {
+                        quoteToken: quote.quoteToken,
+                        customerConfirmed: true,
+                      }).catch(() => {})
+                    }
+                  >
+                    Confirm return and refund
+                  </button>
+                </>
+              )}
             </section>
           )}
           <details className="return-purchases" open={!continueInChat}>
-          <summary>View purchases or continue here</summary>
-          <h2>Your recent purchases</h2>
-          {!orders.length && !error && (
-            <p>No recent orders are available for this account.</p>
-          )}
-          {orders.map((order) => (
-            <section key={order.id}>
-              <h3>Order {order.name}</h3>
-              <p>Purchased {order.processedAt.slice(0, 10)}</p>
-              {order.returnInformation.returnableLineItems.nodes.map(
-                (entry) => (
-                  <form
-                    key={entry.lineItem.id}
-                    onSubmit={(event) => {
-                      event.preventDefault();
-                      const form = new FormData(event.currentTarget);
-                      void call("quote", {
-                        orderId: order.id,
-                        items: [
-                          {
-                            lineItemId: entry.lineItem.id,
-                            quantity: Number(form.get("quantity")),
-                          },
-                        ],
-                      }).catch(() => {});
-                    }}
-                  >
-                    <h4>{entry.lineItem.presentmentTitle}</h4>
-                    <p>
-                      Item total:{" "}
-                      {entry.lineItem.currentTotalPrice.currencyCode}{" "}
-                      {entry.lineItem.currentTotalPrice.amount}
-                    </p>
-                    <label>
-                      Quantity{" "}
-                      <input
-                        aria-label={`Quantity for ${entry.lineItem.presentmentTitle}`}
-                        name="quantity"
-                        type="number"
-                        min="1"
-                        max={entry.quantity}
-                        defaultValue="1"
-                        required
-                      />
-                    </label>
-                    <button disabled={busy}>Get refund quote</button>
-                  </form>
-                ),
-              )}
-              {!order.returnInformation.returnableLineItems.nodes.length && (
-                <p>
-                  No items are currently eligible for a return.{" "}
-                  {order.returnInformation.nonReturnableSummary?.nonReturnableReasons.join(
-                    ", ",
-                  )}
-                </p>
-              )}
-            </section>
-          ))}
+            <summary>View purchases or continue here</summary>
+            <h2>Your recent purchases</h2>
+            {!orders.length && !error && (
+              <p>No recent orders are available for this account.</p>
+            )}
+            {orders.map((order) => (
+              <section key={order.id}>
+                <h3>Order {order.name}</h3>
+                <p>Purchased {order.processedAt.slice(0, 10)}</p>
+                {order.returnInformation.returnableLineItems.nodes.map(
+                  (entry) => (
+                    <form
+                      key={entry.lineItem.id}
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        const form = new FormData(event.currentTarget);
+                        void call("quote", {
+                          orderId: order.id,
+                          items: [
+                            {
+                              lineItemId: entry.lineItem.id,
+                              quantity: Number(form.get("quantity")),
+                            },
+                          ],
+                        }).catch(() => {});
+                      }}
+                    >
+                      <h4>{entry.lineItem.presentmentTitle}</h4>
+                      <p>
+                        Item total:{" "}
+                        {entry.lineItem.currentTotalPrice.currencyCode}{" "}
+                        {entry.lineItem.currentTotalPrice.amount}
+                      </p>
+                      <label>
+                        Quantity{" "}
+                        <input
+                          aria-label={`Quantity for ${entry.lineItem.presentmentTitle}`}
+                          name="quantity"
+                          type="number"
+                          min="1"
+                          max={entry.quantity}
+                          defaultValue="1"
+                          required
+                        />
+                      </label>
+                      <button disabled={busy}>Get refund quote</button>
+                    </form>
+                  ),
+                )}
+                {!order.returnInformation.returnableLineItems.nodes.length && (
+                  <p>
+                    No items are currently eligible for a return.{" "}
+                    {order.returnInformation.nonReturnableSummary?.nonReturnableReasons.join(
+                      ", ",
+                    )}
+                  </p>
+                )}
+              </section>
+            ))}
           </details>
         </>
       )}

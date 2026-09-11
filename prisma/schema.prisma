@@ -53,6 +53,22 @@ model MerchantDirectory {
   verifiedAt    DateTime @default(now())
 }
 
+// Shared across HTTP replicas. No raw IP addresses are persisted.
+model PublicRateLimit {
+  key       String   @id
+  hits      Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+// Expiring ownership prevents overlapping maintenance runs across replicas.
+model MaintenanceLease {
+  key       String   @id
+  owner     String
+  expiresAt DateTime
+}
+
 // Owner-only, unverified demand signals. Never exposed in merchant/customer APIs.
 // One record per normalized merchant per UTC day; not a unique-customer count.
 model MerchantOpportunity {

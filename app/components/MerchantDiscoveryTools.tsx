@@ -1,20 +1,14 @@
 import { useEffect } from "react";
-
-type Tool = {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  annotations: Record<string, boolean>;
-  execute: (input: Record<string, unknown>) => Promise<unknown>;
-};
+import {
+  registerBrowserReturnTools,
+  type BrowserModelContext,
+  type BrowserTool,
+} from "../browser-return-tools";
 export function MerchantDiscoveryTools() {
   useEffect(() => {
     const context = (
       document as Document & {
-        modelContext?: {
-          registerTool: (tool: Tool) => void;
-          unregisterTool?: (name: string) => void;
-        };
+        modelContext?: BrowserModelContext;
       }
     ).modelContext;
     if (window.top !== window || !context?.registerTool) return;
@@ -54,7 +48,7 @@ export function MerchantDiscoveryTools() {
           };
         }
       };
-    const tools: Tool[] = [
+    const tools: BrowserTool[] = [
       {
         name: "find_merchant_return_page",
         description:
@@ -80,10 +74,7 @@ export function MerchantDiscoveryTools() {
         execute: execute("/api/merchant-discovery-failure"),
       },
     ];
-    for (const tool of tools) context.registerTool(tool);
-    return () => {
-      for (const tool of tools) context.unregisterTool?.(tool.name);
-    };
+    return registerBrowserReturnTools(context, tools, () => {});
   }, []);
   return null;
 }
