@@ -87,7 +87,8 @@ test("public infrastructure enforces shared limits and maintains installed merch
         publicRatePolicy("/mcp")?.bucket,
         publicRatePolicy("/api/return-intake/")?.bucket,
       );
-      assert.equal(publicRatePolicy("/REGISTER/")?.bucket, "register");
+    assert.equal(publicRatePolicy("/REGISTER/")?.bucket, "register");
+    assert.equal(publicRatePolicy("/start-return.data")?.bucket, "intake");
       assert.equal(publicRatePolicy("/health"), null);
       assert.equal(trustedProxyHops("0"), 0);
       assert.throws(() => trustedProxyHops("true"));

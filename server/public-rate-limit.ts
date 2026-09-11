@@ -5,7 +5,9 @@ import {
 } from "../app/services/public-rate-limit.server";
 
 export function publicRatePolicy(path: string): RatePolicy | null {
-  const normalized = path.toLowerCase().replace(/\/+$/, "");
+  // React Router's single-fetch .data URL invokes the same loader as the HTML
+  // entry point. Navigation must share its quota with direct page requests.
+  const normalized = path.toLowerCase().replace(/\/+$/, "").replace(/\.data$/, "");
   if (normalized === "/register")
     return { bucket: "register", limit: 20, seconds: 3600 };
   if (normalized === "/authorize")
