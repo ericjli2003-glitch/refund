@@ -9,6 +9,7 @@ import { useLoaderData, useSubmit } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import prisma from "../db.server";
+import { describeRefundProgress } from "../refund-status";
 import { authenticate } from "../shopify.server";
 import {
   provisionMerchant,
@@ -427,7 +428,7 @@ export default function RefundDashboard() {
         >
           <s-stack direction="block" gap="base">
             <s-switch
-              label="Allow eligible customer-confirmed returns without merchant approval"
+              label="Authorize eligible refunds to the original payment method on customer confirmation"
               checked={automaticRefundsEnabled}
               onChange={(event) =>
                 setAutomaticRefundsEnabled(event.currentTarget.checked)
@@ -438,6 +439,12 @@ export default function RefundDashboard() {
               customer signs in, selects an eligible item, sees the calculated
               amount, and confirms it. Shopify then opens the return and sends
               the refund to the original payment method.
+            </s-paragraph>
+            <s-paragraph>
+              Refunds are submitted before you receive or inspect the returned
+              items. Your store carries the risk if the customer does not return
+              them. Customers must follow your return instructions; bank posting
+              time is outside Refund&apos;s control.
             </s-paragraph>
             <s-grid
               gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
@@ -612,16 +619,18 @@ export default function RefundDashboard() {
                   <s-table-cell>
                     <s-badge
                       tone={
-                        agentReturn.status === "REFUND_SUBMITTED" ||
-                        agentReturn.status === "REFUND_RECORDED"
+                        agentReturn.status !== "NEEDS_ATTENTION" && agentReturn.refundStatus === "SUCCESS"
                           ? "success"
                           : agentReturn.status === "NEEDS_ATTENTION"
                             ? "critical"
                             : "info"
                       }
                     >
-                      {formatStatus(agentReturn.status)}
+                      {describeRefundProgress(agentReturn).title}
                     </s-badge>
+                    {agentReturn.failureReason && (
+                      <s-paragraph>{agentReturn.failureReason}</s-paragraph>
+                    )}
                   </s-table-cell>
                   <s-table-cell>
                     {agentReturn.amount && agentReturn.currencyCode

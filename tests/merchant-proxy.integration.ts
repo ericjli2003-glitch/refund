@@ -11,6 +11,7 @@ import {
 import prisma from "../app/db.server";
 import { handleMerchantProxy } from "../app/services/merchant-proxy-http.server";
 import { action as returnAction } from "../app/routes/api.returns.$shop";
+import { action as refundWebhookAction } from "../app/routes/webhooks.refunds";
 import {
   finishCustomerLogin,
   getCustomerSession,
@@ -49,6 +50,7 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
   let challenge = "";
   let amount = "25.00";
   let approvalFails = false;
+  let paymentStatus = "PENDING";
   const mutations: string[] = [];
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const jwk = {
@@ -213,6 +215,8 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
                     gateway: "bogus",
                     parentTransaction: {
                       id: "gid://shopify/OrderTransaction/76",
+                      gateway: "bogus",
+                      manualPaymentGateway: false,
                     },
                   },
                 ],
@@ -235,7 +239,10 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
         );
         mutations.push("refundCreate");
         return Response.json({
-          data: { refundCreate: { refund: { id: refundId }, userErrors: [] } },
+          data: { refundCreate: { refund: {
+            id: refundId,
+            transactions: { nodes: [{ kind: "REFUND", status: paymentStatus }], pageInfo: { hasNextPage: false } },
+          }, userErrors: [] } },
         });
       }
     }
@@ -336,6 +343,7 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
       prisma.returnDraft.deleteMany({ where: { shop } }),
       prisma.agentReturn.deleteMany({ where: { shop } }),
+      prisma.webhookReceipt.deleteMany({ where: { shop } }),
       prisma.storePolicy.deleteMany({ where: { shop } }),
       prisma.session.deleteMany({ where: { shop } }),
     ]);
@@ -715,6 +723,9 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       assert.equal(confirmed.status, 200, await confirmed.clone().text());
       const { result } = await confirmed.json();
       assert.equal(result.status, "REFUND_SUBMITTED");
+      assert.equal(result.refundStatus, "PENDING");
+      assert.equal(result.paymentMethod, "Original payment method");
+      assert.match(result.message, /not yet confirmed/);
       assert.equal(result.returnId, returnId);
       assert.equal(result.refundId, refundId);
       assert.deepEqual(mutations, [
@@ -729,6 +740,8 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       assert.equal(retry.status, 200, await retry.clone().text());
       const status = await (await portal("status")).json();
       assert.ok(JSON.stringify(status).includes("REFUND_SUBMITTED"));
+      assert.equal(status.session.submissions[0].refundStatus, "PENDING");
+      assert.match(status.session.submissions[0].message, /not yet confirmed/);
       assert.equal(mutations.length, 3);
       assert.equal(await prisma.agentReturn.count({ where: { shop } }), 1);
       assert.equal(
@@ -794,4 +807,57 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       );
     },
   );
+  await t.test("processor failure retains the refund ID and blocks a second payment on retry", async () => {
+    approvalFails = false;
+    paymentStatus = "FAILURE";
+    const next = await (await portal("quote", { orderId, items: [{ lineItemId, quantity: 2 }] })).json();
+    const before = mutations.length;
+    const request = { quoteToken: next.quote.quoteToken, customerConfirmed: true };
+    const response = await portal("confirm", request);
+    assert.equal(response.status, 200, await response.clone().text());
+    const { result } = await response.json();
+    assert.equal(result.status, "NEEDS_ATTENTION");
+    assert.equal(result.refundStatus, "FAILED");
+    assert.equal(result.refundId, refundId);
+    assert.match(result.message, /do not submit another/);
+    assert.equal(mutations.length, before + 3);
+    await portal("confirm", request);
+    assert.equal(mutations.length, before + 3);
+  });
+  await t.test("refund webhooks preserve failures and never downgrade successful processor evidence", async () => {
+    async function webhook(status: string, webhookId = randomUUID()) {
+      const body = JSON.stringify({
+        admin_graphql_api_id: refundId,
+        transactions: [{ kind: "refund", status }],
+      });
+      return refundWebhookAction({
+        url: new URL("https://refund.test/webhooks/refunds"),
+        pattern: "/webhooks/refunds",
+        request: new Request("https://refund.test/webhooks/refunds", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Shopify-Shop-Domain": shop,
+            "X-Shopify-Topic": "refunds/create",
+            "X-Shopify-Webhook-Id": webhookId,
+            "X-Shopify-API-Version": "2026-07",
+            "X-Shopify-Hmac-Sha256": createHmac("sha256", secret).update(body).digest("base64"),
+          },
+          body,
+        }),
+        params: {},
+        context: {},
+      });
+    }
+    const event = randomUUID();
+    assert.equal((await webhook("success", event)).status, 200);
+    assert.equal((await webhook("success", event)).status, 200);
+    await webhook("pending");
+    const records = await prisma.agentReturn.findMany({ where: { shop, refundId } });
+    assert.equal(records.filter((record) => record.refundStatus === "SUCCESS").length, 1);
+    assert.equal(records.filter((record) => record.status === "NEEDS_ATTENTION" && record.refundStatus === "FAILED").length, 1);
+    assert.equal(await prisma.webhookReceipt.count({ where: { id: event } }), 1);
+    const status = await (await portal("status")).json();
+    assert.ok(status.session.submissions.some((record: { message: string }) => /bank may still take time/.test(record.message)));
+  });
 });

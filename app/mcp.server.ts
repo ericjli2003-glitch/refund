@@ -307,10 +307,9 @@ export function createCustomerReturnsMcpServer({
                         currencyCode: result.currencyCode,
                       }
                     : null,
-                  message:
-                    result.status === "REFUND_SUBMITTED"
-                      ? "The return is open and Shopify submitted the refund to the original payment method. Bank posting time may vary."
-                      : "This request already exists. Use its current status and do not submit it again.",
+                  refundStatus: result.refundStatus,
+                  paymentMethod: result.paymentMethod,
+                  message: result.message,
                 },
                 null,
                 2,

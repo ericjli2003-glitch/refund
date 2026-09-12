@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as z from "zod/v4";
 import prisma from "../db.server";
+import { describeRefundProgress } from "../refund-status";
 import {
   calculateReturn,
   executeAutomaticReturn,
@@ -182,9 +183,8 @@ export async function submitReturnQuote(
     refundId: result.refundId,
     amount: result.amount,
     currencyCode: result.currencyCode,
-    message:
-      result.status === "REFUND_SUBMITTED"
-        ? "Shopify submitted the refund to the original payment method. Bank posting time may vary. Follow the store's instructions for sending the item back."
-        : "This request already exists. Do not create another return; check its current status.",
+    refundStatus: result.refundStatus,
+    paymentMethod: "Original payment method",
+    ...describeRefundProgress(result),
   };
 }

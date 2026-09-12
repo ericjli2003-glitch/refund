@@ -119,6 +119,7 @@ export default function CustomerReturns() {
       : null,
   );
   const [result, setResult] = useState<Result | null>(null);
+  const [returnSession, setReturnSession] = useState(initial.returnSession);
   const [error, setError] = useState(initial.error);
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -155,6 +156,8 @@ export default function CustomerReturns() {
         setQuote(null);
       }
       if (payload.session) {
+        setReturnSession(payload.session);
+        setResult(null);
         setQuote(
           payload.session.quote
             ? {
@@ -387,15 +390,26 @@ export default function CustomerReturns() {
           </p>
           {result && (
             <section role="status">
-              <h2>
-                {result.status === "REFUND_SUBMITTED"
-                  ? "Refund submitted"
-                  : "Return status"}
-              </h2>
+              <h2>{result.title}</h2>
               <p>{result.message}</p>
-              <p>Status: {result.status}</p>
+              <p>{result.currencyCode} {result.amount} · {result.paymentMethod}</p>
             </section>
           )}
+          <section aria-label="Return status">
+            <h2>Your return status</h2>
+            <p>Latest recorded Shopify updates. Your bank&apos;s posting time may vary.</p>
+            <button disabled={busy} onClick={() => void call("status").catch(() => {})}>
+              Refresh return status
+            </button>
+            {!returnSession?.submissions.length && !result && <p>No return submissions yet.</p>}
+            {returnSession?.submissions.map((submission) => (
+              <article key={submission.id}>
+                <h3>{submission.orderName || "Return"} · {submission.title}</h3>
+                <p>{submission.currencyCode} {submission.amount} · {submission.paymentMethod}</p>
+                <p>{submission.message}</p>
+              </article>
+            ))}
+          </section>
           {grants.length > 0 && (
             <section aria-label="Connected assistants">
               <h2>Connected assistants</h2>
@@ -453,7 +467,7 @@ export default function CustomerReturns() {
                       checked={confirmed}
                       onChange={(event) => setConfirmed(event.target.checked)}
                     />{" "}
-                    I confirm these items and this refund amount.
+                    I confirm these items and this amount for a refund to my original payment method. I will follow the store&apos;s return instructions.
                   </label>
                   <button
                     disabled={busy || !confirmed}

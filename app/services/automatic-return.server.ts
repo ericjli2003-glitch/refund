@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import prisma from "../db.server";
+import { refundPaymentStatus } from "../refund-status";
 import { customerAccountGraphql } from "./customer-account.server";
 import {
   hasDuplicateLineItems,
@@ -14,6 +15,7 @@ import {
 import {
   buildRefundTransactions,
   buildReturnApprovalVariables,
+  type SuggestedRefundTransaction,
 } from "./shopify-inputs.server";
 
 export type { RequestedItem } from "./return-guards.server";
@@ -143,7 +145,7 @@ const SUGGESTED_REFUND_QUERY = `#graphql
         suggestedTransactions {
           amountSet { presentmentMoney { amount currencyCode } }
           gateway
-          parentTransaction { id }
+          parentTransaction { id gateway manualPaymentGateway }
         }
       }
     }
@@ -156,6 +158,10 @@ const CREATE_REFUND_MUTATION = `#graphql
       refund {
         id
         totalRefundedSet { presentmentMoney { amount currencyCode } }
+        transactions(first: 100) {
+          nodes { kind status }
+          pageInfo { hasNextPage }
+        }
       }
       userErrors { field message }
     }
@@ -260,7 +266,7 @@ export async function executeAutomaticReturn({
 
   const ageInDays =
     (Date.now() - new Date(order.processedAt).getTime()) / 86_400_000;
-  if (ageInDays > policy.returnWindowDays) {
+  if (!Number.isFinite(ageInDays) || ageInDays > policy.returnWindowDays) {
     throw new Error(
       `This order is outside the store's ${policy.returnWindowDays}-day return window.`,
     );
@@ -390,6 +396,10 @@ export async function executeAutomaticReturn({
       approvalResult.data.returnApproveRequest.userErrors,
       "Shopify could not approve the return",
     );
+    const approvedReturn = approvalResult.data.returnApproveRequest.return;
+    if (approvedReturn?.id !== returnId || approvedReturn.order.id !== orderId || approvedReturn.status !== "OPEN") {
+      throw new Error("Shopify did not confirm that this order's return is open. No refund was submitted.");
+    }
 
     await prisma.agentReturn.update({
       where: { id: record.id },
@@ -408,11 +418,7 @@ export async function executeAutomaticReturn({
         order: {
           suggestedRefund: {
             amountSet: { presentmentMoney: Money };
-            suggestedTransactions: Array<{
-              amountSet: { presentmentMoney: Money };
-              gateway: string;
-              parentTransaction: { id: string } | null;
-            }>;
+            suggestedTransactions: SuggestedRefundTransaction[];
           } | null;
         } | null;
       };
@@ -441,12 +447,8 @@ export async function executeAutomaticReturn({
     const transactions = buildRefundTransactions(
       orderId,
       suggestion.suggestedTransactions,
+      quote,
     );
-    if (!transactions.length || transactions.some((item) => !item.parentId)) {
-      throw new Error(
-        "Shopify could not identify the original payment transaction. The return is open, but no refund was issued.",
-      );
-    }
 
     const refundResponse = await admin.graphql(CREATE_REFUND_MUTATION, {
       variables: {
@@ -464,7 +466,13 @@ export async function executeAutomaticReturn({
     const refundResult = (await refundResponse.json()) as {
       data?: {
         refundCreate: {
-          refund: { id: string } | null;
+          refund: {
+            id: string;
+            transactions: {
+              nodes: Array<{ kind: string; status: string }>;
+              pageInfo: { hasNextPage: boolean };
+            };
+          } | null;
           userErrors: UserError[];
         };
       };
@@ -480,15 +488,23 @@ export async function executeAutomaticReturn({
       refundResult.data.refundCreate.userErrors,
       "Shopify could not create the refund",
     );
-    const refundId = refundResult.data.refundCreate.refund?.id;
+    const refund = refundResult.data.refundCreate.refund;
+    const refundId = refund?.id;
     if (!refundId) throw new Error("Shopify did not create a refund.");
+    const paymentStatus = refundPaymentStatus(
+      refund?.transactions?.nodes || [],
+      refund?.transactions?.pageInfo?.hasNextPage,
+    );
 
     return prisma.agentReturn.update({
       where: { id: record.id },
       data: {
         refundId,
-        status: "REFUND_SUBMITTED",
-        refundStatus: "SUBMITTED",
+        status: paymentStatus === "FAILED" ? "NEEDS_ATTENTION" : "REFUND_SUBMITTED",
+        refundStatus: paymentStatus,
+        failureReason: paymentStatus === "FAILED"
+          ? "Shopify reported a failed refund transaction. Check all payments before retrying; part of the refund may have succeeded."
+          : null,
       },
     });
   } catch (error) {
