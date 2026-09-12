@@ -170,6 +170,9 @@ model AgentOAuthRequest {
 // session deletion (logout, rotation, redaction, uninstall) removes all grants.
 model AgentAccessGrant {
   tokenHash           String                @id
+  refreshTokenHash    String?               @unique
+  refreshExpiresAt    DateTime?
+  rotatedToTokenHash  String?
   sessionId           String
   session             CustomerReturnSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   shop                String
@@ -184,6 +187,7 @@ model AgentAccessGrant {
   @@index([sessionId])
   @@index([shop, customerSubjectHash])
   @@index([expiresAt])
+  @@index([refreshExpiresAt])
 }
 
 model AgentReturn {

@@ -49,7 +49,7 @@ const approvedGrantSchema = z
   .strict();
 
 // Internal broker primitive, deliberately NOT exposed by an HTTP/tool route.
-// The future OAuth broker must validate the registered client, exact redirect,
+// The OAuth broker must validate the registered client, exact redirect,
 // PKCE and resource, and obtain CSRF-protected consent for this client + scope
 // set before calling this. Never pass a tool's "customerApproved" claim here.
 export async function issueApprovedAgentGrant(
@@ -59,6 +59,7 @@ export async function issueApprovedAgentGrant(
     Prisma.TransactionClient,
     "customerReturnSession" | "session" | "agentAccessGrant"
   > = prisma,
+  issueRefreshToken = false,
 ) {
   const approved = approvedGrantSchema.parse(input);
   const shop = normalizeShopDomain(approved.shop);
@@ -82,6 +83,7 @@ export async function issueApprovedAgentGrant(
     throw new AgentAccessError("invalid_token");
   }
   const accessToken = `rfa_${randomToken()}`;
+  const refreshToken = issueRefreshToken ? `rfr_${randomToken()}` : undefined;
   const expiresAt = new Date(
     Math.min(now + 60 * 60_000, session.expiresAt.getTime()),
   );
@@ -95,9 +97,17 @@ export async function issueApprovedAgentGrant(
       resource: approved.resource,
       scopes: approved.scopes,
       expiresAt,
+      refreshTokenHash: refreshToken ? digest(refreshToken) : null,
+      refreshExpiresAt: refreshToken ? session.expiresAt : null,
     },
   });
-  return { accessToken, expiresAt, scopes: approved.scopes };
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt,
+    refreshExpiresAt: refreshToken ? session.expiresAt : undefined,
+    scopes: approved.scopes,
+  };
 }
 
 export async function authorizeAgent(

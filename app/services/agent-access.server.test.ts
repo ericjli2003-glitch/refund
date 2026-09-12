@@ -188,8 +188,17 @@ test("grant issuance requires approved exact scopes and stores only an expiring 
   assert.equal(result.expiresAt.getTime(), session().expiresAt.getTime());
   assert.deepEqual(result.scopes, ["returns:read"]);
   assert.ok(!JSON.stringify(records).includes(result.accessToken));
+  assert.equal(records[0].refreshTokenHash, null);
   assert.ok(!JSON.stringify(records).includes("upstream-shopify-secret"));
   assert.ok(!JSON.stringify(result).includes("upstream-shopify-secret"));
+  const refreshable = await issueApprovedAgentGrant(input, now, prisma, true);
+  assert.match(refreshable.refreshToken!, /^rfr_[A-Za-z0-9_-]{43}$/);
+  assert.equal(records[1].refreshTokenHash, digest(refreshable.refreshToken!));
+  assert.equal(
+    (records[1].refreshExpiresAt as Date).getTime(),
+    session().expiresAt.getTime(),
+  );
+  assert.ok(!JSON.stringify(records).includes(refreshable.refreshToken!));
   await assert.rejects(
     issueApprovedAgentGrant(input, now + 120_000),
     AgentAccessError,

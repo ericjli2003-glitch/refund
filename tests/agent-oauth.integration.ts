@@ -60,7 +60,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       csrfToken: randomToken(),
       customerSubjectHash: "test-customer",
       accessToken: seal("upstream-private-token", `${sessionId}:${shop}`),
-      expiresAt: new Date(Date.now() + 3600_000),
+      expiresAt: new Date(Date.now() + 4 * 3600_000),
     },
   });
   t.after(async () => {
@@ -96,7 +96,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         client_name: "Untrusted label",
         redirect_uris: [callback],
         token_endpoint_auth_method: method,
-        grant_types: ["authorization_code"],
+        grant_types: ["authorization_code", "refresh_token"],
         response_types: ["code"],
         ...extra,
       }),
@@ -186,11 +186,19 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       resource,
       ...extra,
     });
+  const refresh = (refreshToken: string, extra: Record<string, string> = {}) =>
+    post("/token", {
+      client_id: client.client_id,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      resource,
+      ...extra,
+    });
   const responseStatus = (status: number) => (error: unknown) =>
     error instanceof Response && error.status === status;
 
   await t.test(
-    "discovery advertises only implemented code/PKCE/DCR capabilities",
+    "discovery advertises the implemented code, refresh, PKCE and DCR capabilities",
     async () => {
       const metadata = await (
         await fetch(`${base}/.well-known/oauth-authorization-server`)
@@ -201,7 +209,10 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         true,
       );
       assert.equal(metadata.client_id_metadata_document_supported, false);
-      assert.deepEqual(metadata.grant_types_supported, ["authorization_code"]);
+      assert.deepEqual(metadata.grant_types_supported, [
+        "authorization_code",
+        "refresh_token",
+      ]);
       assert.deepEqual(metadata.code_challenge_methods_supported, ["S256"]);
     },
   );
@@ -257,7 +268,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         /\[registration_auth_method\]/,
       );
       const grant = await register(callback, "none", {
-        grant_types: ["authorization_code", "refresh_token"],
+        grant_types: ["authorization_code", "client_credentials"],
       });
       assert.equal(grant.response.status, 400);
       assert.match(
@@ -400,7 +411,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       const tokens = await result.json();
       assert.equal(tokens.scope, "returns:read");
       assert.ok(tokens.expires_in > 0 && tokens.expires_in <= 3600);
-      assert.equal(tokens.refresh_token, undefined);
+      assert.match(tokens.refresh_token, /^rfr_[A-Za-z0-9_-]{43}$/);
       assert.ok(!JSON.stringify(tokens).includes("upstream-private-token"));
       assert.equal(
         (
@@ -465,6 +476,62 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
     assert.ok(grant.revokedAt);
   });
   await t.test(
+    "refresh tokens rotate, can narrow scopes, and replay revokes the rotated token family",
+    async () => {
+      const flow = await start();
+      const code = new URL(
+        (await consent(flow)).headers.get("Location")!,
+      ).searchParams.get("code")!;
+      const first = await (await exchange(flow, code)).json();
+      assert.equal(
+        (
+          await refresh(first.refresh_token, {
+            scope: "returns:read returns:quote returns:submit unknown",
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (
+          await refresh(first.refresh_token, {
+            resource: "https://evil.test/mcp",
+          })
+        ).status,
+        400,
+      );
+      const rotatedResponse = await refresh(first.refresh_token, {
+        scope: "returns:read returns:quote",
+      });
+      assert.equal(rotatedResponse.status, 200);
+      const rotated = await rotatedResponse.json();
+      assert.match(rotated.access_token, /^rfa_[A-Za-z0-9_-]{43}$/);
+      assert.match(rotated.refresh_token, /^rfr_[A-Za-z0-9_-]{43}$/);
+      assert.notEqual(rotated.access_token, first.access_token);
+      assert.notEqual(rotated.refresh_token, first.refresh_token);
+      assert.equal(rotated.scope, "returns:read returns:quote");
+      await assert.rejects(
+        authorizeAgent(`Bearer ${first.access_token}`, shop),
+      );
+      await authorizeAgent(
+        `Bearer ${rotated.access_token}`,
+        shop,
+        "returns:quote",
+      );
+      await assert.rejects(
+        authorizeAgent(
+          `Bearer ${rotated.access_token}`,
+          shop,
+          "returns:submit",
+        ),
+      );
+      assert.equal((await refresh(first.refresh_token)).status, 400);
+      await assert.rejects(
+        authorizeAgent(`Bearer ${rotated.access_token}`, shop),
+      );
+      assert.equal((await refresh(rotated.refresh_token)).status, 400);
+    },
+  );
+  await t.test(
     "expired requests/codes, revocation, and logout all fail closed",
     async () => {
       const expired = await start();
@@ -497,7 +564,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         (
           await post("/revoke", {
             client_id: client.client_id,
-            token: tokens.access_token,
+            token: tokens.refresh_token,
           })
         ).status,
         200,
