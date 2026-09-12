@@ -5,8 +5,8 @@ discovery, not a shopper-installed plugin or a second returns system.
 
 ## Implemented path
 
-1. The merchant publishes `/agents.md`, or redirects that otherwise-unused path
-   to `/apps/refund/agents.md`.
+1. The merchant publishes `templates/agents.md.liquid` in the active Shopify
+   theme, preserving Shopify's shopping guide and adding Refund return links.
 2. Shopify forwards `/apps/refund/*` to Refund's `/proxy/refund/*`, adding a signed
    shop, timestamp and actual merchant-customized `path_prefix`.
 3. Refund validates with `authenticate.public.appProxy`, requires an installed
@@ -56,21 +56,27 @@ intake quota. Shopify forwarding can aggregate users behind a proxy IP; monitor
 2. Verify Refund's proxy path in the merchant's Shopify app settings. Preserve an
    existing customized prefix/subpath and substitute it below. The backend uses
    the signed actual `path_prefix`, not a hard-coded assumption.
-3. Add a Shopify URL redirect from **`/agents.md`** to
-   **`/apps/refund/agents.md`**, provided the root path is otherwise unused.
-   If an existing edge/static layer already serves `/agents.md`, append pointers
-   to `https://YOUR_STORE/apps/refund/agents.md` and
-   `https://YOUR_STORE/apps/refund/manifest.json` instead. Do not overwrite an
-   existing guide. If Shopify does not apply the root redirect on that storefront,
-   use its existing edge layer and validate the real response before claiming
-   success. Shopify App Proxy itself cannot occupy an arbitrary root path.
+3. Add **`templates/agents.md.liquid`** to the active theme. The starter is
+   `storefront/templates/agents.md.liquid`; if the theme already has a guide,
+   merge its Returns section instead of replacing merchant content. Adjust the
+   three Refund links for any customized app proxy path. Shopify serves this
+   special template at `/agents.md`, and also uses it for `/llms.txt` and
+   `/llms-full.txt` unless their own templates exist. Only `agents` and `request`
+   are available in this context; do not use `shop`, settings or metafields.
+   Preserve the Shopify UCP/MCP links and verify the rendered live response.
 4. Customer accounts must be enabled. Existing merchant return rules and Refund's
    automatic-refund policy still apply; discovery does not enable automatic
    refunds. The theme embed is optional for this entry path.
 
-Theme Liquid is not a server route: a snippet cannot publish `/agents.md`.
-Do not replace Shopify's `/.well-known/ucp`. The redirect approach needs no DNS
-change; edge rewrites are only a fallback for an already-managed storefront.
+An ordinary snippet cannot publish a root route, but Shopify explicitly supports
+this special template. A URL redirect will not override Shopify's existing
+`/agents.md` response. No DNS change is needed. Do not replace Shopify's
+`/.well-known/ucp` or claim to register Refund in Shopify's managed MCP server.
+Custom guide prose is merchant-maintained rather than automatically updated with
+Shopify's default guide. Reapply it when switching themes; remove Refund's section
+when uninstalling. Merchant theme editing/CLI does not require granting Refund
+`write_themes`; automated app API theme writes require that scope and Shopify's
+exemption. See `storefront/README.md` for a single-file deployment procedure.
 
 **Do not use a proxy redirect/iframe for sign-in.** Shopify follows upstream 30x
 redirects itself and strips Cookie/Set-Cookie. The entry page intentionally links
@@ -98,6 +104,9 @@ an acceptance test for the actual product/mode.
 
 Primary contracts:
 
+- [Shopify discovery template](https://shopify.dev/docs/storefronts/themes/architecture/templates/agents-md-liquid)
+- [Discovery-template announcement](https://shopify.dev/changelog/customize-llmstxt-llms-fulltxt-and-agentsmd)
+- [Customer-data access and development testing](https://shopify.dev/docs/apps/launch/protected-customer-data)
 - [Shopify app proxies](https://shopify.dev/docs/apps/build/online-store/app-proxies)
 - [Proxy authentication/cookies](https://shopify.dev/docs/apps/build/online-store/app-proxies/authenticate-app-proxies)
 - [UCP discovery](https://ucp.dev/2026-04-08/specification/overview/)
@@ -107,7 +116,30 @@ Primary contracts:
 
 ## Reproducible proof
 
-Current live-test status (2026-09-11): the Testing storefront's `/agents.md` and
+### Merchant-theme deployment (2026-09-11 PDT)
+
+- Published only `templates/agents.md.liquid` to Testing's live `test-data` theme
+  (`189899276573`), using `--only`, `--nodelete`, and `--allow-live`. No existing
+  custom discovery template was present. Storefront design files were not changed.
+- Downloaded the saved file from Shopify and verified it byte-for-byte against
+  `storefront/templates/agents.md.liquid`.
+- Theme Check reported zero errors in the new template and 19 `UndefinedObject`
+  warnings for Shopify's documented `agents` object. The full downloaded theme
+  still has unrelated pre-existing errors; this is not a clean whole-theme check.
+- Verified the unlocked storefront's `/apps/refund/start-return` page and its
+  destination `/returns/testing-bl7vdfur.myshopify.com` in the browser. The portal
+  rendered customer verification and exposed its return Site Tools. No customer
+  sign-in, order lookup, quote, return or refund was performed.
+- Rendered root-guide verification remains pending: both automated browsers
+  reported `ERR_BLOCKED_BY_CLIENT` for `/agents.md`. A separate unauthenticated
+  HTTP request redirected to `/password`. This does not prove a template error,
+  but the saved template alone does not prove a correctly rendered public guide.
+  Storefront password protection was not changed. Verify the rendered guide
+  manually in an unlocked browser before claiming the discovery chain is proven.
+
+### Original backend implementation checks
+
+Initial implementation live-test status (2026-09-11, before deployment): the Testing storefront's `/agents.md` and
 proxy URL both redirect to `/password`. Public discovery is not yet verified.
 The merchant chose to leave live customer testing pending. No password protection,
 merchant redirect, production deployment or real return/refund was changed by

@@ -14,6 +14,13 @@ first version. Cross-merchant discovery and directory publication remain future 
 
 ## Connect the Testing store
 
+Customer-facing setup is available at `/connect/:shop` after deploying this
+version. It is linked from the return portal and provides a copyable,
+merchant-specific MCP URL, sign-in/consent instructions, permission boundaries
+and a quote-only first prompt. Opening it neither creates an OAuth request nor
+grants access. The issuer comes from server configuration, never a request header.
+Invalid domains and stores without an active installation are rejected.
+
 Use this exact remote MCP URL (no trailing slash):
 
 ```text
@@ -29,6 +36,11 @@ client IDs/secrets blank. CIMD is deliberately not advertised.
   URL, and use OAuth/DCR. See [OpenAI's current test instructions](https://developers.openai.com/plugins/deploy/connect-chatgpt).
   Account/workspace policy can restrict developer mode.
 
+Do not use the bare `/mcp` or `/apps/refund/mcp` URL for this customer connection:
+those expose anonymous intake only. The full `/mcp/:shop` route exposes the five
+private return tools after OAuth. The browser flow remains an alternative, not
+a prerequisite for using the connected assistant after authorization.
+
 Complete Shopify sign-in, check the merchant and requested actions on Refund's
 consent page, and choose Allow only if intended. You return to the assistant.
 Connecting is not confirmation of any particular return or refund.
@@ -39,6 +51,19 @@ Refund Test Product, CAD14.00; do not relabel it as a snowboard. Retrieve a fres
 quote rather than assuming that amount still applies.
 
 ## Protocol and safety
+
+### Registration troubleshooting
+
+The generic legacy registration error does not establish which check failed.
+The diagnostic update returns fixed reason tags for callback count, callback
+allowlist, mixed hosts, token authentication method, grant type, response type,
+and scopes. Metadata failures remain HTTP 400 `invalid_client_metadata`.
+Storage/encryption failures now return HTTP 500 `server_error` with
+`registration_storage`; the registration cap returns `registration_capacity`.
+No incoming metadata, secrets, tokens or database exception details are logged
+or reflected. All existing callback, grant, scope and authentication restrictions
+are preserved. After deployment, one connection attempt should identify the
+failure category; this instrumentation is not itself a compatibility fix.
 
 - The production server mounts the installed MCP SDK's authorization, token,
   registration, revocation and metadata handlers. Refund supplies durable
@@ -74,6 +99,16 @@ quote rather than assuming that amount still applies.
   Privacy reports contain safe metadata, never codes, cookies or secrets.
 
 ## Deployment and verification
+
+Customer-MCP pivot verification (2026-09-11 PDT): reused the existing five-tool
+server and OAuth broker; added `/connect/:shop` and a return-portal setup link.
+44 unit tests, 9 OAuth tests, type checking, lint, production build and built-server
+smoke passed. The smoke test verifies the setup page's rendered merchant URL,
+private/security headers, invalid/uninstalled-store rejection and absence of
+new grants or authorization requests just from opening the page. Live read-only
+discovery checks passed against the deployed server. These new onboarding changes
+have not yet been deployed; actual ChatGPT/Claude customer sign-in and quote tests
+remain pending. No real customer return or refund was performed.
 
 Run migrations, build, and start with npm run start:production. The production
 HTTP entry point serves both OAuth and the React Router app. The Shopify CLI's

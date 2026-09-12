@@ -326,6 +326,10 @@ export default function CustomerReturns() {
         Securely connected to {initial.shop}. Nothing is submitted until you
         confirm the items and refund amount.
       </p>
+      <p>
+        Prefer a connected assistant?{" "}
+        <a href={`/connect/${initial.shop}`}>Connect ChatGPT or Claude to Refund</a>.
+      </p>
       <p role="status">
         {browserTools === "checking" && "Checking browser return-tool support…"}
         {browserTools === "ready" &&

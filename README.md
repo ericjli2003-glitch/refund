@@ -1,5 +1,17 @@
 # Refund
 
+## Customer MCP connection
+
+Customers can explicitly connect Refund to hosted ChatGPT or Claude using a
+merchant-specific remote MCP endpoint. The existing OAuth flow verifies their
+Shopify customer identity and obtains assistant consent before exposing purchase,
+quote, confirmation and status tools. Connecting is not refund consent.
+See [customer connection setup and test limits](docs/AGENT_ACCESS.md).
+The customer setup page is `/connect/:shop`; the private MCP URL is `/mcp/:shop`.
+This first version connects one merchant at a time and is not a directory listing.
+
+## Alternative browser flow
+
 Merchant-owned `/agents.md` and Shopify App Proxy entry points are documented in
 [Merchant App Proxy setup and proof](docs/MERCHANT_APP_PROXY.md). This optional
 path reuses the existing portal and execution engine without a shopper connector
