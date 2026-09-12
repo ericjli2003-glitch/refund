@@ -65,19 +65,33 @@ Relevant references:
 
 ## Open decisions
 
-### 1. Restock disposition and location (blocks the returnProcess migration)
+### 1. Restock disposition and location (decided, unblocks the returnProcess migration)
 
 `returnProcess` requires a disposition per return line item, and a
-`locationId` is required for `RESTOCKED`. There is no merchant setting for
-this today. Candidate approaches:
+`locationId` is required for `RESTOCKED`. There was no merchant setting for
+this.
 
-- Default to the order's originating fulfillment location.
-- Add a location picker to the embedded dashboard, backed by a new
-  `StorePolicy` column.
-- Default every disposition to not-restocked and let merchants opt in.
+**Decision:** default the restock location to the order's originating
+fulfillment location, and add a merchant-configurable override on top of it.
 
-Nothing should be implemented until this is chosen; it determines the schema
-change and the dashboard surface.
+The default covers single-location stores with no configuration and no new
+dashboard surface to complete before the app works. The override exists for
+merchants who route returns to a dedicated returns warehouse, where the
+fulfillment location is the wrong answer.
+
+Implementation this implies:
+
+- A nullable `returnLocationId` column on `StorePolicy`. Null means use the
+  order's fulfillment location; a value overrides it.
+- A location picker in the embedded dashboard writing that column, populated
+  from the shop's locations.
+- Resolution at processing time: `StorePolicy.returnLocationId` if set,
+  otherwise the fulfillment location for the line item's order. If neither
+  resolves, the line item is processed as not restocked rather than failing
+  the return.
+
+Defaulting everything to not-restocked was rejected: it leaves merchants doing
+manual restocks and undercuts the point of automating the return.
 
 ### 2. Assistant connection lifetime on the browserless path
 
