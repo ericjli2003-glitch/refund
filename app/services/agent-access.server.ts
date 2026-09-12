@@ -169,10 +169,10 @@ export async function authorizeAgent(
   };
 }
 
-export async function revokeAgentGrant(tokenHash: string, sessionId: string) {
+export async function revokeAgentGrant(publicId: string, sessionId: string) {
   // Session ownership is required even when the caller knows a grant identifier.
   return prisma.agentAccessGrant.updateMany({
-    where: { tokenHash, sessionId, revokedAt: null },
+    where: { publicId, sessionId, revokedAt: null },
     data: { revokedAt: new Date() },
   });
 }
@@ -180,7 +180,7 @@ export async function revokeAgentGrant(tokenHash: string, sessionId: string) {
 export async function listAgentGrants(sessionId: string) {
   const grants = await prisma.agentAccessGrant.findMany({
     where: { sessionId, revokedAt: null, expiresAt: { gt: new Date() } },
-    select: { tokenHash: true, clientId: true, scopes: true, expiresAt: true },
+    select: { publicId: true, clientId: true, scopes: true, expiresAt: true },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
@@ -195,7 +195,7 @@ export async function listAgentGrants(sessionId: string) {
           ) as { client_name?: string })
         : null;
       return {
-        id: grant.tokenHash,
+        id: grant.publicId,
         name: info?.client_name || "Assistant",
         scopes: grant.scopes,
         expiresAt: grant.expiresAt.toISOString(),

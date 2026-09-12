@@ -48,7 +48,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
   try {
     const body = JSON.parse(bodyText) as Record<string, unknown>;
     if (body.operation === "disconnect_assistant") {
-      if (typeof body.grantId !== "string" || !/^[\w-]{43}$/.test(body.grantId))
+      if (
+        typeof body.grantId !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.grantId)
+      )
         throw new Error("Invalid assistant connection.");
       await revokeAgentGrant(body.grantId, session.id);
       return Response.json(

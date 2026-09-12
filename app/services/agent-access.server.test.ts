@@ -213,10 +213,11 @@ test("revocation is restricted to the authenticated session's own grant", async 
     "updateMany",
     async () => ({ count: 0 }),
   );
-  await revokeAgentGrant("token-hash", "authenticated-session");
+  const publicId = "5b1d6a52-2f0e-4b5e-9c1a-7d8e6f4a3b21";
+  await revokeAgentGrant(publicId, "authenticated-session");
   assert.deepEqual(update.mock.calls[0].arguments[0], {
     where: {
-      tokenHash: "token-hash",
+      publicId,
       sessionId: "authenticated-session",
       revokedAt: null,
     },

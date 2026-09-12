@@ -176,6 +176,8 @@ model AgentOAuthRequest {
 // session deletion (logout, rotation, redaction, uninstall) removes all grants.
 model AgentAccessGrant {
   tokenHash           String                @id
+  // Opaque identifier for customer revoke controls; never derived from a token.
+  publicId            String                @unique @default(dbgenerated("(gen_random_uuid())::text"))
   refreshTokenHash    String?               @unique
   refreshExpiresAt    DateTime?
   rotatedToTokenHash  String?

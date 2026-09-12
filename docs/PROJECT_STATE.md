@@ -227,11 +227,9 @@ Severity is this reviewer's judgement, not a Shopify determination.
   **Fixed.** `claimIntakeDraft` now takes an optional transaction client;
   `finishCustomerLogin` claims the draft inside the same `$transaction` that
   creates the session, so the two commit atomically.
-- `listAgentGrants` exposes `tokenHash` as the grant identifier used by the
-  revoke UI. A SHA-256 of the token does not reveal the token and revocation
-  is scoped to the owning session, so this is safe, but a dedicated opaque
-  grant id would be clearer. `tokenHash` is the table's primary key, so this
-  needs a migration and is deferred.
+- ~~`listAgentGrants` exposes `tokenHash` as the grant identifier.~~ **Fixed.**
+  Grants carry a database-generated `publicId` (UUID) that the portal's
+  disconnect control uses; revocation still requires the owning session.
 
 ### Verified as sound during review
 
