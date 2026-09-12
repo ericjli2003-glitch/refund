@@ -6,7 +6,9 @@ export type RequestedItem = {
 };
 
 function normalizedItems(items: RequestedItem[]) {
-  return [...items].sort((a, b) =>
+  // JSONB does not preserve object-key order. Canonicalize fields as well as
+  // array order before comparing a stored request with its signed quote.
+  return items.map(({ lineItemId, quantity }) => ({ lineItemId, quantity })).sort((a, b) =>
     a.lineItemId === b.lineItemId
       ? a.quantity - b.quantity
       : a.lineItemId.localeCompare(b.lineItemId),
@@ -14,7 +16,10 @@ function normalizedItems(items: RequestedItem[]) {
 }
 
 export function sameReturnItems(left: unknown, right: RequestedItem[]) {
-  if (!Array.isArray(left)) return false;
+  if (!Array.isArray(left) || left.some(item =>
+    !item || typeof item !== "object" || typeof item.lineItemId !== "string" ||
+    !Number.isInteger(item.quantity) || item.quantity < 1,
+  )) return false;
   return (
     JSON.stringify(normalizedItems(left as RequestedItem[])) ===
     JSON.stringify(normalizedItems(right))

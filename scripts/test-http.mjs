@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { setTimeout } from "node:timers/promises";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 
 const database = new URL(process.env.DATABASE_URL || "");
@@ -62,6 +62,32 @@ try {
       discoveryPublished: false,
     },
   });
+  // Exercise the built React Router splat route, not only imported handlers.
+  const proxyParams = {
+    shop,
+    logged_in_customer_id: "",
+    path_prefix: "/apps/refund",
+    timestamp: String(Math.floor(Date.now() / 1000)),
+  };
+  const signature = createHmac("sha256", process.env.SHOPIFY_API_SECRET)
+    .update(Object.entries(proxyParams).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join(""))
+    .digest("hex");
+  const proxyQuery = new URLSearchParams({ ...proxyParams, signature });
+  const proxyUrl = `http://127.0.0.1:3037/proxy/refund/agents.md?${proxyQuery}`;
+  const agentGuide = await fetch(proxyUrl);
+  assert.equal(agentGuide.status, 200);
+  assert.match(agentGuide.headers.get("Content-Type"), /text\/markdown/);
+  assert.ok((await agentGuide.text()).includes(`https://${shop}/apps/refund/mcp`));
+  assert.equal((await fetch("http://127.0.0.1:3037/proxy/refund/agents.md")).status, 400);
+  const proxyManifest = await (await fetch(`http://127.0.0.1:3037/proxy/refund/manifest.json?${proxyQuery}`)).json();
+  assert.equal(proxyManifest.merchant.shop, shop);
+  assert.equal(proxyManifest.browser.connectorRequired, false);
+  const proxyMcp = await fetch(`http://127.0.0.1:3037/proxy/refund/mcp?${proxyQuery}`, {
+    method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+  });
+  assert.equal(proxyMcp.status, 200);
+  assert.deepEqual((await proxyMcp.json()).result.tools.map(tool => tool.name), ["start_return"]);
   const profileUrl = `http://127.0.0.1:3037/stores/${shop}`;
   assert.equal(
     (await fetch(profileUrl)).status,
@@ -150,6 +176,7 @@ try {
     /Disallow: \/returns\//,
   );
   await prisma.session.deleteMany({ where: { shop } });
+  assert.equal((await fetch(proxyUrl)).status, 404, "Uninstalled proxies must not advertise capability");
   assert.equal(
     (await fetch(profileUrl)).status,
     404,
@@ -243,6 +270,8 @@ try {
     429,
     "Single-fetch navigation must share the browser intake quota",
   );
+  assert.equal((await fetch(proxyUrl)).status, 429, "Proxy traffic must share the intake quota");
+  assert.equal((await fetch("http://127.0.0.1:3037/%70roxy/refund/agents.md")).status, 429, "Encoded route characters must not bypass the proxy quota");
   console.log(
     "Production HTTP startup, discovery, MCP challenge, shared intake rate limits and browser preflight passed.",
   );

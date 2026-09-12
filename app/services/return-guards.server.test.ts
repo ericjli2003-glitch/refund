@@ -27,6 +27,14 @@ test("idempotency item comparison ignores ordering but not quantities", () => {
   );
 });
 
+test("idempotency survives PostgreSQL JSONB key ordering and rejects corrupt records", () => {
+  const input = [{ lineItemId: "gid://shopify/LineItem/73", quantity: 1 }];
+  assert.equal(sameReturnItems([{ quantity: 1, lineItemId: input[0].lineItemId }], input), true);
+  assert.equal(sameReturnItems([{ quantity: 2, lineItemId: input[0].lineItemId }], input), false);
+  assert.equal(sameReturnItems([null], input), false);
+  assert.equal(sameReturnItems([{ quantity: "1", lineItemId: input[0].lineItemId }], input), false);
+});
+
 test("duplicate line items are rejected", () => {
   assert.equal(
     hasDuplicateLineItems([

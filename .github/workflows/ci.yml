@@ -50,6 +50,7 @@ jobs:
       - run: npx vite-node --config vite.test.config.ts tests/merchant-onboarding.integration.ts
       - run: npx vite-node --config vite.test.config.ts tests/merchant-opportunity.integration.ts
       - run: npm run test:infrastructure
+      - run: npm run test:proxy
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build

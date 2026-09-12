@@ -4,7 +4,9 @@ import {
   startReturnIntake,
 } from "./services/return-intake.server";
 
-export function createIntakeMcpServer() {
+// Only the authenticated app-proxy handler may supply a bound shop. Never take
+// this value from JSON-RPC arguments or an unsigned query parameter.
+export function createIntakeMcpServer(shop?: string) {
   const server = new McpServer({
     name: "Refund merchant return intake",
     version: "0.1.0",
@@ -15,7 +17,7 @@ export function createIntakeMcpServer() {
       title: "Start a return with a merchant",
       description:
         "Find a connected merchant and prepare a secure purchase-verification link. If the merchant cannot be uniquely resolved, stop; Refund records only the business name/domain privately for its operator. Do not request a URL fallback, substitute another store/item, or contact the merchant. Does not read purchases, create a return, or refund money. No Refund account is required.",
-      inputSchema: intakeSchema,
+      inputSchema: shop ? intakeSchema.omit({ merchant: true }) : intakeSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -26,7 +28,7 @@ export function createIntakeMcpServer() {
     },
     async (input) => {
       try {
-        const result = await startReturnIntake(input);
+        const result = await startReturnIntake(shop ? { ...input, merchant: shop } : input);
         return {
           content: [{ type: "text", text: JSON.stringify(result) }],
           structuredContent: result,

@@ -5,12 +5,23 @@ import {
 } from "../app/services/public-rate-limit.server";
 
 export function publicRatePolicy(path: string): RatePolicy | null {
+  // Match React Router's decoded path handling so encoded route characters
+  // cannot bypass the same endpoint's quota.
+  try {
+    path = decodeURIComponent(path);
+  } catch {
+    return null; // Malformed paths do not match a valid application route.
+  }
   // React Router's single-fetch .data URL invokes the same loader as the HTML
   // entry point. Navigation must share its quota with direct page requests.
   const normalized = path
     .toLowerCase()
     .replace(/\/+$/, "")
     .replace(/\.data$/, "");
+  // Shopify forwards all proxy paths here. Use one shared pre-authentication
+  // quota; forwarded shop/customer values are not trusted rate-limit identities.
+  if (normalized === "/proxy/refund" || normalized.startsWith("/proxy/refund/"))
+    return { bucket: "intake", limit: 120, seconds: 60 };
   if (normalized === "/register")
     return { bucket: "register", limit: 20, seconds: 3600 };
   if (normalized === "/authorize")
