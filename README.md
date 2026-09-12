@@ -1,7 +1,13 @@
 # Refund
 
+Merchant-owned `/agents.md` and Shopify App Proxy entry points are documented in
+[Merchant App Proxy setup and proof](docs/MERCHANT_APP_PROXY.md). This optional
+path reuses the existing portal and execution engine without a shopper connector
+or a required theme embed. It is MCP/browser handoff, not a standard UCP returns API.
+
 Refund is a Shopify app for customer-confirmed returns in compatible AI
-browsers. A merchant installs Refund once and enables its storefront app embed;
+browsers. A merchant installs Refund and enables either its storefront app embed
+or the merchant-owned agent guide/App Proxy entry;
 customers do not install a connector or plugin. When an AI opens that storefront,
 WebMCP page tools advertise return support and can open the store's visible
 return flow. A customer signs in with the retailer, selects eligible line items,
@@ -9,7 +15,8 @@ reviews Shopify's calculated amount, and explicitly confirms before Refund opens
 the return and submits an idempotent refund to the original payment method.
 
 This is capability discovery, not background AI-visitor detection. The browser
-and assistant must support WebMCP; ordinary ChatGPT/Claude chats do not gain tools
+and assistant need WebMCP for Site Tools or ordinary browser automation for the
+portal controls; ordinary text-only ChatGPT/Claude chats do not gain tools
 just by mentioning a merchant. See the priority
 [connector-free merchant handoff](docs/MERCHANT_BROWSER_HANDOFF.md) and its live
 acceptance checklist.

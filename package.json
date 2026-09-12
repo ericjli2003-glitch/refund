@@ -12,6 +12,8 @@
     "storefront:check": "node scripts/configure-storefront.mjs --check",
     "test:infrastructure": "vite-node --config vite.test.config.ts tests/public-infrastructure.integration.ts",
     "test:live-discovery": "node scripts/test-live-discovery.mjs",
+    "test:proxy": "vite-node --config vite.test.config.ts tests/merchant-proxy.integration.ts",
+    "test:live-proxy": "node scripts/test-live-proxy.mjs",
     "config:use": "shopify app config use",
     "env": "shopify app env",
     "start": "node ./build/http/index.js",
