@@ -39,6 +39,9 @@ model StorePolicy {
   returnWindowDays        Int      @default(30)
   maxAutoRefundAmount     String   @default("100.00")
   currencyCode            String   @default("USD")
+  // Null means restock to the location that fulfilled the order.
+  // A value overrides that for merchants routing returns elsewhere.
+  returnLocationId        String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }

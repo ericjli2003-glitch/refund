@@ -12,8 +12,7 @@ export function buildReturnApprovalVariables(returnId: string) {
   return { input: { id: returnId } };
 }
 
-export function buildRefundTransactions(
-  orderId: string,
+function validateSuggestedTransactions(
   suggestedTransactions: SuggestedRefundTransaction[],
   expectedRefund: { amount: string; currencyCode: string },
 ) {
@@ -46,11 +45,38 @@ export function buildRefundTransactions(
     total += units(transaction.amountSet.presentmentMoney.amount);
   }
   if (total !== units(expectedRefund.amount)) throw invalid();
-  return suggestedTransactions.map((transaction) => ({
-    amount: transaction.amountSet.presentmentMoney.amount,
-    gateway: transaction.gateway,
-    kind: "REFUND" as const,
-    orderId,
-    parentId: transaction.parentTransaction!.id,
-  }));
+  return suggestedTransactions;
+}
+
+export function buildRefundTransactions(
+  orderId: string,
+  suggestedTransactions: SuggestedRefundTransaction[],
+  expectedRefund: { amount: string; currencyCode: string },
+) {
+  return validateSuggestedTransactions(suggestedTransactions, expectedRefund).map(
+    (transaction) => ({
+      amount: transaction.amountSet.presentmentMoney.amount,
+      gateway: transaction.gateway,
+      kind: "REFUND" as const,
+      orderId,
+      parentId: transaction.parentTransaction!.id,
+    }),
+  );
+}
+
+// returnProcess carries the refund inline. The same original-payment-processor
+// checks apply; only the wire shape differs from refundCreate.
+export function buildReturnProcessTransactions(
+  suggestedTransactions: SuggestedRefundTransaction[],
+  expectedRefund: { amount: string; currencyCode: string },
+) {
+  return validateSuggestedTransactions(suggestedTransactions, expectedRefund).map(
+    (transaction) => ({
+      parentId: transaction.parentTransaction!.id,
+      transactionAmount: {
+        amount: transaction.amountSet.presentmentMoney.amount,
+        currencyCode: transaction.amountSet.presentmentMoney.currencyCode,
+      },
+    }),
+  );
 }
