@@ -6,6 +6,7 @@ import {
   InvalidGrantError,
   InvalidRequestError,
   InvalidScopeError,
+  ServerError,
   UnsupportedGrantTypeError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import prisma from "../db.server";
@@ -60,27 +61,56 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
           : undefined;
       },
       async registerClient(input) {
+        // Keep metadata failures distinct from persistence failures. Never echo
+        // client metadata, secrets or database errors into a public response.
+        if (!input.redirect_uris.length || input.redirect_uris.length > 5)
+          throw new InvalidClientMetadataError(
+            "[registration_redirect_count] Supply between one and five assistant callback URLs.",
+          );
+        let assistants: string[];
         try {
-          if (!input.redirect_uris.length || input.redirect_uris.length > 5)
-            throw new Error();
-          const assistants = input.redirect_uris.map(assistantForRedirect);
-          if (new Set(assistants).size !== 1) throw new Error();
-          if (
-            input.token_endpoint_auth_method &&
-            !["none", "client_secret_post"].includes(
-              input.token_endpoint_auth_method,
-            )
+          assistants = input.redirect_uris.map(assistantForRedirect);
+        } catch {
+          throw new InvalidClientMetadataError(
+            "[registration_callback] A callback URL is not an allowed hosted ChatGPT or Claude callback.",
+          );
+        }
+        if (new Set(assistants).size !== 1)
+          throw new InvalidClientMetadataError(
+            "[registration_mixed_hosts] Register only one assistant host per client.",
+          );
+        if (
+          input.token_endpoint_auth_method &&
+          !["none", "client_secret_post"].includes(
+            input.token_endpoint_auth_method,
           )
-            throw new Error();
-          if (
-            input.grant_types?.some((type) => type !== "authorization_code") ||
-            input.response_types?.some((type) => type !== "code")
-          )
-            throw new Error();
-          if (input.scope) checkedScopes(input.scope.split(" "));
+        )
+          throw new InvalidClientMetadataError(
+            "[registration_auth_method] Supported token authentication methods are none and client_secret_post.",
+          );
+        if (input.grant_types?.some((type) => type !== "authorization_code"))
+          throw new InvalidClientMetadataError(
+            "[registration_grant_type] Only authorization_code is supported; refresh tokens are not issued.",
+          );
+        if (input.response_types?.some((type) => type !== "code"))
+          throw new InvalidClientMetadataError(
+            "[registration_response_type] Only the code response type is supported.",
+          );
+        if (input.scope) {
+          try {
+            checkedScopes(input.scope.split(" "));
+          } catch {
+            throw new InvalidClientMetadataError(
+              "[registration_scopes] Use only returns:read, returns:quote and returns:submit, without duplicates.",
+            );
+          }
+        }
+        try {
           // Refuse unbounded client accumulation during the initial hosted rollout.
           if ((await prisma.agentOAuthClient.count()) >= 5000)
-            throw new Error();
+            throw new ServerError(
+              "[registration_capacity] Refund cannot register more assistant clients at this time.",
+            );
           const id = randomUUID();
           const client: OAuthClientInformationFull = {
             client_id: id,
@@ -109,9 +139,10 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
             },
           });
           return client;
-        } catch {
-          throw new InvalidClientMetadataError(
-            "Use a documented ChatGPT or hosted Claude callback and the authorization-code flow.",
+        } catch (error) {
+          if (error instanceof ServerError) throw error;
+          throw new ServerError(
+            "[registration_storage] Refund could not save the assistant registration. The service operator must check storage and encryption configuration.",
           );
         }
       },
