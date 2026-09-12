@@ -34,9 +34,12 @@ type DashboardOrder = {
   totalRefundedSet: { shopMoney: Money };
 };
 
+type ShopLocation = { id: string; name: string };
+
 type OrdersQueryResponse = {
   data?: {
     shop: { currencyCode: string };
+    locations: { nodes: ShopLocation[] };
     orders: {
       nodes: DashboardOrder[];
     };
@@ -54,6 +57,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     `#graphql
       query RefundDashboardOrders($first: Int!, $query: String) {
         shop { currencyCode }
+        locations(first: 50, includeInactive: false) {
+          nodes { id name }
+        }
         orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
           nodes {
             id
@@ -108,6 +114,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     orders: responseJson.data.orders.nodes,
+    locations: responseJson.data.locations.nodes,
     query,
     saved: url.searchParams.get("saved") === "true",
     returnPortalUrl: `${appOrigin()}/returns/${session.shop}`,
@@ -126,6 +133,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       returnWindowDays: 30,
       maxAutoRefundAmount: "100.00",
       currencyCode: responseJson.data.shop.currencyCode,
+      returnLocationId: null as string | null,
     },
     agentReturns,
     privacyRequests,
@@ -164,16 +172,38 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const shopResponse = await admin.graphql(`#graphql
     query AutomaticRefundCurrency {
       shop { currencyCode }
+      locations(first: 50, includeInactive: false) {
+        nodes { id }
+      }
     }
   `);
   const shopResult = (await shopResponse.json()) as {
-    data?: { shop: { currencyCode: string } };
+    data?: {
+      shop: { currencyCode: string };
+      locations: { nodes: Array<{ id: string }> };
+    };
   };
   const currencyCode = shopResult.data?.shop.currencyCode;
   if (!currencyCode) {
     throw new Response("Could not determine the store currency.", {
       status: 502,
     });
+  }
+
+  // Empty means restock to the location that fulfilled the order. Any other
+  // value must be one of this shop's own active locations, never free text.
+  const submittedLocation = formData.get("returnLocationId");
+  const returnLocationId =
+    typeof submittedLocation === "string" && submittedLocation
+      ? submittedLocation
+      : null;
+  if (
+    returnLocationId &&
+    !shopResult.data?.locations.nodes.some(
+      (location) => location.id === returnLocationId,
+    )
+  ) {
+    throw new Response("Unknown restock location.", { status: 400 });
   }
 
   await prisma.storePolicy.upsert({
@@ -185,6 +215,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       returnWindowDays,
       maxAutoRefundAmount: maxAutoRefundAmount.toFixed(2),
       currencyCode,
+      returnLocationId,
     },
     update: {
       automaticRefundsEnabled:
@@ -192,6 +223,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       returnWindowDays,
       maxAutoRefundAmount: maxAutoRefundAmount.toFixed(2),
       currencyCode,
+      returnLocationId,
     },
   });
 
@@ -244,6 +276,7 @@ function statusTone(status: string | null) {
 export default function RefundDashboard() {
   const {
     orders,
+    locations,
     query,
     saved,
     privacyResolved,
@@ -296,6 +329,9 @@ export default function RefundDashboard() {
   );
   const [maxAutoRefundAmount, setMaxAutoRefundAmount] = useState(
     policy.maxAutoRefundAmount,
+  );
+  const [returnLocationId, setReturnLocationId] = useState(
+    policy.returnLocationId ?? "",
   );
   const refundedOrders = orders.filter(
     (order) => Number(order.totalRefundedSet.shopMoney.amount) > 0,
@@ -423,6 +459,7 @@ export default function RefundDashboard() {
             );
             formData.set("returnWindowDays", returnWindowDays);
             formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
+            formData.set("returnLocationId", returnLocationId);
             submit(formData, { method: "post" });
           }}
         >
@@ -471,7 +508,29 @@ export default function RefundDashboard() {
                 }
                 required
               ></s-money-field>
+              <s-select
+                label="Restock returned items to"
+                value={returnLocationId}
+                onChange={(event) =>
+                  setReturnLocationId(event.currentTarget.value)
+                }
+              >
+                <s-option value="">
+                  The location that fulfilled the order
+                </s-option>
+                {locations.map((location) => (
+                  <s-option key={location.id} value={location.id}>
+                    {location.name}
+                  </s-option>
+                ))}
+              </s-select>
             </s-grid>
+            <s-paragraph color="subdued">
+              Leave this on the fulfilling location unless you route returns to
+              a dedicated warehouse. If an order was fulfilled from more than
+              one location and you have not chosen one here, the refund is still
+              issued but nothing is restocked automatically.
+            </s-paragraph>
             <s-stack direction="inline" gap="base" alignItems="center">
               <s-button type="submit" variant="primary">
                 Save policy
