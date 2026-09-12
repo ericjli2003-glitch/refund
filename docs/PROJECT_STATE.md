@@ -3,7 +3,8 @@
 Shared context for any agent or developer picking this repository up. Update it
 when a decision below is resolved; do not let it drift into a changelog.
 
-Last reviewed: 2026-09-12, against `main` at `7540a94`.
+Last reviewed: 2026-09-12, against `claude/project-state` at `19a9abb` plus the
+uncommitted `returnProcess` wiring in this working tree.
 
 ## Shopify App Store compliance status
 
@@ -11,7 +12,7 @@ Last reviewed: 2026-09-12, against `main` at `7540a94`.
 
 - **Requirement 1.1.15, refunds only through the original payment processor.**
   Enforced for published apps since 2026-04-22. `executeAutomaticReturn` uses
-  `refundCreate` against allocations derived from `suggestedRefund`, validates
+  `returnProcess` against allocations derived from `suggestedRefund`, validates
   each allocation against an existing original transaction and gateway, and
   rejects manual and replacement gateways. Refund advances no money and creates
   no separate payout destination. See `docs/ORIGINAL_PAYMENT_REFUNDS.md`.
@@ -19,11 +20,11 @@ Last reviewed: 2026-09-12, against `main` at `7540a94`.
   Shopify requires this for returns and exchanges apps effective 2026-12-01.
   The portal already uses Customer Account OIDC with PKCE, one-use state, and
   verified ID-token signature and nonce.
-
-### Known gap: return processing migration
-
-Shopify introduced return processing in Admin API 2025-07 and states that
-existing returns apps should migrate to `returnProcess`. This app does not.
+- **Return processing migration.** Shopify introduced return processing in
+  Admin API 2025-07 and states that existing returns apps should migrate to
+  `returnProcess`. `executeAutomaticReturn` now processes the approved return
+  with `returnProcess` instead of leaving it `OPEN` and calling `refundCreate`
+  separately. See below for what this closed and what it left open.
 
 Current flow in `app/services/automatic-return.server.ts`:
 
@@ -31,29 +32,40 @@ Current flow in `app/services/automatic-return.server.ts`:
 orderRequestReturn  (Customer Account API)
   -> returnApproveRequest
   -> order.suggestedRefund
-  -> refundCreate
+  -> returnProcess (dispositions + refund transfer together)
+  -> order.refunds  (locates the created refund by its `return` reference,
+                      since returnProcess does not echo it)
 ```
 
-The return is left in `OPEN` and is never processed. Consequences:
+What migrating resolved, against the four consequences the old `refundCreate`
+flow had:
 
-1. **Merchant financial reports omit the return.** A return is recorded as a
-   sale entry only when processed, so refunds issued by this app never appear
-   as returns in the merchant's reports.
-2. **Inventory is never restocked.** The disposition decision (restock or not,
-   and to which location) exists only in processing. Returned stock stays
-   missing from inventory permanently.
-3. **`refundCreate` can misallocate across duplicate line items.** Shopify
-   documents a risk of refunding the wrong item when an order carries multiple
-   quantities of the same line item. This app lets customers choose items and
-   quantities, so it is exposed to that risk directly.
-4. **Return fees cannot be recorded.** Restocking and shipping fees are only
-   expressible through processing. `StorePolicy` has no field for them.
+1. **Merchant financial reports.** Resolved. The return closes (`CLOSED`)
+   through `returnProcess` rather than staying `OPEN`, so it is recorded as a
+   sale entry.
+2. **Inventory restocking.** Resolved per the location decision below.
+   `resolveRestockLocation` picks the merchant's override or the order's
+   fulfillment location; `buildReturnProcessLineItems` allocates quantities
+   across reverse fulfillment order line items and disposes them `RESTOCKED`.
+   A line item restocks nothing, rather than a guess, when no single location
+   resolves or the approved quantity can't be fully allocated.
+3. **Duplicate line item misallocation.** Resolved as a side effect of the
+   migration, not a separate fix. `returnProcess`'s `returnLineItems` input
+   keys off `ReturnLineItem.id`, which is specific to this return, instead of
+   `refundCreate`'s `refundLineItems`, which keyed off the order's raw
+   (potentially duplicated) `LineItem.id`.
+4. **Return fees.** Still open. `ReturnProcessInput` has no restocking-fee
+   field (`ReturnLineItem.restockingFee` is read-only, computed elsewhere);
+   `refundShipping` exists for shipping but nothing is wired to it. `StorePolicy`
+   still has no field for this and none is sent to `returnProcess`.
 
-Migrating also removes an existing failure mode. Today there is a window
-between `returnApproveRequest` succeeding and `refundCreate` running where an
-amount recheck can fail, producing a `NEEDS_ATTENTION` record and an orphaned
-open return on the merchant's store. `returnProcess` performs confirmation,
-disposition and the financial transfer in one call, closing that window.
+One claim in the earlier version of this document does not hold: migrating
+does **not** close the window between `returnApproveRequest` succeeding and
+the financial transfer running. `returnProcess` takes an already-approved
+`returnId` — it does not fold in approval — so the same kind of failure (an
+amount recheck fails, or the call itself fails, after approval) still leaves
+an approved-but-unprocessed return and a `NEEDS_ATTENTION` record. The window
+is unchanged in kind; only what runs at the end of it changed.
 
 Relevant references:
 
@@ -65,7 +77,7 @@ Relevant references:
 
 ## Open decisions
 
-### 1. Restock disposition and location (decided, unblocks the returnProcess migration)
+### 1. Restock disposition and location (decided and implemented)
 
 `returnProcess` requires a disposition per return line item, and a
 `locationId` is required for `RESTOCKED`. There was no merchant setting for
@@ -79,16 +91,20 @@ dashboard surface to complete before the app works. The override exists for
 merchants who route returns to a dedicated returns warehouse, where the
 fulfillment location is the wrong answer.
 
-Implementation this implies:
+Implemented as:
 
 - A nullable `returnLocationId` column on `StorePolicy`. Null means use the
   order's fulfillment location; a value overrides it.
-- A location picker in the embedded dashboard writing that column, populated
-  from the shop's locations.
-- Resolution at processing time: `StorePolicy.returnLocationId` if set,
-  otherwise the fulfillment location for the line item's order. If neither
-  resolves, the line item is processed as not restocked rather than failing
-  the return.
+- A location picker in the embedded dashboard (`app/routes/app._index.tsx`)
+  writing that column, populated from the shop's locations and validated
+  server-side against them.
+- Resolution at processing time (`resolveRestockLocation` in
+  `app/services/return-processing.server.ts`): `StorePolicy.returnLocationId`
+  if set, otherwise the order's fulfillment location — only when every
+  fulfillment for the order shares one location. If neither resolves, or the
+  approved quantity can't be fully allocated across the reverse fulfillment
+  order's line items, the line item is processed as not restocked rather than
+  failing the return or restocking a guessed fraction.
 
 Defaulting everything to not-restocked was rejected: it leaves merchants doing
 manual restocks and undercuts the point of automating the return.

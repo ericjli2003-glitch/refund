@@ -46,11 +46,13 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
   const lineItemId = "gid://shopify/LineItem/73";
   const returnId = "gid://shopify/Return/74";
   const refundId = "gid://shopify/Refund/75";
+  const returnLineItemId = "gid://shopify/ReturnLineItem/77";
   let nonce = "";
   let challenge = "";
   let amount = "25.00";
   let approvalFails = false;
   let paymentStatus = "PENDING";
+  let requestedQuantity = 1;
   const mutations: string[] = [];
   const { publicKey, privateKey } = await generateKeyPair("RS256");
   const jwk = {
@@ -168,6 +170,9 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
         });
       if (query.includes("RequestCustomerReturn")) {
         assert.equal(variables.orderId, orderId);
+        requestedQuantity = (
+          variables.requestedLineItems as Array<{ quantity: number }>
+        )[0].quantity;
         mutations.push("orderRequestReturn");
         return Response.json({
           data: {
@@ -203,6 +208,7 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
         return Response.json({
           data: {
             order: {
+              fulfillments: [],
               suggestedRefund: {
                 amountSet: {
                   presentmentMoney: { amount, currencyCode: "CAD" },
@@ -224,25 +230,76 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
             },
           },
         });
-      if (query.includes("CreateAutomaticRefund")) {
-        assert.match(query, /@idempotent/);
-        assert.ok(variables.idempotencyKey);
-        const refund = variables.input as {
-          orderId: string;
-          transactions: { parentId: string; amount: string }[];
+      if (query.includes("ReturnDetailsForProcessing")) {
+        assert.equal(variables.returnId, returnId);
+        return Response.json({
+          data: {
+            return: {
+              returnLineItems: {
+                nodes: [
+                  {
+                    id: returnLineItemId,
+                    quantity: requestedQuantity,
+                    fulfillmentLineItem: { lineItem: { id: lineItemId } },
+                  },
+                ],
+              },
+              reverseFulfillmentOrders: { nodes: [] },
+            },
+          },
+        });
+      }
+      if (query.includes("ProcessAutomaticReturn")) {
+        const input = variables.input as {
+          returnId: string;
+          returnLineItems: Array<{ id: string; quantity: number }>;
+          financialTransfer: {
+            issueRefund: {
+              orderTransactions: Array<{
+                parentId: string;
+                transactionAmount: { amount: string; currencyCode: string };
+              }>;
+            };
+          };
         };
-        assert.equal(refund.orderId, orderId);
-        assert.equal(refund.transactions[0].amount, amount);
+        assert.equal(input.returnId, returnId);
+        assert.equal(input.returnLineItems[0].id, returnLineItemId);
         assert.equal(
-          refund.transactions[0].parentId,
+          input.financialTransfer.issueRefund.orderTransactions[0]
+            .transactionAmount.amount,
+          amount,
+        );
+        assert.equal(
+          input.financialTransfer.issueRefund.orderTransactions[0].parentId,
           "gid://shopify/OrderTransaction/76",
         );
-        mutations.push("refundCreate");
+        mutations.push("returnProcess");
         return Response.json({
-          data: { refundCreate: { refund: {
-            id: refundId,
-            transactions: { nodes: [{ kind: "REFUND", status: paymentStatus }], pageInfo: { hasNextPage: false } },
-          }, userErrors: [] } },
+          data: {
+            returnProcess: {
+              return: { id: returnId, status: "CLOSED" },
+              userErrors: [],
+            },
+          },
+        });
+      }
+      if (query.includes("OrderRefundsForReturn")) {
+        assert.equal(variables.orderId, orderId);
+        return Response.json({
+          data: {
+            order: {
+              refunds: [
+                {
+                  id: refundId,
+                  return: { id: returnId },
+                  transactions: {
+                    nodes: [{ kind: "REFUND", status: paymentStatus }],
+                    pageInfo: { hasNextPage: false },
+                  },
+                },
+              ],
+            },
+          },
         });
       }
     }
@@ -731,7 +788,7 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       assert.deepEqual(mutations, [
         "orderRequestReturn",
         "returnApproveRequest",
-        "refundCreate",
+        "returnProcess",
       ]);
       const retry = await portal("confirm", {
         quoteToken,

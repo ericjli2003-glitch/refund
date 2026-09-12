@@ -13,8 +13,14 @@ import {
   type RequestedItem,
 } from "./return-guards.server";
 import {
-  buildRefundTransactions,
+  buildReturnProcessLineItems,
+  resolveRestockLocation,
+  type ReturnLineItemNode,
+  type ReverseFulfillmentLineItemNode,
+} from "./return-processing.server";
+import {
   buildReturnApprovalVariables,
+  buildReturnProcessTransactions,
   type SuggestedRefundTransaction,
 } from "./shopify-inputs.server";
 
@@ -140,6 +146,9 @@ const SUGGESTED_REFUND_QUERY = `#graphql
     $refundLineItems: [RefundLineItemInput!]!
   ) {
     order(id: $orderId) {
+      fulfillments(first: 25) {
+        location { id }
+      }
       suggestedRefund(refundLineItems: $refundLineItems) {
         amountSet { presentmentMoney { amount currencyCode } }
         suggestedTransactions {
@@ -152,18 +161,58 @@ const SUGGESTED_REFUND_QUERY = `#graphql
   }
 `;
 
-const CREATE_REFUND_MUTATION = `#graphql
-  mutation CreateAutomaticRefund($input: RefundInput!, $idempotencyKey: String!) {
-    refundCreate(input: $input) @idempotent(key: $idempotencyKey) {
-      refund {
+// Fetched after approval: the approved return's own line items (to check
+// Shopify approved every confirmed item and quantity) and its reverse
+// fulfillment order line items (what buildReturnProcessLineItems allocates
+// restock dispositions against).
+const RETURN_DETAILS_QUERY = `#graphql
+  query ReturnDetailsForProcessing($returnId: ID!) {
+    return(id: $returnId) {
+      returnLineItems(first: 50) {
+        nodes {
+          id
+          quantity
+          fulfillmentLineItem { lineItem { id } }
+        }
+      }
+      reverseFulfillmentOrders(first: 10) {
+        nodes {
+          lineItems(first: 50) {
+            nodes {
+              id
+              totalQuantity
+              fulfillmentLineItem { lineItem { id } }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+const RETURN_PROCESS_MUTATION = `#graphql
+  mutation ProcessAutomaticReturn($input: ReturnProcessInput!) {
+    returnProcess(input: $input) {
+      return { id status }
+      userErrors { field message }
+    }
+  }
+`;
+
+// returnProcess does not echo the refund it creates, so the refund this
+// return produced is found by matching Refund.return.id against the return
+// we just processed.
+const ORDER_REFUNDS_QUERY = `#graphql
+  query OrderRefundsForReturn($orderId: ID!) {
+    order(id: $orderId) {
+      refunds(first: 250) {
         id
-        totalRefundedSet { presentmentMoney { amount currencyCode } }
+        return { id }
         transactions(first: 100) {
           nodes { kind status }
           pageInfo { hasNextPage }
         }
       }
-      userErrors { field message }
     }
   }
 `;
@@ -416,6 +465,7 @@ export async function executeAutomaticReturn({
     const suggestionResult = (await suggestionResponse.json()) as {
       data?: {
         order: {
+          fulfillments: Array<{ location: { id: string } | null }>;
           suggestedRefund: {
             amountSet: { presentmentMoney: Money };
             suggestedTransactions: SuggestedRefundTransaction[];
@@ -444,62 +494,132 @@ export async function executeAutomaticReturn({
       );
     }
 
-    const transactions = buildRefundTransactions(
-      orderId,
+    const orderTransactions = buildReturnProcessTransactions(
       suggestion.suggestedTransactions,
       quote,
     );
 
-    const refundResponse = await admin.graphql(CREATE_REFUND_MUTATION, {
+    const detailsResponse = await admin.graphql(RETURN_DETAILS_QUERY, {
+      variables: { returnId },
+    });
+    const detailsResult = (await detailsResponse.json()) as {
+      data?: {
+        return: {
+          returnLineItems: { nodes: ReturnLineItemNode[] };
+          reverseFulfillmentOrders: {
+            nodes: Array<{ lineItems: { nodes: ReverseFulfillmentLineItemNode[] } }>;
+          };
+        } | null;
+      };
+      errors?: Array<{ message: string }>;
+    };
+    const details = detailsResult.data?.return;
+    if (!details || detailsResult.errors?.length) {
+      throw new Error(
+        detailsResult.errors?.map((error) => error.message).join("; ") ||
+          "Shopify did not return the approved return's line items. No refund was submitted.",
+      );
+    }
+
+    const fulfillmentLocationIds =
+      suggestionResult.data?.order?.fulfillments.map(
+        (fulfillment) => fulfillment.location?.id,
+      ) ?? [];
+    const restockLocationId = await resolveRestockLocation(
+      shop,
+      fulfillmentLocationIds,
+    );
+    const returnProcessLineItems = buildReturnProcessLineItems({
+      items,
+      returnLineItems: details.returnLineItems.nodes,
+      reverseFulfillmentLineItems: details.reverseFulfillmentOrders.nodes.flatMap(
+        (node) => node.lineItems.nodes,
+      ),
+      locationId: restockLocationId,
+    });
+
+    const processResponse = await admin.graphql(RETURN_PROCESS_MUTATION, {
       variables: {
-        idempotencyKey,
         input: {
-          orderId,
-          notify: true,
+          returnId,
           note: "Customer-confirmed automatic return",
-          currency: quote.currencyCode,
-          refundLineItems,
-          transactions,
+          notifyCustomer: true,
+          returnLineItems: returnProcessLineItems,
+          financialTransfer: { issueRefund: { orderTransactions } },
         },
       },
     });
-    const refundResult = (await refundResponse.json()) as {
+    const processResult = (await processResponse.json()) as {
       data?: {
-        refundCreate: {
-          refund: {
-            id: string;
-            transactions: {
-              nodes: Array<{ kind: string; status: string }>;
-              pageInfo: { hasNextPage: boolean };
-            };
-          } | null;
+        returnProcess: {
+          return: { id: string; status: string } | null;
           userErrors: UserError[];
         };
       };
       errors?: Array<{ message: string }>;
     };
-    if (!refundResult.data || refundResult.errors?.length) {
+    if (!processResult.data || processResult.errors?.length) {
       throw new Error(
-        refundResult.errors?.map((error) => error.message).join("; ") ||
-          "Shopify could not create the refund.",
+        processResult.errors?.map((error) => error.message).join("; ") ||
+          "Shopify could not process the return.",
       );
     }
     throwOnUserErrors(
-      refundResult.data.refundCreate.userErrors,
-      "Shopify could not create the refund",
+      processResult.data.returnProcess.userErrors,
+      "Shopify could not process the return",
     );
-    const refund = refundResult.data.refundCreate.refund;
-    const refundId = refund?.id;
-    if (!refundId) throw new Error("Shopify did not create a refund.");
+    const processedReturn = processResult.data.returnProcess.return;
+    if (processedReturn?.id !== returnId || processedReturn.status !== "CLOSED") {
+      throw new Error(
+        "Shopify did not confirm that this return was processed. No refund was confirmed submitted.",
+      );
+    }
+
+    const refundsResponse = await admin.graphql(ORDER_REFUNDS_QUERY, {
+      variables: { orderId },
+    });
+    const refundsResult = (await refundsResponse.json()) as {
+      data?: {
+        order: {
+          refunds: Array<{
+            id: string;
+            return: { id: string } | null;
+            transactions: {
+              nodes: Array<{ kind: string; status: string }>;
+              pageInfo: { hasNextPage: boolean };
+            };
+          }>;
+        } | null;
+      };
+      errors?: Array<{ message: string }>;
+    };
+    const refund = refundsResult.data?.order?.refunds.find(
+      (candidate) => candidate.return?.id === returnId,
+    );
+    if (!refund || refundsResult.errors?.length) {
+      // The return was processed and the refund transferred; Shopify's own
+      // record of it just couldn't be located here to confirm payment status.
+      // A refunds/create webhook still reconciles this once it arrives.
+      return prisma.agentReturn.update({
+        where: { id: record.id },
+        data: {
+          status: "NEEDS_ATTENTION",
+          returnStatus: "PROCESSED",
+          failureReason:
+            "The return was processed, but its refund record could not be located to confirm payment status.",
+        },
+      });
+    }
     const paymentStatus = refundPaymentStatus(
-      refund?.transactions?.nodes || [],
-      refund?.transactions?.pageInfo?.hasNextPage,
+      refund.transactions.nodes,
+      refund.transactions.pageInfo.hasNextPage,
     );
 
     return prisma.agentReturn.update({
       where: { id: record.id },
       data: {
-        refundId,
+        refundId: refund.id,
+        returnStatus: "PROCESSED",
         status: paymentStatus === "FAILED" ? "NEEDS_ATTENTION" : "REFUND_SUBMITTED",
         refundStatus: paymentStatus,
         failureReason: paymentStatus === "FAILED"

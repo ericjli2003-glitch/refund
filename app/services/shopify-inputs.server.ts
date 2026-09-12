@@ -48,24 +48,7 @@ function validateSuggestedTransactions(
   return suggestedTransactions;
 }
 
-export function buildRefundTransactions(
-  orderId: string,
-  suggestedTransactions: SuggestedRefundTransaction[],
-  expectedRefund: { amount: string; currencyCode: string },
-) {
-  return validateSuggestedTransactions(suggestedTransactions, expectedRefund).map(
-    (transaction) => ({
-      amount: transaction.amountSet.presentmentMoney.amount,
-      gateway: transaction.gateway,
-      kind: "REFUND" as const,
-      orderId,
-      parentId: transaction.parentTransaction!.id,
-    }),
-  );
-}
-
-// returnProcess carries the refund inline. The same original-payment-processor
-// checks apply; only the wire shape differs from refundCreate.
+// returnProcess carries the refund inline as part of ReturnProcessRefundInput.
 export function buildReturnProcessTransactions(
   suggestedTransactions: SuggestedRefundTransaction[],
   expectedRefund: { amount: string; currencyCode: string },

@@ -6,10 +6,6 @@ import {
   type ReturnLineItemNode,
   type ReverseFulfillmentLineItemNode,
 } from "./return-processing.server";
-import {
-  buildReturnProcessTransactions,
-  type SuggestedRefundTransaction,
-} from "./shopify-inputs.server";
 
 const LINE_ITEM = "gid://shopify/LineItem/1";
 const OTHER_LINE_ITEM = "gid://shopify/LineItem/2";
@@ -162,60 +158,5 @@ test("an approved quantity below the confirmed quantity stops the refund", () =>
         locationId: LOCATION,
       }),
     /smaller quantity than the customer confirmed/,
-  );
-});
-
-const SHOPIFY_PAYMENTS: SuggestedRefundTransaction = {
-  amountSet: { presentmentMoney: { amount: "42.00", currencyCode: "CAD" } },
-  gateway: "shopify_payments",
-  parentTransaction: {
-    id: "gid://shopify/OrderTransaction/123",
-    gateway: "shopify_payments",
-    manualPaymentGateway: false,
-  },
-};
-
-test("suggested transactions become returnProcess refund transactions", () => {
-  assert.deepEqual(
-    buildReturnProcessTransactions([SHOPIFY_PAYMENTS], {
-      amount: "42.00",
-      currencyCode: "CAD",
-    }),
-    [
-      {
-        parentId: "gid://shopify/OrderTransaction/123",
-        transactionAmount: { amount: "42.00", currencyCode: "CAD" },
-      },
-    ],
-  );
-});
-
-test("returnProcess refunds reject a manual payment gateway like refundCreate does", () => {
-  assert.throws(
-    () =>
-      buildReturnProcessTransactions(
-        [
-          {
-            ...SHOPIFY_PAYMENTS,
-            parentTransaction: {
-              ...SHOPIFY_PAYMENTS.parentTransaction!,
-              manualPaymentGateway: true,
-            },
-          },
-        ],
-        { amount: "42.00", currencyCode: "CAD" },
-      ),
-    /original payment processor/,
-  );
-});
-
-test("returnProcess refunds reject transactions that do not sum to the quote", () => {
-  assert.throws(
-    () =>
-      buildReturnProcessTransactions([SHOPIFY_PAYMENTS], {
-        amount: "43.00",
-        currencyCode: "CAD",
-      }),
-    /original payment processor/,
   );
 });

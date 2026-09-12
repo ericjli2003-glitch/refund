@@ -36,10 +36,10 @@ payment gateways, replacement gateways, and invalid totals stop payment
 submission and require merchant attention. Mixed original payment methods are
 supported when all allocations pass these checks.
 
-The current implementation uses `refundCreate` after return approval. Shopify
-continues to support original-method refunds this way, but recommends
-`returnProcess` for return-specific accounting, fees, and exchanges. Those
-capabilities require a separate migration and are not implemented here.
+The implementation uses `returnProcess` after return approval, which transfers
+the refund and disposes the return's line items (restocking them at the
+resolved location, or not restocking when none resolves) in the same call.
+See `docs/PROJECT_STATE.md` for what that migration did and did not resolve.
 
 ## Status meaning
 
