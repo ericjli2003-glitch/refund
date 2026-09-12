@@ -1,5 +1,6 @@
 import type { ReturnDraft } from "@prisma/client";
 import prisma from "../db.server";
+import { describeRefundProgress } from "../refund-status";
 import { seal, unseal } from "./customer-security.server";
 import { readBoundQuote, returnItemsSchema, type createReturnQuote } from "./return-quote.server";
 import { sameReturnItems, moneyAmountsMatch } from "./return-guards.server";
@@ -129,10 +130,14 @@ export async function getReturnSession(context: CustomerContext) {
     // Submission history is independent of draft expiry and replacement.
     prisma.agentReturn.findMany({
       where: owner(context), orderBy: { createdAt: "desc" }, take: 20,
-      select: { id: true, idempotencyKey: true, orderId: true, orderName: true, status: true, returnId: true, refundId: true, amount: true, currencyCode: true, createdAt: true },
+      select: { id: true, idempotencyKey: true, orderId: true, orderName: true, status: true, refundStatus: true, returnId: true, refundId: true, amount: true, currencyCode: true, createdAt: true },
     }),
   ]);
-  const submissions = records.map(record => ({ ...record, createdAt: record.createdAt.toISOString() }));
+  const submissions = records.map(record => ({
+    ...record, ...describeRefundProgress(record),
+    paymentMethod: "Original payment method",
+    createdAt: record.createdAt.toISOString(),
+  }));
   const active = Boolean(draft && draft.expiresAt.getTime() > Date.now());
   const currentSubmission = records.find(record => record.idempotencyKey === draft?.quoteId)
     || (draft?.quoteId ? (await prisma.agentReturn.findMany({
