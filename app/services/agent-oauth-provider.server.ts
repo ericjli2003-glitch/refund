@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { OAuthServerProvider } from "@modelcontextprotocol/sdk/server/auth/provider.js";
 import type { OAuthClientInformationFull } from "@modelcontextprotocol/sdk/shared/auth.js";
+import type { Prisma } from "@prisma/client";
 import {
   InvalidClientMetadataError,
   InvalidGrantError,
   InvalidRequestError,
   InvalidScopeError,
   ServerError,
-  UnsupportedGrantTypeError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import prisma from "../db.server";
 import {
@@ -38,7 +38,7 @@ export function agentOAuthMetadata() {
     registration_endpoint: `${issuer}/register`,
     revocation_endpoint: `${issuer}/revoke`,
     response_types_supported: ["code"],
-    grant_types_supported: ["authorization_code"],
+    grant_types_supported: ["authorization_code", "refresh_token"],
     token_endpoint_auth_methods_supported: ["none", "client_secret_post"],
     revocation_endpoint_auth_methods_supported: ["none", "client_secret_post"],
     code_challenge_methods_supported: ["S256"],
@@ -46,6 +46,29 @@ export function agentOAuthMetadata() {
     authorization_response_iss_parameter_supported: true,
     client_id_metadata_document_supported: false,
   };
+}
+
+async function revokeGrantChain(
+  db: Pick<Prisma.TransactionClient, "agentAccessGrant">,
+  firstTokenHash: string,
+  revokedAt = new Date(),
+) {
+  let tokenHash: string | null = firstTokenHash;
+  const visited = new Set<string>();
+  while (tokenHash && visited.size < 100 && !visited.has(tokenHash)) {
+    visited.add(tokenHash);
+    const grant: { rotatedToTokenHash: string | null } | null =
+      await db.agentAccessGrant.findUnique({
+        where: { tokenHash },
+        select: { rotatedToTokenHash: true },
+      });
+    if (!grant) break;
+    await db.agentAccessGrant.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt },
+    });
+    tokenHash = grant.rotatedToTokenHash;
+  }
 }
 
 export function createAgentOAuthProvider(): OAuthServerProvider {
@@ -88,9 +111,19 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
           throw new InvalidClientMetadataError(
             "[registration_auth_method] Supported token authentication methods are none and client_secret_post.",
           );
-        if (input.grant_types?.some((type) => type !== "authorization_code"))
+        const requestedGrantTypes = input.grant_types || [
+          "authorization_code",
+          "refresh_token",
+        ];
+        if (
+          new Set(requestedGrantTypes).size !== requestedGrantTypes.length ||
+          !requestedGrantTypes.includes("authorization_code") ||
+          requestedGrantTypes.some(
+            (type) => !["authorization_code", "refresh_token"].includes(type),
+          )
+        )
           throw new InvalidClientMetadataError(
-            "[registration_grant_type] Only authorization_code is supported; refresh tokens are not issued.",
+            "[registration_grant_type] authorization_code is required; refresh_token is the only optional additional grant.",
           );
         if (input.response_types?.some((type) => type !== "code"))
           throw new InvalidClientMetadataError(
@@ -125,7 +158,12 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
                   client_secret: input.client_secret || randomToken(),
                   client_secret_expires_at: 0,
                 }),
-            grant_types: ["authorization_code"],
+            grant_types: [
+              "authorization_code",
+              ...(requestedGrantTypes.includes("refresh_token")
+                ? ["refresh_token"]
+                : []),
+            ],
             response_types: ["code"],
             scope: agentScopes.join(" "),
           };
@@ -265,13 +303,12 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
           const used = await tx.agentOAuthRequest.findUnique({
             where: { id: flow.id },
           });
-          if (used?.grantHash)
-            await tx.agentAccessGrant.updateMany({
-              where: { tokenHash: used.grantHash },
-              data: { revokedAt: new Date() },
-            });
+          if (used?.grantHash) await revokeGrantChain(tx, used.grantHash);
           return null; // Commit replay revocation; throw only outside transaction.
         }
+        const refreshEnabled = Boolean(
+          client.grant_types?.includes("refresh_token"),
+        );
         const grant = await issueApprovedAgentGrant(
           {
             sessionId: flow.sessionId,
@@ -283,6 +320,7 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
           },
           Date.now(),
           tx,
+          refreshEnabled,
         );
         await tx.agentOAuthRequest.update({
           where: { id: flow.id },
@@ -296,6 +334,7 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
             1,
             Math.floor((grant.expiresAt.getTime() - Date.now()) / 1000),
           ),
+          ...(grant.refreshToken ? { refresh_token: grant.refreshToken } : {}),
         };
       });
       if (!result)
@@ -304,10 +343,97 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
         );
       return result;
     },
-    async exchangeRefreshToken() {
-      throw new UnsupportedGrantTypeError(
-        "Reconnect your assistant when access expires. Refresh tokens are not issued.",
-      );
+    async exchangeRefreshToken(client, refreshToken, scopes, resource) {
+      if (
+        !client.grant_types?.includes("refresh_token") ||
+        !/^rfr_[A-Za-z0-9_-]{43}$/.test(refreshToken)
+      )
+        throw new InvalidGrantError("Invalid refresh token.");
+      let requestedScopes: string[] | undefined;
+      if (scopes) {
+        try {
+          requestedScopes = checkedScopes(scopes);
+        } catch {
+          throw new InvalidScopeError("Unsupported Refund permissions.");
+        }
+      }
+      const result = await prisma.$transaction(async (tx) => {
+        const now = new Date();
+        const refreshTokenHash = digest(refreshToken);
+        const grant = await tx.agentAccessGrant.findUnique({
+          where: { refreshTokenHash },
+          include: { session: true },
+        });
+        if (!grant || grant.clientId !== client.client_id) return null;
+        if (grant.revokedAt) {
+          if (grant.rotatedToTokenHash)
+            await revokeGrantChain(tx, grant.rotatedToTokenHash, now);
+          return null;
+        }
+        if (
+          !grant.refreshExpiresAt ||
+          grant.refreshExpiresAt.getTime() <= now.getTime() ||
+          (resource && resource.href !== grant.resource) ||
+          !grant.session ||
+          grant.session.shop !== grant.shop ||
+          grant.customerSubjectHash !== grant.session.customerSubjectHash ||
+          !grant.session.customerSubjectHash ||
+          !grant.session.accessToken ||
+          grant.session.expiresAt.getTime() <= now.getTime()
+        )
+          return null;
+        const nextScopes = requestedScopes || grant.scopes;
+        if (nextScopes.some((scope) => !grant.scopes.includes(scope)))
+          throw new InvalidScopeError(
+            "Refresh cannot add permissions that the customer did not approve.",
+          );
+        const claim = await tx.agentAccessGrant.updateMany({
+          where: {
+            tokenHash: grant.tokenHash,
+            revokedAt: null,
+            refreshTokenHash,
+            refreshExpiresAt: { gt: now },
+          },
+          data: { revokedAt: now },
+        });
+        if (claim.count !== 1) {
+          const used = await tx.agentAccessGrant.findUnique({
+            where: { tokenHash: grant.tokenHash },
+          });
+          if (used?.rotatedToTokenHash)
+            await revokeGrantChain(tx, used.rotatedToTokenHash, now);
+          return null;
+        }
+        const next = await issueApprovedAgentGrant(
+          {
+            sessionId: grant.sessionId,
+            shop: grant.shop,
+            clientId: grant.clientId,
+            resource: grant.resource,
+            scopes: nextScopes,
+            customerApproved: true,
+          },
+          now.getTime(),
+          tx,
+          true,
+        );
+        await tx.agentAccessGrant.update({
+          where: { tokenHash: grant.tokenHash },
+          data: { rotatedToTokenHash: digest(next.accessToken) },
+        });
+        return {
+          access_token: next.accessToken,
+          refresh_token: next.refreshToken!,
+          token_type: "Bearer" as const,
+          scope: next.scopes.join(" "),
+          expires_in: Math.max(
+            1,
+            Math.floor((next.expiresAt.getTime() - Date.now()) / 1000),
+          ),
+        };
+      });
+      if (!result) throw new InvalidGrantError("Invalid refresh token.");
+      return result;
     },
     async verifyAccessToken(token) {
       const grant = await prisma.agentAccessGrant.findUnique({
@@ -324,9 +450,16 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
       };
     },
     async revokeToken(client, request) {
-      await prisma.agentAccessGrant.updateMany({
-        where: { tokenHash: digest(request.token), clientId: client.client_id },
-        data: { revokedAt: new Date() },
+      await prisma.$transaction(async (tx) => {
+        const tokenHash = digest(request.token);
+        const grant = await tx.agentAccessGrant.findFirst({
+          where: {
+            clientId: client.client_id,
+            OR: [{ tokenHash }, { refreshTokenHash: tokenHash }],
+          },
+          select: { tokenHash: true },
+        });
+        if (grant) await revokeGrantChain(tx, grant.tokenHash);
       });
     },
   };

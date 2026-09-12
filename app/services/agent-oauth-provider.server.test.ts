@@ -10,10 +10,31 @@ import { createAgentOAuthProvider } from "./agent-oauth-provider.server";
 const valid = {
   redirect_uris: ["https://chatgpt.com/connector_platform_oauth_redirect"],
   token_endpoint_auth_method: "none",
-  grant_types: ["authorization_code"],
+  grant_types: ["authorization_code", "refresh_token"],
   response_types: ["code"],
   scope: "returns:read returns:quote returns:submit",
 };
+
+test("ChatGPT registration accepts authorization code plus rotating refresh tokens", async (t) => {
+  process.env.SHOPIFY_API_SECRET ||= "test-secret";
+  const originalCount = prisma.agentOAuthClient.count;
+  const originalCreate = prisma.agentOAuthClient.create;
+  const create = t.mock.fn(async () => ({}));
+  Reflect.set(prisma.agentOAuthClient, "count", async () => 0);
+  Reflect.set(prisma.agentOAuthClient, "create", create);
+  t.after(() => {
+    Reflect.set(prisma.agentOAuthClient, "count", originalCount);
+    Reflect.set(prisma.agentOAuthClient, "create", originalCreate);
+  });
+  const client =
+    await createAgentOAuthProvider().clientsStore.registerClient!(valid);
+  assert.equal(client.client_name, "ChatGPT");
+  assert.deepEqual(client.grant_types, ["authorization_code", "refresh_token"]);
+  assert.deepEqual(client.response_types, ["code"]);
+  assert.equal(client.token_endpoint_auth_method, "none");
+  assert.equal(client.client_secret, undefined);
+  assert.equal(create.mock.callCount(), 1);
+});
 
 test("registration errors identify rejected fields without echoing supplied metadata", async (t) => {
   const original = prisma.agentOAuthClient.count;
@@ -42,7 +63,7 @@ test("registration errors identify rejected fields without echoing supplied meta
       "registration_auth_method",
     ],
     [
-      { grant_types: ["authorization_code", "refresh_token"] },
+      { grant_types: ["authorization_code", "client_credentials"] },
       "registration_grant_type",
     ],
     [{ response_types: ["token"] }, "registration_response_type"],

@@ -83,9 +83,10 @@ export default function AgentConsent() {
         ))}
       </ul>
       <p>
-        Access lasts up to one hour, or until your customer session ends. Your
-        Shopify sign-in credentials stay private. You can disconnect this
-        assistant from the return portal.
+        The assistant receives short-lived access that may refresh only while
+        your verified customer session remains active, for up to four hours.
+        Your Shopify sign-in credentials stay private. You can disconnect this
+        assistant from the return portal at any time.
       </p>
       <p>
         <strong>Connecting does not submit a return or refund.</strong> The
