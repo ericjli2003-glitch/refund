@@ -103,9 +103,11 @@ export function CustomerConnection({
           never in chat.
         </p>
         <p>
-          Connecting does not submit a return or refund. Access lasts up to one
-          hour and may end sooner with your customer session. Reconnect when it
-          expires. You can disconnect the assistant from the return portal.
+          Connecting does not submit a return or refund. Access renews
+          automatically while your store sign-in stays active, for up to four
+          hours. Reconnecting after that may skip the sign-in code if you are
+          still signed in to the store. You can disconnect the assistant from
+          the return portal.
         </p>
       </section>
       <section>

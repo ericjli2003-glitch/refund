@@ -7,7 +7,9 @@ Before applying it, back up the active theme and inspect any existing
 `agents.md.liquid`, `llms.txt.liquid`, and `llms-full.txt.liquid` templates.
 Merge the Returns section into existing merchant guides rather than replacing
 them. Replace `/apps/refund` in the three return links if the merchant customized
-the proxy path. Keep Shopify shopping discovery intact.
+the proxy path. Refund's dashboard shows this Returns section filled in with
+the merchant's current return instructions and policy link; use that version
+and paste it again after changing them. Keep Shopify shopping discovery intact.
 
 Use the merchant's authenticated Shopify CLI session. Identify the actual live
 theme with `shopify theme list --store YOUR_STORE.myshopify.com`, then pull it into

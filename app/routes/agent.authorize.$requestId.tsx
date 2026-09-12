@@ -1,6 +1,7 @@
 import {
   Form,
   data,
+  redirect,
   useLoaderData,
   useNavigation,
   type ActionFunctionArgs,
@@ -29,6 +30,21 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const flow = await getAgentAuthorizationRequest(request, rawId);
   await requireInstalledShop(flow.shop);
   const session = await getCustomerSession(request, flow.shop);
+  const url = new URL(request.url);
+  const loginQuery = new URLSearchParams({
+    shop: flow.shop,
+    agentRequest: rawId,
+  });
+  // Try the customer's live Shopify session once, silently, so reconnecting an
+  // expired assistant usually needs no code. The consent click still follows.
+  if (
+    !session &&
+    !url.searchParams.has("silentTried") &&
+    !url.searchParams.has("loginError")
+  )
+    throw redirect(`/customer/login?${loginQuery}&silent=1`, {
+      headers: headers(),
+    });
   return data(
     {
       shop: flow.shop,
@@ -37,8 +53,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       scopes: flow.scopes,
       authenticated: Boolean(session),
       csrf: flow.csrfToken,
-      loginUrl: `/customer/login?${new URLSearchParams({ shop: flow.shop, agentRequest: rawId })}`,
-      loginError: new URL(request.url).searchParams.has("loginError"),
+      loginUrl: `/customer/login?${loginQuery}`,
+      loginError: url.searchParams.has("loginError"),
     },
     { headers: headers() },
   );

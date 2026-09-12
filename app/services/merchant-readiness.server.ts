@@ -32,7 +32,7 @@ async function inspectStorefront(shop: string) {
 
 async function probe(shop: string) {
   const [policy, login, api, storefront] = await Promise.all([
-    prisma.storePolicy.findUnique({ where: { shop }, select: { automaticRefundsEnabled: true, returnWindowDays: true, currencyCode: true } }),
+    prisma.storePolicy.findUnique({ where: { shop }, select: { automaticRefundsEnabled: true, returnWindowDays: true, currencyCode: true, returnPolicyUrl: true, returnInstructions: true } }),
     discoverCustomerLogin(shop).then(() => "available", () => "unavailable"),
     discoverCustomerGraphqlEndpoint(shop).then(() => "available", () => "unavailable"),
     inspectStorefront(shop).catch(() => "unavailable"),
@@ -45,6 +45,9 @@ async function probe(shop: string) {
     storefrontActivationOptional: true,
     returnWindowDays: policy?.returnWindowDays ?? null,
     currencyCode: policy?.currencyCode ?? null,
+    returnPolicyUrl: policy?.returnPolicyUrl ?? null,
+    // Merchant-authored text; it never overrides verification or confirmation.
+    returnInstructions: policy?.returnInstructions ?? null,
     checks: { customerLoginDiscovery: login, customerApiDiscovery: api, storefront, browserRegistration: "requires_browser_check", customerAuthorization: "requires_customer_verification" },
     checkedAt: new Date().toISOString(),
     recovery: login !== "available" || api !== "available"

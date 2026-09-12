@@ -6,16 +6,38 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
+import { hashCustomerId } from "./return-guards.server";
 
 export const randomToken = () => randomBytes(32).toString("base64url");
 export const digest = (value: string) =>
   createHash("sha256").update(value).digest("base64url");
 
-function key(purpose: string) {
-  const secret = process.env.SHOPIFY_API_SECRET;
-  if (!secret) throw new Error("Customer authentication is not configured.");
+// Refund's own key material, independent of the Shopify app secret, so rotating
+// either one never orphans data sealed or hashed with the other. The first
+// secret writes; retired secrets are listed only so existing sealed values,
+// signed quotes and customer identity hashes can still be read and matched.
+export function refundSecrets() {
+  const primary = process.env.REFUND_SECRET || process.env.SHOPIFY_API_SECRET;
+  if (!primary) throw new Error("Customer authentication is not configured.");
+  const previous = (process.env.REFUND_PREVIOUS_SECRETS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  return [...new Set([primary, ...previous])];
+}
+
+function key(purpose: string, secret: string) {
   return createHmac("sha256", secret).update(`refund:${purpose}:v1`).digest();
 }
+
+// Index 0 is the hash new records use; the rest match records written before
+// a secret rotation.
+export function customerIdentityHashes(customerId: string) {
+  return refundSecrets().map((secret) => hashCustomerId(customerId, secret));
+}
+
+export const customerIdentityHash = (customerId: string) =>
+  customerIdentityHashes(customerId)[0];
 
 export function safeEqual(left: string, right: string) {
   const a = Buffer.from(left);
@@ -25,7 +47,11 @@ export function safeEqual(left: string, right: string) {
 
 export function seal(value: string, context: string) {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key("customer-session"), iv);
+  const cipher = createCipheriv(
+    "aes-256-gcm",
+    key("customer-session", refundSecrets()[0]),
+    iv,
+  );
   cipher.setAAD(Buffer.from(context));
   const encrypted = Buffer.concat([
     cipher.update(value, "utf8"),
@@ -36,21 +62,42 @@ export function seal(value: string, context: string) {
     .join(".");
 }
 
-export function unseal(value: string, context: string) {
+// `current` is false when a retired secret was needed, so a durable record can
+// be re-sealed rather than depending on that secret indefinitely.
+export function unsealWithRotation(value: string, context: string) {
   const [iv, tag, encrypted] = value
     .split(".")
     .map((part) => Buffer.from(part, "base64url"));
-  const decipher = createDecipheriv("aes-256-gcm", key("customer-session"), iv);
-  decipher.setAAD(Buffer.from(context));
-  decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString(
-    "utf8",
-  );
+  const secrets = refundSecrets();
+  for (const [index, secret] of secrets.entries()) {
+    try {
+      const decipher = createDecipheriv(
+        "aes-256-gcm",
+        key("customer-session", secret),
+        iv,
+      );
+      decipher.setAAD(Buffer.from(context));
+      decipher.setAuthTag(tag);
+      return {
+        value: Buffer.concat([
+          decipher.update(encrypted),
+          decipher.final(),
+        ]).toString("utf8"),
+        current: index === 0,
+      };
+    } catch {
+      // A wrong key fails GCM authentication; try the next configured secret.
+    }
+  }
+  throw new Error("Sealed value could not be opened.");
 }
+
+export const unseal = (value: string, context: string) =>
+  unsealWithRotation(value, context).value;
 
 export function signQuote(payload: unknown) {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
-  return `${body}.${createHmac("sha256", key("return-quote")).update(body).digest("base64url")}`;
+  return `${body}.${createHmac("sha256", key("return-quote", refundSecrets()[0])).update(body).digest("base64url")}`;
 }
 
 export function verifyQuoteSignature(token: string): unknown {
@@ -60,11 +107,13 @@ export function verifyQuoteSignature(token: string): unknown {
     !body ||
     !signature ||
     extra ||
-    !safeEqual(
-      signature,
-      createHmac("sha256", key("return-quote"))
-        .update(body)
-        .digest("base64url"),
+    !refundSecrets().some((secret) =>
+      safeEqual(
+        signature,
+        createHmac("sha256", key("return-quote", secret))
+          .update(body)
+          .digest("base64url"),
+      ),
     )
   ) {
     throw new Error("Invalid return quote. Request a new quote.");

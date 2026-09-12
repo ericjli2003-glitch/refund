@@ -204,37 +204,44 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
           },
         });
       }
-      if (query.includes("SuggestedRefund"))
+      if (query.includes("SuggestedReturnOutcome")) {
+        assert.equal(variables.returnId, returnId);
+        assert.deepEqual(variables.returnLineItems, [
+          { id: returnLineItemId, quantity: requestedQuantity },
+        ]);
         return Response.json({
           data: {
-            order: {
-              fulfillments: [],
-              suggestedRefund: {
-                amountSet: {
-                  presentmentMoney: { amount, currencyCode: "CAD" },
-                },
-                suggestedTransactions: [
-                  {
-                    amountSet: {
-                      presentmentMoney: { amount, currencyCode: "CAD" },
-                    },
-                    gateway: "bogus",
-                    parentTransaction: {
-                      id: "gid://shopify/OrderTransaction/76",
-                      gateway: "bogus",
-                      manualPaymentGateway: false,
-                    },
+            return: {
+              suggestedFinancialOutcome: {
+                financialTransfer: {
+                  amount: {
+                    presentmentMoney: { amount, currencyCode: "CAD" },
                   },
-                ],
+                  suggestedTransactions: [
+                    {
+                      amountSet: {
+                        presentmentMoney: { amount, currencyCode: "CAD" },
+                      },
+                      gateway: "bogus",
+                      parentTransaction: {
+                        id: "gid://shopify/OrderTransaction/76",
+                        gateway: "bogus",
+                        manualPaymentGateway: false,
+                      },
+                    },
+                  ],
+                },
               },
             },
           },
         });
+      }
       if (query.includes("ReturnDetailsForProcessing")) {
         assert.equal(variables.returnId, returnId);
         return Response.json({
           data: {
             return: {
+              order: { fulfillments: [] },
               returnLineItems: {
                 nodes: [
                   {

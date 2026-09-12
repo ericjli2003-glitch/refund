@@ -5,7 +5,7 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useLoaderData, useSubmit } from "react-router";
+import { useActionData, useLoaderData, useSubmit } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import prisma from "../db.server";
@@ -16,6 +16,13 @@ import {
   merchantProfilePath,
 } from "../services/merchant-directory.server";
 import { appOrigin } from "../services/customer-security.server";
+import {
+  RETURN_INSTRUCTIONS_MAX_LENGTH,
+  cleanReturnInstructions,
+  cleanReturnPolicyUrl,
+  merchantAgentsTemplateSection,
+  publicReturnGuidance,
+} from "../services/return-guidance.server";
 
 const DASHBOARD_ORDER_LIMIT = 25;
 
@@ -98,19 +105,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw new Response(message, { status: 502 });
   }
 
-  const [storedPolicy, agentReturns, privacyRequests] = await Promise.all([
-    prisma.storePolicy.findUnique({ where: { shop: session.shop } }),
-    prisma.agentReturn.findMany({
-      where: { shop: session.shop },
-      orderBy: { createdAt: "desc" },
-      take: 10,
-    }),
-    prisma.privacyRequest.findMany({
-      where: { shop: session.shop, status: "PENDING" },
-      orderBy: { createdAt: "asc" },
-      take: 10,
-    }),
-  ]);
+  const [storedPolicy, agentReturns, privacyRequests, guidance] =
+    await Promise.all([
+      prisma.storePolicy.findUnique({ where: { shop: session.shop } }),
+      prisma.agentReturn.findMany({
+        where: { shop: session.shop },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      prisma.privacyRequest.findMany({
+        where: { shop: session.shop, status: "PENDING" },
+        orderBy: { createdAt: "asc" },
+        take: 10,
+      }),
+      publicReturnGuidance(session.shop),
+    ]);
 
   return {
     orders: responseJson.data.orders.nodes,
@@ -134,7 +143,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       maxAutoRefundAmount: "100.00",
       currencyCode: responseJson.data.shop.currencyCode,
       returnLocationId: null as string | null,
+      returnInstructions: null as string | null,
+      returnPolicyUrl: null as string | null,
     },
+    instructionsMaxLength: RETURN_INSTRUCTIONS_MAX_LENGTH,
+    agentsTemplateSection: merchantAgentsTemplateSection(guidance),
     agentReturns,
     privacyRequests,
   };
@@ -167,6 +180,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     maxAutoRefundAmount > 100_000
   ) {
     throw new Response("Invalid automatic return policy.", { status: 400 });
+  }
+
+  let returnInstructions: string | null;
+  let returnPolicyUrl: string | null;
+  try {
+    returnInstructions = cleanReturnInstructions(
+      formData.get("returnInstructions"),
+    );
+    const directory = await prisma.merchantDirectory.findUnique({
+      where: { shop: session.shop },
+      select: { primaryDomain: true },
+    });
+    returnPolicyUrl = cleanReturnPolicyUrl(formData.get("returnPolicyUrl"), [
+      session.shop,
+      ...(directory ? [directory.primaryDomain] : []),
+    ]);
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Check the return guidance fields.",
+    };
   }
 
   const shopResponse = await admin.graphql(`#graphql
@@ -206,25 +242,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     throw new Response("Unknown restock location.", { status: 400 });
   }
 
+  const policy = {
+    automaticRefundsEnabled: formData.get("automaticRefundsEnabled") === "true",
+    returnWindowDays,
+    maxAutoRefundAmount: maxAutoRefundAmount.toFixed(2),
+    currencyCode,
+    returnLocationId,
+    returnInstructions,
+    returnPolicyUrl,
+  };
   await prisma.storePolicy.upsert({
     where: { shop: session.shop },
-    create: {
-      shop: session.shop,
-      automaticRefundsEnabled:
-        formData.get("automaticRefundsEnabled") === "true",
-      returnWindowDays,
-      maxAutoRefundAmount: maxAutoRefundAmount.toFixed(2),
-      currencyCode,
-      returnLocationId,
-    },
-    update: {
-      automaticRefundsEnabled:
-        formData.get("automaticRefundsEnabled") === "true",
-      returnWindowDays,
-      maxAutoRefundAmount: maxAutoRefundAmount.toFixed(2),
-      currencyCode,
-      returnLocationId,
-    },
+    create: { shop: session.shop, ...policy },
+    update: policy,
   });
 
   return redirect("/app?saved=true");
@@ -284,9 +314,12 @@ export default function RefundDashboard() {
     siteToolsActivationUrl,
     returnPortalUrl,
     merchantProfileUrl,
+    instructionsMaxLength,
+    agentsTemplateSection,
     agentReturns,
     privacyRequests,
   } = useLoaderData<typeof loader>();
+  const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const bridge = useAppBridge();
   const [storefrontActive, setStorefrontActive] = useState<boolean | null>(
@@ -333,9 +366,25 @@ export default function RefundDashboard() {
   const [returnLocationId, setReturnLocationId] = useState(
     policy.returnLocationId ?? "",
   );
+  const [returnInstructions, setReturnInstructions] = useState(
+    policy.returnInstructions ?? "",
+  );
+  const [returnPolicyUrl, setReturnPolicyUrl] = useState(
+    policy.returnPolicyUrl ?? "",
+  );
+  const [copyStatus, setCopyStatus] = useState("");
   const refundedOrders = orders.filter(
     (order) => Number(order.totalRefundedSet.shopMoney.amount) > 0,
   ).length;
+
+  async function copyTemplate() {
+    try {
+      await navigator.clipboard.writeText(agentsTemplateSection);
+      setCopyStatus("Copied.");
+    } catch {
+      setCopyStatus("Select the text above and copy it manually.");
+    }
+  }
 
   return (
     <s-page heading="Refunds" inlineSize="large">
@@ -393,6 +442,12 @@ export default function RefundDashboard() {
         <s-banner heading="Automatic return policy saved" tone="success">
           Customers can use the policy immediately after authenticating with
           their Shopify customer account.
+        </s-banner>
+      )}
+
+      {actionData?.error && (
+        <s-banner heading="Policy not saved" tone="critical">
+          {actionData.error}
         </s-banner>
       )}
 
@@ -460,6 +515,8 @@ export default function RefundDashboard() {
             formData.set("returnWindowDays", returnWindowDays);
             formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
             formData.set("returnLocationId", returnLocationId);
+            formData.set("returnInstructions", returnInstructions);
+            formData.set("returnPolicyUrl", returnPolicyUrl);
             submit(formData, { method: "post" });
           }}
         >
@@ -531,6 +588,27 @@ export default function RefundDashboard() {
               one location and you have not chosen one here, the refund is still
               issued but nothing is restocked automatically.
             </s-paragraph>
+            <s-paragraph color="subdued">
+              Restocking and return shipping fees come from your Shopify return
+              rules (Settings, then Policies). Customers see them in their
+              quote, and Refund deducts them from the refund it submits.
+            </s-paragraph>
+            <s-text-area
+              label="Return instructions for customers and assistants"
+              details={`Shown with every quote, on your public return page, and in your store's Refund agent guide and manifest. Plain text, up to ${instructionsMaxLength} characters.`}
+              maxLength={instructionsMaxLength}
+              rows={4}
+              value={returnInstructions}
+              onChange={(event) =>
+                setReturnInstructions(event.currentTarget.value)
+              }
+            ></s-text-area>
+            <s-url-field
+              label="Return policy page"
+              details="A page on your own store domain, such as your Shopify refund policy."
+              value={returnPolicyUrl}
+              onChange={(event) => setReturnPolicyUrl(event.currentTarget.value)}
+            ></s-url-field>
             <s-stack direction="inline" gap="base" alignItems="center">
               <s-button type="submit" variant="primary">
                 Save policy
@@ -568,6 +646,29 @@ export default function RefundDashboard() {
           {storefrontActive && (
             <s-badge tone="success">Active on your published theme</s-badge>
           )}
+        </s-stack>
+      </s-section>
+
+      <s-section heading="Returns section for your store's agents.md (optional)">
+        <s-stack direction="block" gap="base">
+          <s-paragraph color="subdued">
+            Refund&apos;s app proxy already serves a current return guide at
+            /apps/refund/agents.md, including the guidance above. If your theme
+            publishes its own agents.md template, add this Returns section to it
+            so assistants reading your main store guide find returns too. Theme
+            templates can&apos;t read app settings, so paste it again after you
+            change your return guidance, and replace /apps/refund if you
+            customized the app proxy path.
+          </s-paragraph>
+          <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+            {agentsTemplateSection}
+          </pre>
+          <s-stack direction="inline" gap="base" alignItems="center">
+            <s-button onClick={() => void copyTemplate()}>
+              Copy Returns section
+            </s-button>
+            <s-text color="subdued">{copyStatus}</s-text>
+          </s-stack>
         </s-stack>
       </s-section>
 
@@ -710,7 +811,7 @@ export default function RefundDashboard() {
         <s-unordered-list>
           <s-list-item>Customer and order ownership verification</s-list-item>
           <s-list-item>Shopify return eligibility and amount check</s-list-item>
-          <s-list-item>Return approval and refund submission</s-list-item>
+          <s-list-item>Return approval, restocking and refund submission</s-list-item>
         </s-unordered-list>
       </s-section>
     </s-page>

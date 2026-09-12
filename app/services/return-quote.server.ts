@@ -7,12 +7,12 @@ import {
   executeAutomaticReturn,
   getReturnableOrders,
 } from "./automatic-return.server";
+import { moneyIsAbove, refundFromReturnTotal } from "./return-guards.server";
 import {
-  hashCustomerId,
-  moneyIsAbove,
-  refundFromReturnTotal,
-} from "./return-guards.server";
-import { signQuote, verifyQuoteSignature } from "./customer-security.server";
+  customerIdentityHash,
+  signQuote,
+  verifyQuoteSignature,
+} from "./customer-security.server";
 
 export const returnItemsSchema = z
   .array(
@@ -129,9 +129,18 @@ export async function createReturnQuote(
     items,
     expectedRefund,
     submissionAvailable,
-    subject: hashCustomerId(customerId, process.env.SHOPIFY_API_SECRET!),
+    subject: customerIdentityHash(customerId),
     expiresAt: Date.now() + 600_000,
   };
+  // Fee subtotals are shown only; they are already deducted from
+  // expectedRefund, so their sign never feeds an amount calculation.
+  const displayedFee = (money?: { amount: string; currencyCode: string }) =>
+    money && /^-?\d+(\.\d+)?$/.test(money.amount) && Number(money.amount) !== 0
+      ? { amount: money.amount.replace(/^-/, ""), currencyCode: money.currencyCode }
+      : null;
+  const instructions = policy?.returnInstructions
+    ? ` The store's instructions: ${policy.returnInstructions}`
+    : " Follow the store's return-shipping instructions.";
   return {
     orderId,
     orderName: order.name,
@@ -145,13 +154,24 @@ export async function createReturnQuote(
     quoteToken: signQuote(quote),
     expiresAt: new Date(quote.expiresAt).toISOString(),
     nextStep: submissionAvailable
-      ? "Show the exact items, quantities, and refund amount to the customer. Submit only after their explicit confirmation."
+      ? "Show the exact items, quantities, any return fees, and refund amount to the customer. Submit only after their explicit confirmation."
       : "This is a quote only. Contact the merchant to approve and complete the return. No return request has been sent and this estimate does not establish approval under the merchant's policy.",
     paymentMethod:
       "Original payment method. Bank posting time is not guaranteed to be immediate.",
-    returnShipping: submissionAvailable
-      ? "A return is opened after confirmation. This app does not yet generate a shipping label; follow the store's return-shipping instructions."
-      : "Contact the merchant for return approval and shipping instructions. No shipping label has been created.",
+    returnFees: {
+      restocking: displayedFee(
+        calculation.financialSummary.restockingFeeSubtotalSet?.presentmentMoney,
+      ),
+      returnShipping: displayedFee(
+        calculation.financialSummary.returnShippingFeeSubtotalSet
+          ?.presentmentMoney,
+      ),
+    },
+    returnShipping:
+      (submissionAvailable
+        ? "A return is opened after confirmation. Refund does not generate a shipping label."
+        : "Contact the merchant for return approval. No shipping label has been created.") +
+      instructions,
   };
 }
 
@@ -165,7 +185,7 @@ export async function submitReturnQuote(
   const quote = readBoundQuote(
     quoteToken,
     shop,
-    hashCustomerId(customerId, process.env.SHOPIFY_API_SECRET!),
+    customerIdentityHash(customerId),
   );
   if (!quote.submissionAvailable)
     throw new Error("This estimate cannot submit a return or refund. Contact the merchant for approval.");

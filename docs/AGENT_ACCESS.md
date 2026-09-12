@@ -92,8 +92,12 @@ failure category; this instrumentation is not itself a compatibility fix.
 - Separate scopes are returns:read, returns:quote, returns:submit. Submission
   still requires the signed exact quote and explicit confirmation. Claude gets
   HTTP insufficient-scope challenges, not only tool metadata errors.
-- Access expires within one hour and never outlives the verified Shopify session.
-  No refresh tokens or offline_access scope are issued; reconnect after expiry.
+- Access tokens last at most one hour. Clients registered for `refresh_token`
+  receive rotating Refund refresh tokens (reusing one revokes the chain), but no
+  grant outlives the verified Shopify customer session, capped at four hours.
+  Shopify issues no refresh token to public PKCE app clients, so Refund cannot
+  extend that session. Reconnecting first tries a silent `prompt=none` Shopify
+  sign-in; the consent click is still required. No offline_access scope exists.
 - Customers can disconnect individual assistants in the return portal. Logout,
   customer redaction and uninstall remove related authorizations/grants.
   Privacy reports contain safe metadata, never codes, cookies or secrets.

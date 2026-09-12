@@ -174,6 +174,7 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
     quoteToken,
     expiresAt,
     paymentMethod: "Original payment method",
+    returnFees: { restocking: null, returnShipping: null },
     returnShipping: "Follow store instructions",
     nextStep: "Review",
   });

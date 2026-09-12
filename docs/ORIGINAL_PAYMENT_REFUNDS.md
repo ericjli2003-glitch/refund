@@ -40,6 +40,9 @@ The implementation uses `returnProcess` after return approval, which transfers
 the refund and disposes the return's line items (restocking them at the
 resolved location, or not restocking when none resolves) in the same call.
 See `docs/PROJECT_STATE.md` for what that migration did and did not resolve.
+Allocations come from the return's `suggestedFinancialOutcome`, which deducts
+restocking and return shipping fees set in the merchant's Shopify return rules.
+The quote shows those fees, and the confirmed amount already excludes them.
 
 ## Status meaning
 

@@ -3,9 +3,9 @@ import { Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { refundPaymentStatus } from "../refund-status";
 import { customerAccountGraphql } from "./customer-account.server";
+import { customerIdentityHashes } from "./customer-security.server";
 import {
   hasDuplicateLineItems,
-  hashCustomerId,
   moneyAmountsMatch,
   moneyIsAbove,
   refundFromReturnTotal,
@@ -59,6 +59,8 @@ type ReturnCalculationResponse = {
   returnCalculate: {
     financialSummary: {
       returnTotalSet: { presentmentMoney: Money; shopMoney: Money };
+      restockingFeeSubtotalSet?: { presentmentMoney: Money };
+      returnShippingFeeSubtotalSet?: { presentmentMoney: Money };
     };
     returnLineItems: {
       nodes: Array<{ lineItem: { id: string }; quantity: number }>;
@@ -94,6 +96,8 @@ const CUSTOMER_ORDERS_QUERY = `#graphql
   }
 `;
 
+// Fees come from the merchant's Shopify return rules and are already netted
+// into returnTotalSet; the subtotals are requested only to show the customer.
 const CALCULATE_RETURN_QUERY = `#graphql
   query CalculateCustomerReturn(
     $orderId: ID!
@@ -108,6 +112,8 @@ const CALCULATE_RETURN_QUERY = `#graphql
           presentmentMoney { amount currencyCode }
           shopMoney { amount currencyCode }
         }
+        restockingFeeSubtotalSet { presentmentMoney { amount currencyCode } }
+        returnShippingFeeSubtotalSet { presentmentMoney { amount currencyCode } }
       }
       returnLineItems(first: 50) {
         nodes { lineItem { id } quantity }
@@ -140,39 +146,26 @@ const APPROVE_RETURN_MUTATION = `#graphql
   }
 `;
 
-const SUGGESTED_REFUND_QUERY = `#graphql
-  query SuggestedRefund(
-    $orderId: ID!
-    $refundLineItems: [RefundLineItemInput!]!
-  ) {
-    order(id: $orderId) {
-      fulfillments(first: 25) {
-        location { id }
-      }
-      suggestedRefund(refundLineItems: $refundLineItems) {
-        amountSet { presentmentMoney { amount currencyCode } }
-        suggestedTransactions {
-          amountSet { presentmentMoney { amount currencyCode } }
-          gateway
-          parentTransaction { id gateway manualPaymentGateway }
-        }
-      }
-    }
-  }
-`;
-
-// Fetched after approval: the approved return's own line items (to check
-// Shopify approved every confirmed item and quantity) and its reverse
-// fulfillment order line items (what buildReturnProcessLineItems allocates
-// restock dispositions against).
+// Fetched after approval: the order's fulfillment locations (restock
+// resolution), the approved return's own line items (to check Shopify approved
+// every confirmed item and quantity) and its reverse fulfillment order line
+// items (what restock dispositions are allocated against). Return line items
+// are an interface; only verified ReturnLineItem nodes carry a fulfillment.
 const RETURN_DETAILS_QUERY = `#graphql
   query ReturnDetailsForProcessing($returnId: ID!) {
     return(id: $returnId) {
+      order {
+        fulfillments(first: 25) {
+          location { id }
+        }
+      }
       returnLineItems(first: 50) {
         nodes {
-          id
-          quantity
-          fulfillmentLineItem { lineItem { id } }
+          ... on ReturnLineItem {
+            id
+            quantity
+            fulfillmentLineItem { lineItem { id } }
+          }
         }
       }
       reverseFulfillmentOrders(first: 10) {
@@ -182,6 +175,35 @@ const RETURN_DETAILS_QUERY = `#graphql
               id
               totalQuantity
               fulfillmentLineItem { lineItem { id } }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+// The return-level outcome accounts for the return's fees; an order-level
+// refund suggestion would not, and would disagree with the fee-inclusive
+// amount the customer confirmed. An invoice outcome (the customer owes money)
+// selects no refund fields and fails closed.
+const SUGGESTED_OUTCOME_QUERY = `#graphql
+  query SuggestedReturnOutcome(
+    $returnId: ID!
+    $returnLineItems: [SuggestedOutcomeReturnLineItemInput!]!
+  ) {
+    return(id: $returnId) {
+      suggestedFinancialOutcome(
+        returnLineItems: $returnLineItems
+        exchangeLineItems: []
+      ) {
+        financialTransfer {
+          ... on RefundReturnOutcome {
+            amount { presentmentMoney { amount currencyCode } }
+            suggestedTransactions {
+              amountSet { presentmentMoney { amount currencyCode } }
+              gateway
+              parentTransaction { id gateway manualPaymentGateway }
             }
           }
         }
@@ -222,16 +244,6 @@ function throwOnUserErrors(errors: UserError[], action: string) {
   throw new Error(
     `${action}: ${errors.map((error) => error.message).join("; ")}`,
   );
-}
-
-function customerHash(customerId: string) {
-  const secret = process.env.SHOPIFY_API_SECRET;
-  if (!secret) {
-    throw new Error(
-      "SHOPIFY_API_SECRET is required for customer identity hashing.",
-    );
-  }
-  return hashCustomerId(customerId, secret);
 }
 
 export async function getReturnableOrders(shop: string, customerToken: string) {
@@ -289,13 +301,15 @@ export async function executeAutomaticReturn({
   }
 
   const { customerId, orders } = await getReturnableOrders(shop, customerToken);
-  const subjectHash = customerHash(customerId);
+  // Earlier identity hashes still match a retry recorded before a secret rotation.
+  const subjectHashes = customerIdentityHashes(customerId);
+  const subjectHash = subjectHashes[0];
   const existing = await prisma.agentReturn.findUnique({
     where: { shop_idempotencyKey: { shop, idempotencyKey } },
   });
   if (existing) {
     if (
-      existing.customerSubjectHash !== subjectHash ||
+      !subjectHashes.includes(existing.customerSubjectHash) ||
       existing.orderId !== orderId ||
       !sameReturnItems(existing.requestedLineItems, items)
     ) {
@@ -382,7 +396,8 @@ export async function executeAutomaticReturn({
         where: { shop_idempotencyKey: { shop, idempotencyKey } },
       });
       if (
-        concurrent?.customerSubjectHash === subjectHash &&
+        concurrent &&
+        subjectHashes.includes(concurrent.customerSubjectHash) &&
         concurrent.orderId === orderId &&
         sameReturnItems(concurrent.requestedLineItems, items)
       ) {
@@ -455,57 +470,14 @@ export async function executeAutomaticReturn({
       data: { status: "RETURN_OPEN", returnStatus: "OPEN" },
     });
 
-    const refundLineItems = items.map((item) => ({
-      lineItemId: item.lineItemId,
-      quantity: item.quantity,
-    }));
-    const suggestionResponse = await admin.graphql(SUGGESTED_REFUND_QUERY, {
-      variables: { orderId, refundLineItems },
-    });
-    const suggestionResult = (await suggestionResponse.json()) as {
-      data?: {
-        order: {
-          fulfillments: Array<{ location: { id: string } | null }>;
-          suggestedRefund: {
-            amountSet: { presentmentMoney: Money };
-            suggestedTransactions: SuggestedRefundTransaction[];
-          } | null;
-        } | null;
-      };
-      errors?: Array<{ message: string }>;
-    };
-    const suggestion = suggestionResult.data?.order?.suggestedRefund;
-    if (!suggestion || suggestionResult.errors?.length) {
-      throw new Error(
-        suggestionResult.errors?.map((error) => error.message).join("; ") ||
-          "Shopify could not calculate the payment refund.",
-      );
-    }
-
-    if (
-      !moneyAmountsMatch(
-        suggestion.amountSet.presentmentMoney.amount,
-        quote.amount,
-      ) ||
-      suggestion.amountSet.presentmentMoney.currencyCode !== quote.currencyCode
-    ) {
-      throw new Error(
-        "The refund amount changed after confirmation. The return is open, but no refund was issued.",
-      );
-    }
-
-    const orderTransactions = buildReturnProcessTransactions(
-      suggestion.suggestedTransactions,
-      quote,
-    );
-
     const detailsResponse = await admin.graphql(RETURN_DETAILS_QUERY, {
       variables: { returnId },
     });
     const detailsResult = (await detailsResponse.json()) as {
       data?: {
         return: {
-          returnLineItems: { nodes: ReturnLineItemNode[] };
+          order: { fulfillments: Array<{ location: { id: string } | null }> };
+          returnLineItems: { nodes: Array<Partial<ReturnLineItemNode>> };
           reverseFulfillmentOrders: {
             nodes: Array<{ lineItems: { nodes: ReverseFulfillmentLineItemNode[] } }>;
           };
@@ -521,22 +493,69 @@ export async function executeAutomaticReturn({
       );
     }
 
-    const fulfillmentLocationIds =
-      suggestionResult.data?.order?.fulfillments.map(
-        (fulfillment) => fulfillment.location?.id,
-      ) ?? [];
     const restockLocationId = await resolveRestockLocation(
       shop,
-      fulfillmentLocationIds,
+      details.order.fulfillments.map((fulfillment) => fulfillment.location?.id),
     );
     const returnProcessLineItems = buildReturnProcessLineItems({
       items,
-      returnLineItems: details.returnLineItems.nodes,
+      returnLineItems: details.returnLineItems.nodes.filter(
+        (node): node is ReturnLineItemNode => typeof node.id === "string",
+      ),
       reverseFulfillmentLineItems: details.reverseFulfillmentOrders.nodes.flatMap(
         (node) => node.lineItems.nodes,
       ),
       locationId: restockLocationId,
     });
+
+    const outcomeResponse = await admin.graphql(SUGGESTED_OUTCOME_QUERY, {
+      variables: {
+        returnId,
+        returnLineItems: returnProcessLineItems.map(({ id, quantity }) => ({
+          id,
+          quantity,
+        })),
+      },
+    });
+    const outcomeResult = (await outcomeResponse.json()) as {
+      data?: {
+        return: {
+          suggestedFinancialOutcome: {
+            financialTransfer: {
+              amount?: { presentmentMoney: Money };
+              suggestedTransactions?: SuggestedRefundTransaction[];
+            } | null;
+          };
+        } | null;
+      };
+      errors?: Array<{ message: string }>;
+    };
+    const transfer =
+      outcomeResult.data?.return?.suggestedFinancialOutcome.financialTransfer;
+    if (
+      !transfer?.amount ||
+      !transfer.suggestedTransactions ||
+      outcomeResult.errors?.length
+    ) {
+      throw new Error(
+        outcomeResult.errors?.map((error) => error.message).join("; ") ||
+          "Shopify could not calculate a refund to the original payment method for this return. No refund was issued.",
+      );
+    }
+
+    if (
+      !moneyAmountsMatch(transfer.amount.presentmentMoney.amount, quote.amount) ||
+      transfer.amount.presentmentMoney.currencyCode !== quote.currencyCode
+    ) {
+      throw new Error(
+        "The refund amount changed after confirmation. The return is open, but no refund was issued.",
+      );
+    }
+
+    const orderTransactions = buildReturnProcessTransactions(
+      transfer.suggestedTransactions,
+      quote,
+    );
 
     const processResponse = await admin.graphql(RETURN_PROCESS_MUTATION, {
       variables: {
@@ -599,7 +618,6 @@ export async function executeAutomaticReturn({
     if (!refund || refundsResult.errors?.length) {
       // The return was processed and the refund transferred; Shopify's own
       // record of it just couldn't be located here to confirm payment status.
-      // A refunds/create webhook still reconciles this once it arrives.
       return prisma.agentReturn.update({
         where: { id: record.id },
         data: {

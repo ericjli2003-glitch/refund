@@ -260,7 +260,7 @@ export default function CustomerReturns() {
       {
         name: "quote_return",
         description:
-          "Calculate and persist a resumable return quote without submitting anything. Show the exact order, products, quantities, currency, amount, correlation ID, and shipping instructions in the conversation; do not require the customer to click the page's quote button. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
+          "Calculate and persist a resumable return quote without submitting anything. Show the exact order, products, quantities, currency, amount, any return fees already deducted, correlation ID, and the store's return instructions in the conversation; do not require the customer to click the page's quote button. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
         inputSchema: {
           type: "object",
           properties: { orderId: { type: "string" }, items },
@@ -456,6 +456,20 @@ export default function CustomerReturns() {
                 {quote.expectedRefund.currencyCode}{" "}
                 {quote.expectedRefund.amount}
               </p>
+              {(quote.returnFees?.restocking ||
+                quote.returnFees?.returnShipping) && (
+                <p>
+                  Already deducted under the store&apos;s return rules:{" "}
+                  {[
+                    quote.returnFees.restocking &&
+                      `restocking fee ${quote.returnFees.restocking.currencyCode} ${quote.returnFees.restocking.amount}`,
+                    quote.returnFees.returnShipping &&
+                      `return shipping fee ${quote.returnFees.returnShipping.currencyCode} ${quote.returnFees.returnShipping.amount}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
               <p>{quote.paymentMethod}</p>
               <p>{quote.returnShipping}</p>
               <p>Quote expires at {quote.expiresAt}.</p>

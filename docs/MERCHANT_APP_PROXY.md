@@ -21,8 +21,8 @@ discovery, not a shopper-installed plugin or a second returns system.
 6. After exact-quote confirmation, `submitReturnQuote` calls
    `executeAutomaticReturn`. It rechecks ownership, quantity, policy and amount,
    requests the return through the Customer Account API, then uses Shopify Admin
-   `returnApproveRequest`, `suggestedRefund`, and `returnProcess` to dispose and
-   refund it in one call.
+   `returnApproveRequest`, the return's fee-aware `suggestedFinancialOutcome`,
+   and `returnProcess` to dispose and refund it in one call.
 
 The backend uses **both Customer Account and Admin APIs**. The Admin installation
 token alone never substitutes for customer ownership verification.

@@ -10,3 +10,6 @@ import "./services/agent-oauth-provider.server.test";
 import "./browser-return-tools.test";
 import "./services/merchant-readiness.server.test";
 import "./services/merchant-opportunity.server.test";
+import "./services/customer-security.server.test";
+import "./services/return-guidance.server.test";
+import "./services/customer-session.server.test";

@@ -2,6 +2,7 @@ import { authenticate } from "../shopify.server";
 import { normalizeShopDomain } from "./customer-account.server";
 import { appOrigin, privateHeaders } from "./customer-security.server";
 import { intakeSchema } from "./return-intake.server";
+import { guidanceMarkdown, type ReturnGuidance } from "./return-guidance.server";
 import * as z from "zod/v4";
 
 export const proxyIntakeSchema = intakeSchema.omit({ merchant: true });
@@ -29,14 +30,29 @@ export async function authenticateMerchantProxy(request: Request) {
   return { shop, pathPrefix };
 }
 
-export function merchantReturnDiscovery(shop: string, pathPrefix: string) {
+export function merchantReturnDiscovery(
+  shop: string,
+  pathPrefix: string,
+  guidance: ReturnGuidance | null = null,
+) {
   const base = `https://${shop}${pathPrefix}`;
   return {
-    schemaVersion: "2026-09-11",
+    schemaVersion: "2026-09-12",
     kind: "refund_merchant_return_handoff",
     merchant: { shop },
     agentsUrl: `${base}/agents.md`,
     manifestUrl: `${base}/manifest.json`,
+    ...(guidance
+      ? {
+          returnPolicy: {
+            source: "merchant",
+            policyUrl: guidance.returnPolicyUrl,
+            automaticReturnWindowDays: guidance.automaticReturnWindowDays,
+            instructions: guidance.returnInstructions,
+            instructionsOverrideSafetyRules: false,
+          },
+        }
+      : {}),
     browser: {
       entryUrl: `${base}/start-return`,
       portalUrl: `${appOrigin()}/returns/${shop}`,
@@ -60,7 +76,9 @@ export function merchantReturnDiscovery(shop: string, pathPrefix: string) {
     ucp: {
       shopifyProfileUrl: `https://${shop}/.well-known/ucp`,
       standardizedReturnMutation: false,
-      note: "This is Refund's supplemental MCP/browser handoff manifest, not a UCP protocol profile or a standardized UCP return operation. Do not replace Shopify's UCP profile or treat this URL as a negotiated UCP API.",
+      orderCapability: "dev.ucp.shopping.order",
+      refundPublishesUcpOrderEvents: false,
+      note: "This is Refund's supplemental MCP/browser handoff manifest, not a UCP protocol profile or a standardized UCP return operation. Do not replace Shopify's UCP profile or treat this URL as a negotiated UCP API. Returns and refunds that Refund submits are processed as native Shopify returns; any UCP order updates about them are Shopify's to publish.",
     },
     safety: {
       customerVerificationRequired: true,
@@ -72,8 +90,13 @@ export function merchantReturnDiscovery(shop: string, pathPrefix: string) {
   };
 }
 
-export function merchantAgentsMarkdown(shop: string, pathPrefix: string) {
-  const discovery = merchantReturnDiscovery(shop, pathPrefix);
+export function merchantAgentsMarkdown(
+  shop: string,
+  pathPrefix: string,
+  guidance: ReturnGuidance | null = null,
+) {
+  const discovery = merchantReturnDiscovery(shop, pathPrefix, guidance);
+  const policy = guidance ? guidanceMarkdown(guidance) : "";
   return `# Returns for ${shop}
 
 This merchant uses Refund for customer-verified return quotes and, where the merchant permits it, customer-confirmed returns and refunds.
@@ -86,20 +109,20 @@ This merchant uses Refund for customer-verified return quotes and, where the mer
 - Optional public MCP intake: ${discovery.mcp.endpoint}
 - Intake JSON schema: ${discovery.rest.schemaUrl}
 - Shopify's own UCP profile: ${discovery.ucp.shopifyProfileUrl}
-
+${policy ? `\n## Return policy\n\n${policy}\n` : ""}
 For a return request, open the browser entry, then follow its explicit link to the secure portal. If the host cannot operate websites, give the shopper the portal link and state that the conversation cannot execute the return. Do not ask the shopper to install Refund. Reading this file does not install tools or establish customer identity.
 
 Where the host already supports calling an arbitrary public MCP endpoint, start_return accepts optional orderName, itemName and a UUID idempotencyKey. The shop is fixed by Shopify's signed proxy request; never supply another merchant. POST the same JSON to ${discovery.rest.startReturn} if the host supports HTTP actions. Intake only prepares a verification link and a temporary draft, not a return or refund. Do not put email, passwords, sign-in codes, access tokens, or payment details in these hints.
 
 The customer must complete Shopify sign-in personally on the secure page. Keep passwords and verification codes out of chat. After sign-in, a browser supporting Site Tools can use get_return_session, find_returnable_items and quote_return on the top-level Refund portal. Keep that page loaded while continuing the conversation. Other browser-capable assistants can use its normal controls.
 
-Show the exact item, quantity, refund amount, payment method and shipping instructions. A quote or sign-in is NOT consent. Submit only after the customer explicitly confirms that quote. If submissionAvailable is false, stop and explain merchant approval is needed. After an uncertain result, use check_return_status; do not create another return.
+Show the exact item, quantity, refund amount, any return fees, payment method and shipping instructions. A quote or sign-in is NOT consent. Submit only after the customer explicitly confirms that quote. If submissionAvailable is false, stop and explain merchant approval is needed. After an uncertain result, use check_return_status; do not create another return.
 
 The proxy never exposes purchases or executes a refund. Its logged_in_customer_id is not accepted as order ownership or consent. Shopify Customer Account authentication and Refund's signed, expiring, customer-bound quotes remain mandatory.
 
 ## Protocol boundary
 
-This is a supplemental merchant guide and MCP/browser handoff, not a standardized UCP return API. Do not replace the merchant's /.well-known/ucp. Availability of browser actions, Site Tools and automatic discovery depends on the host; ordinary text-only chat is not guaranteed to invoke an arbitrary endpoint.
+This is a supplemental merchant guide and MCP/browser handoff, not a standardized UCP return API. Do not replace the merchant's /.well-known/ucp. Returns Refund submits are native Shopify returns, so Shopify's own order data reflects them; Refund does not publish UCP order events itself. Availability of browser actions, Site Tools and automatic discovery depends on the host; ordinary text-only chat is not guaranteed to invoke an arbitrary endpoint.
 `;
 }
 

@@ -3,18 +3,19 @@
 Shared context for any agent or developer picking this repository up. Update it
 when a decision below is resolved; do not let it drift into a changelog.
 
-Last reviewed: 2026-09-12, against `claude/project-state` at `779b7c3`.
+Last reviewed: 2026-09-12, against `claude/project-state`.
 
 ## Shopify App Store compliance status
 
 ### Requirements currently met
 
 - **Requirement 1.1.15, refunds only through the original payment processor.**
-  Enforced for published apps since 2026-04-22. `executeAutomaticReturn` uses
-  `returnProcess` against allocations derived from `suggestedRefund`, validates
-  each allocation against an existing original transaction and gateway, and
-  rejects manual and replacement gateways. Refund advances no money and creates
-  no separate payout destination. See `docs/ORIGINAL_PAYMENT_REFUNDS.md`.
+  Enforced for published apps since 2026-04-22. `executeAutomaticReturn`
+  submits the refund through `returnProcess` using allocations from the
+  return's `suggestedFinancialOutcome`, validates each allocation against an
+  existing original transaction and gateway, and rejects manual and replacement
+  gateways. Refund advances no money and creates no separate payout
+  destination. See `docs/ORIGINAL_PAYMENT_REFUNDS.md`.
 - **Customer Account API for buyer-facing returns authentication.** Built for
   Shopify requires this for returns and exchanges apps effective 2026-12-01.
   The portal already uses Customer Account OIDC with PKCE, one-use state, and
@@ -28,12 +29,16 @@ Last reviewed: 2026-09-12, against `claude/project-state` at `779b7c3`.
 Current flow in `app/services/automatic-return.server.ts`:
 
 ```
-orderRequestReturn  (Customer Account API)
+orderRequestReturn                    (Customer Account API)
   -> returnApproveRequest
-  -> order.suggestedRefund
-  -> returnProcess (dispositions + refund transfer together)
-  -> order.refunds  (locates the created refund by its `return` reference,
-                      since returnProcess does not echo it)
+  -> return details                   (line items, reverse fulfillment
+                                       orders, fulfillment locations)
+  -> return.suggestedFinancialOutcome (refund net of return fees, with
+                                       original-payment allocations)
+  -> returnProcess                    (dispositions + refund transfer)
+  -> order.refunds                    (finds the created refund by its
+                                       `return` reference; returnProcess
+                                       does not echo it)
 ```
 
 What migrating resolved, against the four consequences the old `refundCreate`
@@ -53,12 +58,21 @@ flow had:
    keys off `ReturnLineItem.id`, which is specific to this return, instead of
    `refundCreate`'s `refundLineItems`, which keyed off the order's raw
    (potentially duplicated) `LineItem.id`.
-4. **Return fees.** Still open. `ReturnProcessInput` has no restocking-fee
-   field (`ReturnLineItem.restockingFee` is read-only, computed elsewhere);
-   `refundShipping` exists for shipping but nothing is wired to it. `StorePolicy`
-   still has no field for this and none is sent to `returnProcess`.
+4. **Return fees.** Resolved by honoring Shopify's own return rules rather than
+   adding a Refund setting. Merchants set restocking and return shipping fees
+   under Settings → Policies → Return and cancellation rules. Customer Account
+   `returnCalculate` already nets those fees into the quote, and its
+   `restockingFeeSubtotalSet` and `returnShippingFeeSubtotalSet` are now shown
+   to the customer. Shopify's help center states that return fees "aren't
+   automatically deducted from refunds," and the earlier `order.suggestedRefund`
+   ignored them, so on any store with fees the post-confirmation amount check
+   would have failed and left an open return. Execution now uses
+   `Return.suggestedFinancialOutcome`, which accounts for the return's fees. A
+   separate Refund fee setting was rejected because it would duplicate core
+   Shopify configuration. **Not yet exercised against a live store with fees
+   configured.**
 
-One claim in the earlier version of this document does not hold: migrating
+One claim in an earlier version of this document does not hold: migrating
 does **not** close the window between `returnApproveRequest` succeeding and
 the financial transfer running. `returnProcess` takes an already-approved
 `returnId` — it does not fold in approval — so the same kind of failure (an
@@ -71,6 +85,8 @@ Relevant references:
 - [Apps in returns](https://shopify.dev/docs/apps/build/orders-fulfillment/returns-apps)
 - [Migrate to return processing](https://shopify.dev/docs/apps/build/orders-fulfillment/returns-apps/migrate-to-return-processing)
 - [returnProcess mutation](https://shopify.dev/docs/api/admin-graphql/2026-07/mutations/returnProcess)
+- [Return object, including suggestedFinancialOutcome](https://shopify.dev/docs/api/admin-graphql/2026-07/objects/Return)
+- [Return rules and fees](https://help.shopify.com/en/manual/fulfillment/managing-orders/returns/return-rules)
 - [Refund processing requirement update](https://shopify.dev/changelog/process-refunds-only-through-the-original-payment-processor-requirement-update)
 - [Built for Shopify returns and subscriptions requirements](https://shopify.dev/changelog/built-for-shopify-requirements-for-returns-and-exchanges-and-subscription-apps)
 
@@ -108,19 +124,64 @@ Implemented as:
 Defaulting everything to not-restocked was rejected: it leaves merchants doing
 manual restocks and undercuts the point of automating the return.
 
-### 2. Assistant connection lifetime on the browserless path
+### 2. Assistant connection lifetime (investigated; mitigated, cannot be removed)
 
-`issueApprovedAgentGrant` caps the access token at one hour and the refresh
-token at the customer session's own expiry. `finishCustomerLogin` sets that
-session to at most four hours and stores only the Shopify customer
-**access** token, discarding any refresh token.
+`issueApprovedAgentGrant` caps each access token at one hour. Clients
+registered for `refresh_token` rotate Refund refresh tokens, but no grant
+outlives the customer session, which `finishCustomerLogin` caps at four hours
+or Shopify's shorter token lifetime.
 
-The consequence is that a connected assistant loses access within four hours
-and the customer must complete another browser sign-in. If the remote MCP
-connector path is to be the primary route rather than a fallback, persisting
-and rotating the Shopify customer refresh token is the change that removes the
-repeated browser step. This has protected-customer-data implications and needs
-its own review before implementation.
+The earlier proposal, persisting and rotating the Shopify customer refresh
+token, is not possible for this app. Shopify's Customer Account API
+documentation states that apps authenticating with their own client ID through
+`customer_authentication` are public PKCE clients that "don't receive refresh
+tokens." Only customer account clients configured on the shop itself
+(headless storefronts, Hydrogen) receive them, which would need per-merchant
+setup an App Store app cannot depend on.
+
+**Decision:** keep the four-hour ceiling and make reconnecting cheap.
+
+- The assistant consent page first redirects through a silent `prompt=none`
+  Shopify sign-in. With a live Shopify customer session Shopify returns a code
+  without a login screen; without one it returns an error, and the page shows
+  the ordinary sign-in choice with no error message. The consent click is
+  always still required.
+- Customer-facing copy (`/connect/:shop`, `docs/AGENT_ACCESS.md`) states the
+  real lifetime.
+
+Re-evaluate if Shopify starts issuing refresh tokens to public app clients.
+
+### 3. Merchant return guidance for assistants (decided and implemented)
+
+Merchants can set plain-text return instructions (up to 1,000 characters) and
+a return policy link, which must be an https page on the shop's myshopify or
+primary domain. Both publish to every quote's `returnShipping`, the app proxy
+`agents.md` and manifest (`returnPolicy`), the public `/stores/:shop` page, and
+the storefront readiness data behind `get_store_return_options`. Merchant text
+is quoted and labeled as merchant-provided, and the manifest sets
+`instructionsOverrideSafetyRules: false`, so an assistant cannot read it as
+relaxing verification or confirmation.
+
+The dashboard also generates a paste-ready Returns section for a theme's own
+`agents.md.liquid`, with Liquid delimiters stripped from merchant text. Theme
+templates can only read the `agents` and `request` objects, not app data, so
+merchants paste it again after changing their guidance.
+
+### 4. UCP (investigated; no Refund-owned UCP surface)
+
+- Shopify serves the merchant's `/.well-known/ucp`, and there is still no app
+  registration API for adding capabilities to that profile.
+- The UCP Order capability (`dev.ucp.shopping.order`) is business-pushed: the
+  business sends order `adjustments`, including returns and refunds, to the
+  platform. Returns Refund submits are ordinary Shopify returns processed with
+  `returnProcess`; any UCP order update about them is Shopify's to publish.
+- Vendor capabilities must use the vendor's own reverse-domain namespace, with
+  spec and schema URLs on that domain's origin. Refund is served from a Render
+  subdomain it does not control as a namespace authority, so it defines no
+  capability. Revisit once Refund has its own domain.
+
+The manifest's `ucp` block states these boundaries, including
+`refundPublishesUcpOrderEvents: false`.
 
 ## Review findings
 
@@ -132,14 +193,22 @@ Severity is this reviewer's judgement, not a Shopify determination.
   `signedQuoteSchema` default in `app/services/return-quote.server.ts` is now
   `false`; an older or malformed token missing the field fails closed.
 
-- **All key material derives from `SHOPIFY_API_SECRET`.** In
-  `app/services/customer-security.server.ts`, `key()` derives session sealing
-  and quote signing keys from the app secret, and `hashCustomerId` uses it for
-  the stored customer subject hash. Rotating the Shopify API secret would
-  invalidate every live session and quote, which is acceptable, but it would
-  also orphan the `customerSubjectHash` on every historical `AgentReturn` row,
-  which is not. Consider a separate, independently rotatable identity-hash
-  secret.
+- ~~All key material derives from `SHOPIFY_API_SECRET`.~~ **Fixed.**
+  `REFUND_SECRET` now derives sealing keys, quote signatures and customer
+  identity hashes, falling back to `SHOPIFY_API_SECRET` when unset so existing
+  deployments are unchanged. Retired values listed in `REFUND_PREVIOUS_SECRETS`
+  stay readable: unsealing and quote verification try each secret, compliance
+  webhooks match every identity hash, idempotent retries accept older hashes,
+  OAuth client registrations are re-sealed when read, and a customer's older
+  records are re-keyed to the current hash when that customer next signs in.
+  Customer IDs are never stored, so sign-in is the only point re-keying is
+  possible.
+
+  To decouple an existing deployment, set `REFUND_SECRET` to a new random value
+  and `REFUND_PREVIOUS_SECRETS` to the current `SHOPIFY_API_SECRET` value, and
+  keep that old value listed while records hashed with it exist. The public
+  rate limiter still keys short-lived IP hashes from `SHOPIFY_API_SECRET`,
+  which is harmless to rotate.
 
 ### Low
 
@@ -151,7 +220,8 @@ Severity is this reviewer's judgement, not a Shopify determination.
 - `listAgentGrants` exposes `tokenHash` as the grant identifier used by the
   revoke UI. A SHA-256 of the token does not reveal the token and revocation
   is scoped to the owning session, so this is safe, but a dedicated opaque
-  grant id would be clearer.
+  grant id would be clearer. `tokenHash` is the table's primary key, so this
+  needs a migration and is deferred.
 
 ### Verified as sound during review
 
@@ -169,3 +239,10 @@ A full `npm ci` may fail in sandboxed environments that block the
 `@modelcontextprotocol/sdk`. GitHub Actions runs the complete suite against
 PostgreSQL 16 on every pull request; rely on CI when local installation is not
 possible.
+
+`npm run test:proxy`, `npm run test:oauth` and the other integration scripts
+need a local PostgreSQL database named `refund_ci`. None was available where
+the `returnProcess`, return fee, secret rotation and silent sign-in changes
+were written, so those paths were checked by unit tests, type checking, lint
+and the production build only. Their integration fixtures were updated but
+have not run until CI does.

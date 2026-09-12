@@ -73,7 +73,7 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
   try {
     const quoteToken = unseal(draft.sealedQuoteToken, `return-draft:${draft.id}:${context.shop}`);
     const bound = readBoundQuote(quoteToken, context.shop, context.customerSubjectHash);
-    const snapshot = draft.quoteSnapshot as { expectedRefund?: Quote["expectedRefund"]; paymentMethod?: string; returnShipping?: string } | null;
+    const snapshot = draft.quoteSnapshot as { expectedRefund?: Quote["expectedRefund"]; paymentMethod?: string; returnShipping?: string; returnFees?: Quote["returnFees"] } | null;
     if (bound.id !== draft.quoteId || bound.orderId !== draft.orderId ||
         bound.expiresAt !== draft.quoteExpiresAt.getTime() ||
         !sameSelection(draft.selectedItems, bound.items) ||
@@ -86,6 +86,7 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
       submissionAvailable: bound.submissionAvailable,
       quoteToken, expiresAt: draft.quoteExpiresAt.toISOString(),
       paymentMethod: snapshot.paymentMethod || "Original payment method.",
+      returnFees: snapshot.returnFees || { restocking: null, returnShipping: null },
       returnShipping: snapshot.returnShipping || "Follow the store's instructions.",
       nextStep: bound.submissionAvailable
         ? "Review the exact quote. Stop before submission unless the customer explicitly confirms it."
@@ -116,7 +117,7 @@ export async function saveReturnQuote(context: CustomerContext, quote: Quote) {
     data: {
       stage: "QUOTED", orderId: quote.orderId, orderName: quote.orderName,
       selectedItems: quote.items,
-      quoteSnapshot: { expectedRefund: quote.expectedRefund, paymentMethod: quote.paymentMethod, returnShipping: quote.returnShipping },
+      quoteSnapshot: { expectedRefund: quote.expectedRefund, paymentMethod: quote.paymentMethod, returnShipping: quote.returnShipping, returnFees: quote.returnFees },
       quoteId: bound.id, quoteExpiresAt: new Date(bound.expiresAt),
       sealedQuoteToken: seal(quote.quoteToken, `return-draft:${draft.id}:${context.shop}`),
       expiresAt: new Date(Date.now() + DRAFT_LIFETIME_MS),

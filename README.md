@@ -280,6 +280,10 @@ The app uses PostgreSQL and runs Prisma migrations before starting the server.
 1. Create a Render Blueprint from this repository and branch.
 2. Set `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, and
    `PUBLIC_SUPPORT_EMAIL` in Render. The blueprint supplies `DATABASE_URL`.
+   Also set `REFUND_SECRET` to a long random value so rotating the Shopify app
+   secret cannot orphan Refund's sealed data or customer identity hashes. On an
+   existing deployment, set `REFUND_PREVIOUS_SECRETS` to the current
+   `SHOPIFY_API_SECRET` value at the same time; see `docs/PROJECT_STATE.md`.
 3. Keep `application_url`, the `/auth/callback` admin redirect,
    `[customer_authentication]` `/customer/callback` redirect and JavaScript origin,
    aligned to the deployed HTTPS host. Storefront URLs are generated from that

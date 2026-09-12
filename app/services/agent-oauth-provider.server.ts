@@ -26,7 +26,7 @@ import {
   digest,
   randomToken,
   seal,
-  unseal,
+  unsealWithRotation,
 } from "./customer-security.server";
 
 export function agentOAuthMetadata() {
@@ -77,11 +77,20 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
       async getClient(id) {
         if (id.length > 128) return undefined;
         const row = await prisma.agentOAuthClient.findUnique({ where: { id } });
-        return row
-          ? (JSON.parse(
-              unseal(row.sealedInformation, `agent-client:${id}`),
-            ) as OAuthClientInformationFull)
-          : undefined;
+        if (!row) return undefined;
+        const context = `agent-client:${id}`;
+        const opened = unsealWithRotation(row.sealedInformation, context);
+        // Registrations are durable: move them onto the current secret instead
+        // of depending on a retired one indefinitely. Reading must not fail
+        // just because that best-effort write did.
+        if (!opened.current)
+          await prisma.agentOAuthClient
+            .update({
+              where: { id },
+              data: { sealedInformation: seal(opened.value, context) },
+            })
+            .catch(() => {});
+        return JSON.parse(opened.value) as OAuthClientInformationFull;
       },
       async registerClient(input) {
         // Keep metadata failures distinct from persistence failures. Never echo
