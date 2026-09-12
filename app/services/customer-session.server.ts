@@ -264,6 +264,10 @@ export async function finishCustomerLogin(request: Request) {
   ) {
     throw new Error("Shopify returned an incomplete customer session.");
   }
+  // Narrowed to plain locals: property narrowing on `tokens` does not survive
+  // into the transaction closure below.
+  const accessToken = tokens.access_token;
+  const expiresIn = tokens.expires_in!;
   const { payload } = await jwtVerify(
     tokens.id_token,
     createRemoteJWKSet(new URL(discovery.jwks_uri)),
@@ -276,36 +280,36 @@ export async function finishCustomerLogin(request: Request) {
   );
   if (payload.nonce !== nonce)
     throw new Error("Customer sign-in verification failed.");
-  const customerId = await verifyCustomerAccess(
-    pending.shop,
-    tokens.access_token,
-  );
+  const customerId = await verifyCustomerAccess(pending.shop, accessToken);
   const customerSubjectHash = hashCustomerId(customerId, process.env.SHOPIFY_API_SECRET!);
-  if (pending.draftId)
-    await claimIntakeDraft({ shop: pending.shop, customerSubjectHash, draftId: pending.draftId });
   const raw = randomToken();
   const id = digest(raw);
-  await prisma.$transaction([
-    prisma.customerReturnSession.delete({ where: { id: pending.id } }),
-    prisma.customerReturnSession.create({
+  // The draft claim commits atomically with the session that lets the
+  // customer use it, so a failure never leaves a claimed draft orphaned
+  // with no session to resume it.
+  await prisma.$transaction(async (tx) => {
+    if (pending.draftId)
+      await claimIntakeDraft(
+        { shop: pending.shop, customerSubjectHash, draftId: pending.draftId },
+        tx,
+      );
+    await tx.customerReturnSession.delete({ where: { id: pending.id } });
+    await tx.customerReturnSession.create({
       data: {
         id,
         shop: pending.shop,
         csrfToken: randomToken(),
-        accessToken: seal(tokens.access_token, `${id}:${pending.shop}`),
-        customerSubjectHash: hashCustomerId(
-          customerId,
-          process.env.SHOPIFY_API_SECRET!,
-        ),
+        accessToken: seal(accessToken, `${id}:${pending.shop}`),
+        customerSubjectHash,
         orderHint: pending.orderHint,
         itemHint: pending.itemHint,
         draftId: pending.draftId,
         expiresAt: new Date(
-          Date.now() + Math.min(tokens.expires_in! - 60, 14_400) * 1000,
+          Date.now() + Math.min(expiresIn - 60, 14_400) * 1000,
         ),
       },
-    }),
-  ]);
+    });
+  });
   return redirect(
     pending.agentRequestId
       ? `/agent/authorize/${pending.agentRequestId}`

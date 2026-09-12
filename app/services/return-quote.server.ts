@@ -45,7 +45,9 @@ const signedQuoteSchema = quoteInputSchema.extend({
   subject: z.string(),
   expiresAt: z.number(),
   expectedRefund: z.object({ amount: z.string(), currencyCode: z.string() }),
-  submissionAvailable: z.boolean().optional().default(true),
+  // Fail closed: a quote missing this field (an older or malformed token)
+  // must not parse as submittable.
+  submissionAvailable: z.boolean().optional().default(false),
 });
 
 export function readBoundQuote(

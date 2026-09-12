@@ -1,4 +1,4 @@
-import type { ReturnDraft } from "@prisma/client";
+import type { Prisma, ReturnDraft } from "@prisma/client";
 import prisma from "../db.server";
 import { describeRefundProgress } from "../refund-status";
 import { seal, unseal } from "./customer-security.server";
@@ -22,9 +22,14 @@ function sameSelection(left: unknown, right: unknown) {
 }
 
 // Only a validated continuation after Shopify verification may claim an intake.
-// Knowing a correlation ID alone never authorizes this operation.
-export async function claimIntakeDraft(context: CustomerContext & { draftId: string }) {
-  const claimed = await prisma.returnDraft.updateMany({
+// Knowing a correlation ID alone never authorizes this operation. Accepts a
+// transaction client so a caller can commit the claim atomically with
+// whatever else depends on it (e.g. the session that lets the customer use it).
+export async function claimIntakeDraft(
+  context: CustomerContext & { draftId: string },
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+) {
+  const claimed = await client.returnDraft.updateMany({
     where: {
       id: context.draftId, shop: context.shop,
       expiresAt: { gt: new Date() },

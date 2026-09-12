@@ -157,6 +157,7 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
     items: [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1 }],
     expectedRefund: { amount: "14.00", currencyCode: "CAD" },
     expiresAt: Date.parse(expiresAt),
+    submissionAvailable: true,
   });
   const saved = await saveReturnQuote(context, {
     submissionAvailable: true,

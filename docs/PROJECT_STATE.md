@@ -3,8 +3,7 @@
 Shared context for any agent or developer picking this repository up. Update it
 when a decision below is resolved; do not let it drift into a changelog.
 
-Last reviewed: 2026-09-12, against `claude/project-state` at `19a9abb` plus the
-uncommitted `returnProcess` wiring in this working tree.
+Last reviewed: 2026-09-12, against `claude/project-state` at `779b7c3`.
 
 ## Shopify App Store compliance status
 
@@ -129,14 +128,9 @@ Severity is this reviewer's judgement, not a Shopify determination.
 
 ### Medium
 
-- **`submissionAvailable` defaults to permissive.** In
-  `app/services/return-quote.server.ts`, `signedQuoteSchema` declares
-  `submissionAvailable: z.boolean().optional().default(true)`. A signed quote
-  that omits the field therefore parses as submittable. `createReturnQuote`
-  always sets it, and `executeAutomaticReturn` independently rechecks
-  `policy.automaticRefundsEnabled`, so this is not currently exploitable. The
-  default for an authorization flag should still be `false`, so that an older
-  or malformed token fails closed rather than open.
+- ~~`submissionAvailable` defaults to permissive.~~ **Fixed.** The
+  `signedQuoteSchema` default in `app/services/return-quote.server.ts` is now
+  `false`; an older or malformed token missing the field fails closed.
 
 - **All key material derives from `SHOPIFY_API_SECRET`.** In
   `app/services/customer-security.server.ts`, `key()` derives session sealing
@@ -149,11 +143,11 @@ Severity is this reviewer's judgement, not a Shopify determination.
 
 ### Low
 
-- `hashCustomerId` is computed twice in `finishCustomerLogin`
-  (`app/services/customer-session.server.ts`), once at line 283 and again
-  inline in the session create.
-- `claimIntakeDraft` runs before the new session transaction commits, so a
-  failure after it leaves a claimed draft with no session.
+- ~~`hashCustomerId` is computed twice in `finishCustomerLogin`.~~ **Fixed.**
+- ~~`claimIntakeDraft` runs before the new session transaction commits.~~
+  **Fixed.** `claimIntakeDraft` now takes an optional transaction client;
+  `finishCustomerLogin` claims the draft inside the same `$transaction` that
+  creates the session, so the two commit atomically.
 - `listAgentGrants` exposes `tokenHash` as the grant identifier used by the
   revoke UI. A SHA-256 of the token does not reveal the token and revocation
   is scoped to the owning session, so this is safe, but a dedicated opaque
