@@ -84,7 +84,11 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       body: new URLSearchParams(body),
       redirect: "manual",
     });
-  async function register(callback: string, method = "none") {
+  async function register(
+    callback: string,
+    method = "none",
+    extra: Record<string, unknown> = {},
+  ) {
     const response = await fetch(`${base}/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -94,6 +98,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         token_endpoint_auth_method: method,
         grant_types: ["authorization_code"],
         response_types: ["code"],
+        ...extra,
       }),
     });
     const value = await response.json();
@@ -238,6 +243,44 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         "http://localhost/callback",
       ]) {
         assert.equal((await register(value)).response.status, 400);
+      }
+    },
+  );
+  await t.test(
+    "registration HTTP errors distinguish auth, grant and storage failures",
+    async () => {
+      const method = await register(callback, "client_secret_basic");
+      assert.equal(method.response.status, 400);
+      assert.equal(method.value.error, "invalid_client_metadata");
+      assert.match(
+        method.value.error_description,
+        /\[registration_auth_method\]/,
+      );
+      const grant = await register(callback, "none", {
+        grant_types: ["authorization_code", "refresh_token"],
+      });
+      assert.equal(grant.response.status, 400);
+      assert.match(
+        grant.value.error_description,
+        /\[registration_grant_type\]/,
+      );
+      const originalCount = prisma.agentOAuthClient.count;
+      Reflect.set(prisma.agentOAuthClient, "count", async () => {
+        throw new Error("private-database-error");
+      });
+      try {
+        const storage = await register(callback);
+        assert.equal(storage.response.status, 500);
+        assert.equal(storage.value.error, "server_error");
+        assert.match(
+          storage.value.error_description,
+          /\[registration_storage\]/,
+        );
+        assert.ok(
+          !JSON.stringify(storage.value).includes("private-database-error"),
+        );
+      } finally {
+        Reflect.set(prisma.agentOAuthClient, "count", originalCount);
       }
     },
   );
