@@ -1,0 +1,147 @@
+# Project state, open decisions, and review findings
+
+Shared context for any agent or developer picking this repository up. Update it
+when a decision below is resolved; do not let it drift into a changelog.
+
+Last reviewed: 2026-09-12, against `main` at `7540a94`.
+
+## Shopify App Store compliance status
+
+### Requirements currently met
+
+- **Requirement 1.1.15, refunds only through the original payment processor.**
+  Enforced for published apps since 2026-04-22. `executeAutomaticReturn` uses
+  `refundCreate` against allocations derived from `suggestedRefund`, validates
+  each allocation against an existing original transaction and gateway, and
+  rejects manual and replacement gateways. Refund advances no money and creates
+  no separate payout destination. See `docs/ORIGINAL_PAYMENT_REFUNDS.md`.
+- **Customer Account API for buyer-facing returns authentication.** Built for
+  Shopify requires this for returns and exchanges apps effective 2026-12-01.
+  The portal already uses Customer Account OIDC with PKCE, one-use state, and
+  verified ID-token signature and nonce.
+
+### Known gap: return processing migration
+
+Shopify introduced return processing in Admin API 2025-07 and states that
+existing returns apps should migrate to `returnProcess`. This app does not.
+
+Current flow in `app/services/automatic-return.server.ts`:
+
+```
+orderRequestReturn  (Customer Account API)
+  -> returnApproveRequest
+  -> order.suggestedRefund
+  -> refundCreate
+```
+
+The return is left in `OPEN` and is never processed. Consequences:
+
+1. **Merchant financial reports omit the return.** A return is recorded as a
+   sale entry only when processed, so refunds issued by this app never appear
+   as returns in the merchant's reports.
+2. **Inventory is never restocked.** The disposition decision (restock or not,
+   and to which location) exists only in processing. Returned stock stays
+   missing from inventory permanently.
+3. **`refundCreate` can misallocate across duplicate line items.** Shopify
+   documents a risk of refunding the wrong item when an order carries multiple
+   quantities of the same line item. This app lets customers choose items and
+   quantities, so it is exposed to that risk directly.
+4. **Return fees cannot be recorded.** Restocking and shipping fees are only
+   expressible through processing. `StorePolicy` has no field for them.
+
+Migrating also removes an existing failure mode. Today there is a window
+between `returnApproveRequest` succeeding and `refundCreate` running where an
+amount recheck can fail, producing a `NEEDS_ATTENTION` record and an orphaned
+open return on the merchant's store. `returnProcess` performs confirmation,
+disposition and the financial transfer in one call, closing that window.
+
+Relevant references:
+
+- [Apps in returns](https://shopify.dev/docs/apps/build/orders-fulfillment/returns-apps)
+- [Migrate to return processing](https://shopify.dev/docs/apps/build/orders-fulfillment/returns-apps/migrate-to-return-processing)
+- [returnProcess mutation](https://shopify.dev/docs/api/admin-graphql/2026-07/mutations/returnProcess)
+- [Refund processing requirement update](https://shopify.dev/changelog/process-refunds-only-through-the-original-payment-processor-requirement-update)
+- [Built for Shopify returns and subscriptions requirements](https://shopify.dev/changelog/built-for-shopify-requirements-for-returns-and-exchanges-and-subscription-apps)
+
+## Open decisions
+
+### 1. Restock disposition and location (blocks the returnProcess migration)
+
+`returnProcess` requires a disposition per return line item, and a
+`locationId` is required for `RESTOCKED`. There is no merchant setting for
+this today. Candidate approaches:
+
+- Default to the order's originating fulfillment location.
+- Add a location picker to the embedded dashboard, backed by a new
+  `StorePolicy` column.
+- Default every disposition to not-restocked and let merchants opt in.
+
+Nothing should be implemented until this is chosen; it determines the schema
+change and the dashboard surface.
+
+### 2. Assistant connection lifetime on the browserless path
+
+`issueApprovedAgentGrant` caps the access token at one hour and the refresh
+token at the customer session's own expiry. `finishCustomerLogin` sets that
+session to at most four hours and stores only the Shopify customer
+**access** token, discarding any refresh token.
+
+The consequence is that a connected assistant loses access within four hours
+and the customer must complete another browser sign-in. If the remote MCP
+connector path is to be the primary route rather than a fallback, persisting
+and rotating the Shopify customer refresh token is the change that removes the
+repeated browser step. This has protected-customer-data implications and needs
+its own review before implementation.
+
+## Review findings
+
+Severity is this reviewer's judgement, not a Shopify determination.
+
+### Medium
+
+- **`submissionAvailable` defaults to permissive.** In
+  `app/services/return-quote.server.ts`, `signedQuoteSchema` declares
+  `submissionAvailable: z.boolean().optional().default(true)`. A signed quote
+  that omits the field therefore parses as submittable. `createReturnQuote`
+  always sets it, and `executeAutomaticReturn` independently rechecks
+  `policy.automaticRefundsEnabled`, so this is not currently exploitable. The
+  default for an authorization flag should still be `false`, so that an older
+  or malformed token fails closed rather than open.
+
+- **All key material derives from `SHOPIFY_API_SECRET`.** In
+  `app/services/customer-security.server.ts`, `key()` derives session sealing
+  and quote signing keys from the app secret, and `hashCustomerId` uses it for
+  the stored customer subject hash. Rotating the Shopify API secret would
+  invalidate every live session and quote, which is acceptable, but it would
+  also orphan the `customerSubjectHash` on every historical `AgentReturn` row,
+  which is not. Consider a separate, independently rotatable identity-hash
+  secret.
+
+### Low
+
+- `hashCustomerId` is computed twice in `finishCustomerLogin`
+  (`app/services/customer-session.server.ts`), once at line 283 and again
+  inline in the session create.
+- `claimIntakeDraft` runs before the new session transaction commits, so a
+  failure after it leaves a claimed draft with no session.
+- `listAgentGrants` exposes `tokenHash` as the grant identifier used by the
+  revoke UI. A SHA-256 of the token does not reveal the token and revocation
+  is scoped to the owning session, so this is safe, but a dedicated opaque
+  grant id would be clearer.
+
+### Verified as sound during review
+
+- The merchant refund limit and currency are rechecked at execution
+  (`automatic-return.server.ts`), not only at quote time.
+- PKCE uses base64url SHA-256 correctly; sealed values use AES-256-GCM with a
+  context AAD; portal writes require an exact `Origin` match plus a CSRF header.
+- `authorizeAgent` accepts only Refund's own opaque `rfa_` tokens and rejects
+  Shopify tokens, cookies, intake links and signed quotes.
+
+## Environment note for agents
+
+A full `npm ci` may fail in sandboxed environments that block the
+`zod-to-json-schema` package, a transitive dependency of
+`@modelcontextprotocol/sdk`. GitHub Actions runs the complete suite against
+PostgreSQL 16 on every pull request; rely on CI when local installation is not
+possible.
