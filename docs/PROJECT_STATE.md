@@ -80,6 +80,16 @@ amount recheck fails, or the call itself fails, after approval) still leaves
 an approved-but-unprocessed return and a `NEEDS_ATTENTION` record. The window
 is unchanged in kind; only what runs at the end of it changed.
 
+**Mitigation (implemented):** the merchant dashboard offers **Retry refund** on
+such records (`retryApprovedReturn`). It claims the record (`RETRYING`) so it
+runs once at a time, then rechecks Shopify before any money moves: a refund
+already linked to the return is recorded instead of repeated; a refund issued
+on the order outside the return since the request stops the retry; a
+declined, cancelled or closed return stops it; a still-requested return is
+approved first. Processing then shares `processApprovedReturn` with the
+customer flow, so the refund must still equal the amount the customer
+confirmed. Nothing retries automatically.
+
 Relevant references:
 
 - [Apps in returns](https://shopify.dev/docs/apps/build/orders-fulfillment/returns-apps)

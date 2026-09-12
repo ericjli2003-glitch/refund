@@ -12,6 +12,10 @@ import prisma from "../db.server";
 import { describeRefundProgress } from "../refund-status";
 import { authenticate } from "../shopify.server";
 import {
+  canRetryReturn,
+  retryApprovedReturn,
+} from "../services/automatic-return.server";
+import {
   provisionMerchant,
   merchantProfilePath,
 } from "../services/merchant-directory.server";
@@ -126,6 +130,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     locations: responseJson.data.locations.nodes,
     query,
     saved: url.searchParams.get("saved") === "true",
+    retried: url.searchParams.get("retried") === "true",
     returnPortalUrl: `${appOrigin()}/returns/${session.shop}`,
     merchantProfileUrl: merchant.discoveryPublished
       ? appOrigin() + merchantProfilePath(session.shop)
@@ -148,7 +153,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
     instructionsMaxLength: RETURN_INSTRUCTIONS_MAX_LENGTH,
     agentsTemplateSection: merchantAgentsTemplateSection(guidance),
-    agentReturns,
+    agentReturns: agentReturns.map((agentReturn) => ({
+      ...agentReturn,
+      retryable: canRetryReturn(agentReturn),
+    })),
     privacyRequests,
   };
 };
@@ -166,6 +174,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       data: { status: "COMPLETED", completedAt: new Date() },
     });
     return redirect("/app?privacyResolved=true");
+  }
+
+  if (formData.get("intent") === "retryReturn") {
+    const agentReturnId = formData.get("agentReturnId");
+    if (typeof agentReturnId !== "string" || !agentReturnId) {
+      throw new Response("Return ID is required.", { status: 400 });
+    }
+    try {
+      await retryApprovedReturn(session.shop, agentReturnId);
+    } catch (error) {
+      return {
+        heading: "Retry did not finish",
+        error:
+          error instanceof Error ? error.message : "The retry did not finish.",
+      };
+    }
+    return redirect("/app?retried=true");
   }
 
   const returnWindowDays = Number(formData.get("returnWindowDays"));
@@ -198,6 +223,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     ]);
   } catch (error) {
     return {
+      heading: "Policy not saved",
       error:
         error instanceof Error
           ? error.message
@@ -309,6 +335,7 @@ export default function RefundDashboard() {
     locations,
     query,
     saved,
+    retried,
     privacyResolved,
     policy,
     siteToolsActivationUrl,
@@ -445,8 +472,14 @@ export default function RefundDashboard() {
         </s-banner>
       )}
 
+      {retried && (
+        <s-banner heading="Retry finished" tone="info">
+          Check the return&apos;s status under Recent customer-agent returns.
+        </s-banner>
+      )}
+
       {actionData?.error && (
-        <s-banner heading="Policy not saved" tone="critical">
+        <s-banner heading={actionData.heading} tone="critical">
           {actionData.error}
         </s-banner>
       )}
@@ -790,6 +823,35 @@ export default function RefundDashboard() {
                     </s-badge>
                     {agentReturn.failureReason && (
                       <s-paragraph>{agentReturn.failureReason}</s-paragraph>
+                    )}
+                    {agentReturn.retryable && (
+                      <form
+                        method="post"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          submit(event.currentTarget);
+                        }}
+                      >
+                        <input type="hidden" name="intent" value="retryReturn" />
+                        <input
+                          type="hidden"
+                          name="agentReturnId"
+                          value={agentReturn.id}
+                        />
+                        <s-stack direction="block" gap="small-200">
+                          <s-paragraph color="subdued">
+                            Retrying checks Shopify first. It refunds the amount
+                            the customer confirmed only if the return is still
+                            requested or open and no refund exists for it or for
+                            the order since the request.
+                          </s-paragraph>
+                          <s-box>
+                            <s-button type="submit" variant="secondary">
+                              Retry refund
+                            </s-button>
+                          </s-box>
+                        </s-stack>
+                      </form>
                     )}
                   </s-table-cell>
                   <s-table-cell>

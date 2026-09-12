@@ -29,6 +29,13 @@ export type { RequestedItem } from "./return-guards.server";
 export type Money = { amount: string; currencyCode: string };
 type UserError = { field?: string[]; message: string };
 
+export type AdminGraphql = {
+  graphql: (
+    query: string,
+    options?: { variables?: Record<string, unknown> },
+  ) => Promise<Response>;
+};
+
 type CustomerOrdersResponse = {
   customer: {
     id: string;
@@ -65,6 +72,16 @@ type ReturnCalculationResponse = {
     returnLineItems: {
       nodes: Array<{ lineItem: { id: string }; quantity: number }>;
     };
+  };
+};
+
+type OrderRefund = {
+  id: string;
+  createdAt?: string | null;
+  return: { id: string } | null;
+  transactions: {
+    nodes: Array<{ kind: string; status: string }>;
+    pageInfo: { hasNextPage: boolean };
   };
 };
 
@@ -146,11 +163,21 @@ const APPROVE_RETURN_MUTATION = `#graphql
   }
 `;
 
+const RETURN_STATUS_QUERY = `#graphql
+  query ReturnStatusForRetry($returnId: ID!) {
+    return(id: $returnId) {
+      status
+      order { id }
+    }
+  }
+`;
+
 // Fetched after approval: the order's fulfillment locations (restock
 // resolution), the approved return's own line items (to check Shopify approved
 // every confirmed item and quantity) and its reverse fulfillment order line
 // items (what restock dispositions are allocated against). Return line items
-// are an interface; only verified ReturnLineItem nodes carry a fulfillment.
+// are the ReturnLineItemType interface; only verified ReturnLineItem nodes
+// carry a fulfillment.
 const RETURN_DETAILS_QUERY = `#graphql
   query ReturnDetailsForProcessing($returnId: ID!) {
     return(id: $returnId) {
@@ -221,14 +248,14 @@ const RETURN_PROCESS_MUTATION = `#graphql
   }
 `;
 
-// returnProcess does not echo the refund it creates, so the refund this
-// return produced is found by matching Refund.return.id against the return
-// we just processed.
+// returnProcess does not echo the refund it creates, so the refund a return
+// produced is found by matching Refund.return.id.
 const ORDER_REFUNDS_QUERY = `#graphql
   query OrderRefundsForReturn($orderId: ID!) {
     order(id: $orderId) {
       refunds(first: 250) {
         id
+        createdAt
         return { id }
         transactions(first: 100) {
           nodes { kind status }
@@ -244,6 +271,341 @@ function throwOnUserErrors(errors: UserError[], action: string) {
   throw new Error(
     `${action}: ${errors.map((error) => error.message).join("; ")}`,
   );
+}
+
+async function adminData<T>(
+  admin: AdminGraphql,
+  query: string,
+  variables: Record<string, unknown>,
+  failure: string,
+) {
+  const response = await admin.graphql(query, { variables });
+  const result = (await response.json()) as {
+    data?: T;
+    errors?: Array<{ message: string }>;
+  };
+  if (!result.data || result.errors?.length)
+    throw new Error(
+      result.errors?.map((error) => error.message).join("; ") || failure,
+    );
+  return result.data;
+}
+
+async function adminFor(shop: string): Promise<AdminGraphql> {
+  const { unauthenticated } = await import("../shopify.server");
+  return (await unauthenticated.admin(shop)).admin;
+}
+
+async function approveReturn(
+  admin: AdminGraphql,
+  returnId: string,
+  orderId: string,
+) {
+  const { returnApproveRequest } = await adminData<{
+    returnApproveRequest: {
+      return: { id: string; status: string; order: { id: string } } | null;
+      userErrors: UserError[];
+    };
+  }>(
+    admin,
+    APPROVE_RETURN_MUTATION,
+    buildReturnApprovalVariables(returnId),
+    "Shopify could not approve the return.",
+  );
+  throwOnUserErrors(
+    returnApproveRequest.userErrors,
+    "Shopify could not approve the return",
+  );
+  const approved = returnApproveRequest.return;
+  if (
+    approved?.id !== returnId ||
+    approved.order.id !== orderId ||
+    approved.status !== "OPEN"
+  )
+    throw new Error(
+      "Shopify did not confirm that this order's return is open. No refund was submitted.",
+    );
+}
+
+async function orderRefunds(admin: AdminGraphql, orderId: string) {
+  const { order } = await adminData<{ order: { refunds: OrderRefund[] } | null }>(
+    admin,
+    ORDER_REFUNDS_QUERY,
+    { orderId },
+    "Shopify could not list this order's refunds.",
+  );
+  if (!order) throw new Error("Shopify could not find this order.");
+  return order.refunds;
+}
+
+function recordRefund(recordId: string, refund: OrderRefund) {
+  const paymentStatus = refundPaymentStatus(
+    refund.transactions.nodes,
+    refund.transactions.pageInfo.hasNextPage,
+  );
+  return prisma.agentReturn.update({
+    where: { id: recordId },
+    data: {
+      refundId: refund.id,
+      returnStatus: "PROCESSED",
+      status: paymentStatus === "FAILED" ? "NEEDS_ATTENTION" : "REFUND_SUBMITTED",
+      refundStatus: paymentStatus,
+      failureReason:
+        paymentStatus === "FAILED"
+          ? "Shopify reported a failed refund transaction. Check all payments before retrying; part of the refund may have succeeded."
+          : null,
+    },
+  });
+}
+
+// Everything after Shopify has an OPEN return: restock dispositions, the
+// fee-aware refund allocation, one returnProcess call, then the refund record.
+export async function processApprovedReturn({
+  admin,
+  shop,
+  recordId,
+  orderId,
+  returnId,
+  items,
+  confirmed,
+}: {
+  admin: AdminGraphql;
+  shop: string;
+  recordId: string;
+  orderId: string;
+  returnId: string;
+  items: RequestedItem[];
+  confirmed: Money;
+}) {
+  const noDetails =
+    "Shopify did not return the approved return's line items. No refund was submitted.";
+  const details = (
+    await adminData<{
+      return: {
+        order: { fulfillments: Array<{ location: { id: string } | null }> };
+        returnLineItems: { nodes: Array<Partial<ReturnLineItemNode>> };
+        reverseFulfillmentOrders: {
+          nodes: Array<{ lineItems: { nodes: ReverseFulfillmentLineItemNode[] } }>;
+        };
+      } | null;
+    }>(admin, RETURN_DETAILS_QUERY, { returnId }, noDetails)
+  ).return;
+  if (!details) throw new Error(noDetails);
+
+  const restockLocationId = await resolveRestockLocation(
+    shop,
+    details.order.fulfillments.map((fulfillment) => fulfillment.location?.id),
+  );
+  const returnProcessLineItems = buildReturnProcessLineItems({
+    items,
+    returnLineItems: details.returnLineItems.nodes.filter(
+      (node): node is ReturnLineItemNode => typeof node.id === "string",
+    ),
+    reverseFulfillmentLineItems: details.reverseFulfillmentOrders.nodes.flatMap(
+      (node) => node.lineItems.nodes,
+    ),
+    locationId: restockLocationId,
+  });
+
+  const noRefund =
+    "Shopify could not calculate a refund to the original payment method for this return. No refund was issued.";
+  const transfer = (
+    await adminData<{
+      return: {
+        suggestedFinancialOutcome: {
+          financialTransfer: {
+            amount?: { presentmentMoney: Money };
+            suggestedTransactions?: SuggestedRefundTransaction[];
+          } | null;
+        };
+      } | null;
+    }>(
+      admin,
+      SUGGESTED_OUTCOME_QUERY,
+      {
+        returnId,
+        returnLineItems: returnProcessLineItems.map(({ id, quantity }) => ({
+          id,
+          quantity,
+        })),
+      },
+      noRefund,
+    )
+  ).return?.suggestedFinancialOutcome.financialTransfer;
+  if (!transfer?.amount || !transfer.suggestedTransactions)
+    throw new Error(noRefund);
+  if (
+    !moneyAmountsMatch(transfer.amount.presentmentMoney.amount, confirmed.amount) ||
+    transfer.amount.presentmentMoney.currencyCode !== confirmed.currencyCode
+  )
+    throw new Error(
+      "The refund amount changed after confirmation. The return is open, but no refund was issued.",
+    );
+  const orderTransactions = buildReturnProcessTransactions(
+    transfer.suggestedTransactions,
+    confirmed,
+  );
+
+  const { returnProcess } = await adminData<{
+    returnProcess: {
+      return: { id: string; status: string } | null;
+      userErrors: UserError[];
+    };
+  }>(
+    admin,
+    RETURN_PROCESS_MUTATION,
+    {
+      input: {
+        returnId,
+        note: "Customer-confirmed automatic return",
+        notifyCustomer: true,
+        returnLineItems: returnProcessLineItems,
+        financialTransfer: { issueRefund: { orderTransactions } },
+      },
+    },
+    "Shopify could not process the return.",
+  );
+  throwOnUserErrors(returnProcess.userErrors, "Shopify could not process the return");
+  if (
+    returnProcess.return?.id !== returnId ||
+    returnProcess.return.status !== "CLOSED"
+  )
+    throw new Error(
+      "Shopify did not confirm that this return was processed. No refund was confirmed submitted.",
+    );
+
+  let refund: OrderRefund | undefined;
+  try {
+    refund = (await orderRefunds(admin, orderId)).find(
+      (candidate) => candidate.return?.id === returnId,
+    );
+  } catch {
+    // The refund transferred; only locating its record failed.
+  }
+  if (!refund)
+    return prisma.agentReturn.update({
+      where: { id: recordId },
+      data: {
+        status: "NEEDS_ATTENTION",
+        returnStatus: "PROCESSED",
+        failureReason:
+          "The return was processed, but its refund record could not be located to confirm payment status.",
+      },
+    });
+  return recordRefund(recordId, refund);
+}
+
+export function canRetryReturn(record: {
+  status: string;
+  returnId: string | null;
+  refundId: string | null;
+  amount: string | null;
+  currencyCode: string | null;
+}) {
+  return (
+    record.status === "NEEDS_ATTENTION" &&
+    Boolean(record.returnId && !record.refundId && record.amount && record.currencyCode)
+  );
+}
+
+function storedItems(value: Prisma.JsonValue): RequestedItem[] {
+  const invalid = new Error("This return's stored items are unreadable. Resolve it in Shopify.");
+  if (!Array.isArray(value) || !value.length) throw invalid;
+  return value.map((entry) => {
+    const item = entry as Record<string, unknown> | null;
+    if (
+      !item ||
+      typeof item.lineItemId !== "string" ||
+      !Number.isInteger(item.quantity) ||
+      (item.quantity as number) < 1
+    )
+      throw invalid;
+    return { lineItemId: item.lineItemId, quantity: item.quantity as number };
+  });
+}
+
+// Merchant-initiated recovery for a return Shopify requested or approved but
+// Refund never refunded. Shopify is rechecked before any money moves: a refund
+// already linked to the return is recorded, and a refund issued on the order
+// outside the return stops the retry, so nothing is refunded twice. The amount
+// must still equal what the customer confirmed.
+export async function retryApprovedReturn(
+  shop: string,
+  agentReturnId: string,
+  admin?: AdminGraphql,
+) {
+  const record = await prisma.agentReturn.findFirst({
+    where: { id: agentReturnId, shop },
+  });
+  if (!record || !canRetryReturn(record))
+    throw new Error(
+      "Only a return that needs attention and has no recorded refund can be retried.",
+    );
+  const items = storedItems(record.requestedLineItems);
+  const claimed = await prisma.agentReturn.updateMany({
+    where: { id: record.id, shop, status: "NEEDS_ATTENTION", refundId: null },
+    data: { status: "RETRYING" },
+  });
+  if (claimed.count !== 1)
+    throw new Error("This return is already being retried.");
+  const returnId = record.returnId!;
+  try {
+    const client = admin ?? (await adminFor(shop));
+    const refunds = await orderRefunds(client, record.orderId);
+    const linked = refunds.find((refund) => refund.return?.id === returnId);
+    if (linked) return await recordRefund(record.id, linked);
+    if (
+      refunds.some(
+        (refund) =>
+          !refund.return &&
+          refund.createdAt &&
+          Date.parse(refund.createdAt) >= record.createdAt.getTime(),
+      )
+    )
+      throw new Error(
+        "This order was refunded in Shopify after the customer's request. Refund issued no further refund; resolve the return in Shopify.",
+      );
+    const current = (
+      await adminData<{
+        return: { status: string; order: { id: string } } | null;
+      }>(client, RETURN_STATUS_QUERY, { returnId }, "Shopify could not read this return.")
+    ).return;
+    if (!current || current.order.id !== record.orderId)
+      throw new Error(
+        "Shopify no longer shows this return on the original order. No refund was issued.",
+      );
+    if (current.status === "REQUESTED")
+      await approveReturn(client, returnId, record.orderId);
+    else if (current.status !== "OPEN")
+      throw new Error(
+        `Shopify shows this return as ${current.status.toLowerCase()}. Refund issued no further refund; check the order in Shopify.`,
+      );
+    await prisma.agentReturn.update({
+      where: { id: record.id },
+      data: { returnStatus: "OPEN" },
+    });
+    return await processApprovedReturn({
+      admin: client,
+      shop,
+      recordId: record.id,
+      orderId: record.orderId,
+      returnId,
+      items,
+      confirmed: { amount: record.amount!, currencyCode: record.currencyCode! },
+    });
+  } catch (error) {
+    await prisma.agentReturn.update({
+      where: { id: record.id },
+      data: {
+        status: "NEEDS_ATTENTION",
+        failureReason: (error instanceof Error
+          ? error.message
+          : "The retry failed."
+        ).slice(0, 1_000),
+      },
+    });
+    throw error;
+  }
 }
 
 export async function getReturnableOrders(shop: string, customerToken: string) {
@@ -436,214 +798,21 @@ export async function executeAutomaticReturn({
       },
     });
 
-    const { unauthenticated } = await import("../shopify.server");
-    const { admin } = await unauthenticated.admin(shop);
-    const approvalResponse = await admin.graphql(APPROVE_RETURN_MUTATION, {
-      variables: buildReturnApprovalVariables(returnId),
-    });
-    const approvalResult = (await approvalResponse.json()) as {
-      data?: {
-        returnApproveRequest: {
-          return: { id: string; status: string; order: { id: string } } | null;
-          userErrors: UserError[];
-        };
-      };
-      errors?: Array<{ message: string }>;
-    };
-    if (!approvalResult.data || approvalResult.errors?.length) {
-      throw new Error(
-        approvalResult.errors?.map((error) => error.message).join("; ") ||
-          "Shopify could not approve the return.",
-      );
-    }
-    throwOnUserErrors(
-      approvalResult.data.returnApproveRequest.userErrors,
-      "Shopify could not approve the return",
-    );
-    const approvedReturn = approvalResult.data.returnApproveRequest.return;
-    if (approvedReturn?.id !== returnId || approvedReturn.order.id !== orderId || approvedReturn.status !== "OPEN") {
-      throw new Error("Shopify did not confirm that this order's return is open. No refund was submitted.");
-    }
-
+    const admin = await adminFor(shop);
+    await approveReturn(admin, returnId, orderId);
     await prisma.agentReturn.update({
       where: { id: record.id },
       data: { status: "RETURN_OPEN", returnStatus: "OPEN" },
     });
 
-    const detailsResponse = await admin.graphql(RETURN_DETAILS_QUERY, {
-      variables: { returnId },
-    });
-    const detailsResult = (await detailsResponse.json()) as {
-      data?: {
-        return: {
-          order: { fulfillments: Array<{ location: { id: string } | null }> };
-          returnLineItems: { nodes: Array<Partial<ReturnLineItemNode>> };
-          reverseFulfillmentOrders: {
-            nodes: Array<{ lineItems: { nodes: ReverseFulfillmentLineItemNode[] } }>;
-          };
-        } | null;
-      };
-      errors?: Array<{ message: string }>;
-    };
-    const details = detailsResult.data?.return;
-    if (!details || detailsResult.errors?.length) {
-      throw new Error(
-        detailsResult.errors?.map((error) => error.message).join("; ") ||
-          "Shopify did not return the approved return's line items. No refund was submitted.",
-      );
-    }
-
-    const restockLocationId = await resolveRestockLocation(
+    return await processApprovedReturn({
+      admin,
       shop,
-      details.order.fulfillments.map((fulfillment) => fulfillment.location?.id),
-    );
-    const returnProcessLineItems = buildReturnProcessLineItems({
+      recordId: record.id,
+      orderId,
+      returnId,
       items,
-      returnLineItems: details.returnLineItems.nodes.filter(
-        (node): node is ReturnLineItemNode => typeof node.id === "string",
-      ),
-      reverseFulfillmentLineItems: details.reverseFulfillmentOrders.nodes.flatMap(
-        (node) => node.lineItems.nodes,
-      ),
-      locationId: restockLocationId,
-    });
-
-    const outcomeResponse = await admin.graphql(SUGGESTED_OUTCOME_QUERY, {
-      variables: {
-        returnId,
-        returnLineItems: returnProcessLineItems.map(({ id, quantity }) => ({
-          id,
-          quantity,
-        })),
-      },
-    });
-    const outcomeResult = (await outcomeResponse.json()) as {
-      data?: {
-        return: {
-          suggestedFinancialOutcome: {
-            financialTransfer: {
-              amount?: { presentmentMoney: Money };
-              suggestedTransactions?: SuggestedRefundTransaction[];
-            } | null;
-          };
-        } | null;
-      };
-      errors?: Array<{ message: string }>;
-    };
-    const transfer =
-      outcomeResult.data?.return?.suggestedFinancialOutcome.financialTransfer;
-    if (
-      !transfer?.amount ||
-      !transfer.suggestedTransactions ||
-      outcomeResult.errors?.length
-    ) {
-      throw new Error(
-        outcomeResult.errors?.map((error) => error.message).join("; ") ||
-          "Shopify could not calculate a refund to the original payment method for this return. No refund was issued.",
-      );
-    }
-
-    if (
-      !moneyAmountsMatch(transfer.amount.presentmentMoney.amount, quote.amount) ||
-      transfer.amount.presentmentMoney.currencyCode !== quote.currencyCode
-    ) {
-      throw new Error(
-        "The refund amount changed after confirmation. The return is open, but no refund was issued.",
-      );
-    }
-
-    const orderTransactions = buildReturnProcessTransactions(
-      transfer.suggestedTransactions,
-      quote,
-    );
-
-    const processResponse = await admin.graphql(RETURN_PROCESS_MUTATION, {
-      variables: {
-        input: {
-          returnId,
-          note: "Customer-confirmed automatic return",
-          notifyCustomer: true,
-          returnLineItems: returnProcessLineItems,
-          financialTransfer: { issueRefund: { orderTransactions } },
-        },
-      },
-    });
-    const processResult = (await processResponse.json()) as {
-      data?: {
-        returnProcess: {
-          return: { id: string; status: string } | null;
-          userErrors: UserError[];
-        };
-      };
-      errors?: Array<{ message: string }>;
-    };
-    if (!processResult.data || processResult.errors?.length) {
-      throw new Error(
-        processResult.errors?.map((error) => error.message).join("; ") ||
-          "Shopify could not process the return.",
-      );
-    }
-    throwOnUserErrors(
-      processResult.data.returnProcess.userErrors,
-      "Shopify could not process the return",
-    );
-    const processedReturn = processResult.data.returnProcess.return;
-    if (processedReturn?.id !== returnId || processedReturn.status !== "CLOSED") {
-      throw new Error(
-        "Shopify did not confirm that this return was processed. No refund was confirmed submitted.",
-      );
-    }
-
-    const refundsResponse = await admin.graphql(ORDER_REFUNDS_QUERY, {
-      variables: { orderId },
-    });
-    const refundsResult = (await refundsResponse.json()) as {
-      data?: {
-        order: {
-          refunds: Array<{
-            id: string;
-            return: { id: string } | null;
-            transactions: {
-              nodes: Array<{ kind: string; status: string }>;
-              pageInfo: { hasNextPage: boolean };
-            };
-          }>;
-        } | null;
-      };
-      errors?: Array<{ message: string }>;
-    };
-    const refund = refundsResult.data?.order?.refunds.find(
-      (candidate) => candidate.return?.id === returnId,
-    );
-    if (!refund || refundsResult.errors?.length) {
-      // The return was processed and the refund transferred; Shopify's own
-      // record of it just couldn't be located here to confirm payment status.
-      return prisma.agentReturn.update({
-        where: { id: record.id },
-        data: {
-          status: "NEEDS_ATTENTION",
-          returnStatus: "PROCESSED",
-          failureReason:
-            "The return was processed, but its refund record could not be located to confirm payment status.",
-        },
-      });
-    }
-    const paymentStatus = refundPaymentStatus(
-      refund.transactions.nodes,
-      refund.transactions.pageInfo.hasNextPage,
-    );
-
-    return prisma.agentReturn.update({
-      where: { id: record.id },
-      data: {
-        refundId: refund.id,
-        returnStatus: "PROCESSED",
-        status: paymentStatus === "FAILED" ? "NEEDS_ATTENTION" : "REFUND_SUBMITTED",
-        refundStatus: paymentStatus,
-        failureReason: paymentStatus === "FAILED"
-          ? "Shopify reported a failed refund transaction. Check all payments before retrying; part of the refund may have succeeded."
-          : null,
-      },
+      confirmed: quote,
     });
   } catch (error) {
     const message =

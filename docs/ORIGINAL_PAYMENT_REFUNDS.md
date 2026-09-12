@@ -51,7 +51,10 @@ The quote shows those fees, and the confirmed amount already excludes them.
 - **Refund processed by Shopify:** All returned refund transactions report
   success. This does not prove the customer's bank has posted the credit.
 - **Merchant review needed:** A payment failed or the return needs attention.
-  A split refund might have partially succeeded; do not blindly retry.
+  A split refund might have partially succeeded; do not blindly retry. When no
+  refund is recorded, the dashboard's **Retry refund** rechecks Shopify first
+  and refunds the confirmed amount only if the return is still requested or
+  open and nothing was refunded for it or the order since the request.
 
 Status reflects the submission response and recorded Shopify webhooks. Refresh
 loads the latest stored evidence; it does not query the customer's bank or
