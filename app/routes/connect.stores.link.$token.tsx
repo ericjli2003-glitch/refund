@@ -91,8 +91,9 @@ export default function LinkStore() {
       )}
       <p>
         Linking lets {info.assistant} find your purchases at this store, quote
-        returns, and submit a return only after you confirm it in your chat. The
-        link lasts up to four hours; after that your assistant sends a new link.
+        returns, and submit a return only after you confirm it in your chat. If
+        the store asks you to sign in again later, your assistant sends a new
+        link.
       </p>
       <p>
         <strong>Linking does not submit a return or refund.</strong> The store’s

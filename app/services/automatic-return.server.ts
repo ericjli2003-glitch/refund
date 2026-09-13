@@ -4,6 +4,13 @@ import prisma from "../db.server";
 import { refundPaymentStatus } from "../refund-status";
 import { customerAccountGraphql } from "./customer-account.server";
 import { customerIdentityHashes } from "./customer-security.server";
+import { adminData, adminFor, type AdminGraphql } from "./shopify-admin.server";
+import {
+  calculateVerifiedReturn,
+  requestVerifiedReturn,
+  verifiedCustomerOrders,
+  type CustomerAccess,
+} from "./verified-customer-returns.server";
 import {
   hasDuplicateLineItems,
   moneyAmountsMatch,
@@ -25,6 +32,7 @@ import {
 } from "./shopify-inputs.server";
 
 export type { RequestedItem } from "./return-guards.server";
+export { adminData, adminFor, type AdminGraphql } from "./shopify-admin.server";
 
 export type Money = { amount: string; currencyCode: string };
 type UserError = { field?: string[]; message: string };
@@ -35,51 +43,41 @@ export type RefundTiming = "IMMEDIATE" | "ON_RECEIPT";
 export const refundTimingOf = (value: string | null | undefined): RefundTiming =>
   value === "ON_RECEIPT" ? "ON_RECEIPT" : "IMMEDIATE";
 
-export type AdminGraphql = {
-  graphql: (
-    query: string,
-    options?: { variables?: Record<string, unknown> },
-  ) => Promise<Response>;
-};
-
-type CustomerOrdersResponse = {
-  customer: {
-    id: string;
-    orders: {
+export type ReturnableOrder = {
+  id: string;
+  name: string;
+  processedAt: string;
+  returnInformation: {
+    nonReturnableSummary: { nonReturnableReasons: string[] } | null;
+    returnableLineItems: {
       nodes: Array<{
-        id: string;
-        name: string;
-        processedAt: string;
-        returnInformation: {
-          nonReturnableSummary: { nonReturnableReasons: string[] } | null;
-          returnableLineItems: {
-            nodes: Array<{
-              quantity: number;
-              lineItem: {
-                id: string;
-                presentmentTitle: string;
-                currentTotalPrice: Money;
-              };
-            }>;
-          };
+        quantity: number;
+        lineItem: {
+          id: string;
+          presentmentTitle: string;
+          currentTotalPrice: Money;
         };
       }>;
     };
   };
 };
 
-type ReturnCalculationResponse = {
-  returnCalculate: {
-    financialSummary: {
-      returnTotalSet: { presentmentMoney: Money; shopMoney: Money };
-      restockingFeeSubtotalSet?: { presentmentMoney: Money };
-      returnShippingFeeSubtotalSet?: { presentmentMoney: Money };
-    };
-    returnLineItems: {
-      nodes: Array<{ lineItem: { id: string }; quantity: number }>;
-    };
+type CustomerOrdersResponse = {
+  customer: { id: string; orders: { nodes: ReturnableOrder[] } };
+};
+
+export type ReturnCalculation = {
+  financialSummary: {
+    returnTotalSet: { presentmentMoney: Money; shopMoney: Money };
+    restockingFeeSubtotalSet?: { presentmentMoney: Money };
+    returnShippingFeeSubtotalSet?: { presentmentMoney: Money };
+  };
+  returnLineItems: {
+    nodes: Array<{ lineItem: { id: string }; quantity: number }>;
   };
 };
+
+type ReturnCalculationResponse = { returnCalculate: ReturnCalculation };
 
 type OrderRefund = {
   id: string;
@@ -287,29 +285,6 @@ function throwOnUserErrors(errors: UserError[], action: string) {
   throw new Error(
     `${action}: ${errors.map((error) => error.message).join("; ")}`,
   );
-}
-
-export async function adminData<T>(
-  admin: AdminGraphql,
-  query: string,
-  variables: Record<string, unknown>,
-  failure: string,
-) {
-  const response = await admin.graphql(query, { variables });
-  const result = (await response.json()) as {
-    data?: T;
-    errors?: Array<{ message: string }>;
-  };
-  if (!result.data || result.errors?.length)
-    throw new Error(
-      result.errors?.map((error) => error.message).join("; ") || failure,
-    );
-  return result.data;
-}
-
-export async function adminFor(shop: string): Promise<AdminGraphql> {
-  const { unauthenticated } = await import("../shopify.server");
-  return (await unauthenticated.admin(shop)).admin;
 }
 
 const errorText = (error: unknown, fallback: string) =>
@@ -763,10 +738,17 @@ export async function receiveReturnedItems(
   }
 }
 
-export async function getReturnableOrders(shop: string, customerToken: string) {
+// A string is a live Shopify customer session, which applies the store's own
+// return rules. Otherwise it's a store link's verified customer, reached
+// through the Admin API with the return rules the merchant confirmed in Refund.
+export async function getReturnableOrders(
+  shop: string,
+  access: CustomerAccess,
+): Promise<{ customerId: string; orders: ReturnableOrder[] }> {
+  if (typeof access !== "string") return verifiedCustomerOrders(shop, access);
   const result = await customerAccountGraphql<CustomerOrdersResponse>(
     shop,
-    customerToken,
+    access,
     CUSTOMER_ORDERS_QUERY,
     { first: 20 },
   );
@@ -779,18 +761,48 @@ export async function getReturnableOrders(shop: string, customerToken: string) {
 
 export async function calculateReturn(
   shop: string,
-  customerToken: string,
-  orderId: string,
+  access: CustomerAccess,
+  order: ReturnableOrder,
   items: RequestedItem[],
-) {
+): Promise<ReturnCalculation> {
+  if (typeof access !== "string")
+    return calculateVerifiedReturn(shop, order, items);
   const result = await customerAccountGraphql<ReturnCalculationResponse>(
     shop,
-    customerToken,
+    access,
     CALCULATE_RETURN_QUERY,
-    { orderId, returnLineItems: items },
+    { orderId: order.id, returnLineItems: items },
   );
 
   return result.returnCalculate;
+}
+
+async function requestCustomerReturn(
+  shop: string,
+  customerToken: string,
+  orderId: string,
+  items: RequestedItem[],
+  customerNote?: string,
+) {
+  const requestResult = await customerAccountGraphql<{
+    orderRequestReturn: {
+      return: { id: string; status: string } | null;
+      userErrors: UserError[];
+    };
+  }>(shop, customerToken, REQUEST_RETURN_MUTATION, {
+    orderId,
+    requestedLineItems: items.map((item) => ({
+      ...item,
+      customerNote: customerNote?.slice(0, 300),
+    })),
+  });
+  throwOnUserErrors(
+    requestResult.orderRequestReturn.userErrors,
+    "Shopify could not request the return",
+  );
+  const returnId = requestResult.orderRequestReturn.return?.id;
+  if (!returnId) throw new Error("Shopify did not create a return.");
+  return returnId;
 }
 
 export async function executeAutomaticReturn({
@@ -804,7 +816,7 @@ export async function executeAutomaticReturn({
   refundTiming,
 }: {
   shop: string;
-  customerToken: string;
+  customerToken: CustomerAccess;
   orderId: string;
   items: RequestedItem[];
   customerNote?: string;
@@ -882,7 +894,7 @@ export async function executeAutomaticReturn({
   const calculation = await calculateReturn(
     shop,
     customerToken,
-    orderId,
+    order,
     items,
   );
   const quote = refundFromReturnTotal(calculation.financialSummary.returnTotalSet.presentmentMoney);
@@ -935,24 +947,10 @@ export async function executeAutomaticReturn({
   }
 
   try {
-    const requestResult = await customerAccountGraphql<{
-      orderRequestReturn: {
-        return: { id: string; status: string } | null;
-        userErrors: UserError[];
-      };
-    }>(shop, customerToken, REQUEST_RETURN_MUTATION, {
-      orderId,
-      requestedLineItems: items.map((item) => ({
-        ...item,
-        customerNote: customerNote?.slice(0, 300),
-      })),
-    });
-    throwOnUserErrors(
-      requestResult.orderRequestReturn.userErrors,
-      "Shopify could not request the return",
-    );
-    const returnId = requestResult.orderRequestReturn.return?.id;
-    if (!returnId) throw new Error("Shopify did not create a return.");
+    const returnId =
+      typeof customerToken === "string"
+        ? await requestCustomerReturn(shop, customerToken, orderId, items, customerNote)
+        : await requestVerifiedReturn(shop, order, items, customerNote);
 
     await prisma.agentReturn.update({
       where: { id: record.id },

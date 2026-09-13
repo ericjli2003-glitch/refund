@@ -48,6 +48,17 @@ model StorePolicy {
   // IMMEDIATE refunds on customer confirmation; ON_RECEIPT waits until the
   // merchant marks the returned item received.
   refundTiming            String   @default("IMMEDIATE")
+  // Customers' store links keep working after their Shopify sign-in ends, once
+  // the merchant confirms the return rules below. Shopify's Admin API doesn't
+  // apply the store's own return rules, so Refund applies these instead.
+  verifiedStoreLinks      Boolean   @default(true)
+  restockingFeePercent    String    @default("0")
+  returnShippingFee       String    @default("0.00")
+  finalSaleCollectionIds  String[]  @default([])
+  returnRulesConfirmedAt  DateTime?
+  // Set when a signed-in customer's quote shows Shopify applying a fee or
+  // final-sale rule these settings lack. Verified links pause until reviewed.
+  returnRulesMismatch     String?
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
@@ -230,17 +241,24 @@ model AgentConnection {
 }
 
 model AgentStoreLink {
-  id           String                @id @default(uuid())
-  connectionId String
-  connection   AgentConnection       @relation(fields: [connectionId], references: [id], onDelete: Cascade)
-  shop         String
-  sessionId    String
-  session      CustomerReturnSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  createdAt    DateTime              @default(now())
+  id                  String                 @id @default(uuid())
+  connectionId        String
+  connection          AgentConnection        @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  shop                String
+  customerSubjectHash String
+  // The Shopify customer ID verified by the sign-in that created the link,
+  // encrypted. Null only for links made before verified links existed.
+  sealedCustomerId    String?
+  // That sign-in, while it lasts.
+  sessionId           String?
+  session             CustomerReturnSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  lastUsedAt          DateTime               @default(now())
+  createdAt           DateTime               @default(now())
 
   @@unique([connectionId, shop])
   @@index([sessionId])
   @@index([shop])
+  @@index([shop, customerSubjectHash])
 }
 
 model AgentStoreLinkRequest {

@@ -37,20 +37,32 @@ its own sign-in:
 
 Limits and protections:
 
-- **Four-hour store links.** A link uses that store's customer session, which
-  Shopify caps with no refresh token for apps like Refund. After it expires the
-  assistant calls `link_store` again; with a live Shopify session that is one
-  approval click and no code.
-- **30-day connection.** Refund access and refresh tokens are issued against the
-  connection, not a store. Access tokens still last one hour and rotate.
+- **Links that last while used.** Linking verifies the customer with Shopify
+  once and stores their Shopify customer ID encrypted. While that Shopify
+  session lasts (at most four hours, with no refresh token for apps like
+  Refund), tools use it and Shopify's own return rules apply. After it ends,
+  tools reach the same customer's orders through the store's Admin API, which
+  doesn't apply Shopify's return rules, so Refund applies the restocking fee,
+  return shipping fee and final-sale collections the merchant confirmed in
+  Refund. This is on by default and takes effect once the merchant saves those
+  rules. A merchant can turn it off; links then need a new sign-in after four
+  hours, which is one click with a live Shopify session. A link ends after a
+  year without use.
+- **Rule drift pauses links.** When a signed-in quote shows Shopify charging a
+  restocking fee Refund's rules lack, a higher return shipping fee, or final-sale
+  items with no final-sale collections set, verified links pause and the
+  dashboard asks the merchant to review and save.
+- **Connection kept while used.** Refund access and refresh tokens are issued
+  against the connection, not a store, and each refresh keeps it for another
+  year. Access tokens still last one hour and rotate.
 - **Same browser.** Approving the connection sets an HttpOnly
   `__Host-refund_connection` cookie, and a store link completes only in that
   browser. Someone who sends a customer their own link can't attach the
   customer's store sign-in to the sender's assistant.
-- A store link belongs to the customer at that store. Their return portal lists
-  it under connected assistants and can remove it. Signing out of that sign-in,
-  customer redaction and uninstall delete it. Signing in to another store in the
-  same browser does not.
+- A store link belongs to the customer at that store. Any sign-in to that
+  store's return portal lists it under connected assistants and can remove it.
+  Customer redaction and uninstall delete it; signing out ends only its live
+  Shopify session.
 - All-stores tokens are rejected by `/mcp/:shop`, and single-store tokens by
   `/mcp/stores`. Submission still needs the signed quote and explicit
   confirmation, and every tool checks its scope.

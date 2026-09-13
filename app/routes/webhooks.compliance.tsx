@@ -35,9 +35,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         "Customer redaction payload is missing a usable identity.",
       );
     }
-    // Deleting the customer's sessions also removes their assistant grants and
-    // all-stores store links, which reference those sessions.
+    // Deleting the customer's sessions also removes their assistant grants.
+    // Store links outlive sessions, so they are deleted directly.
     await prisma.$transaction([
+      prisma.agentStoreLink.deleteMany({ where: { shop, customerSubjectHash } }),
       prisma.customerReturnSession.deleteMany({
         where: { shop, customerSubjectHash },
       }),
@@ -112,11 +113,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       },
     });
     const storeLinks = await prisma.agentStoreLink.findMany({
-      where: { shop, session: { customerSubjectHash } },
+      where: { shop, customerSubjectHash },
       select: {
         createdAt: true,
+        lastUsedAt: true,
         connection: { select: { clientId: true, scopes: true } },
-        session: { select: { expiresAt: true } },
       },
     });
     const reportData = {
@@ -142,7 +143,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         clientId: link.connection.clientId,
         scopes: link.connection.scopes,
         createdAt: link.createdAt.toISOString(),
-        expiresAt: link.session.expiresAt.toISOString(),
+        lastUsedAt: link.lastUsedAt.toISOString(),
       })),
     };
     await prisma.privacyRequest.upsert({
@@ -163,6 +164,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       prisma.merchantOpportunity.deleteMany({ where: { knownShop: shop } }),
       prisma.merchantDirectory.deleteMany({ where: { shop } }),
       prisma.agentStoreLinkRequest.deleteMany({ where: { shop } }),
+      prisma.agentStoreLink.deleteMany({ where: { shop } }),
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
       prisma.returnDraft.deleteMany({ where: { shop } }),
       prisma.agentOAuthRequest.deleteMany({ where: { shop } }),

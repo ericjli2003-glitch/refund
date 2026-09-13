@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createCookie, redirect } from "react-router";
 import prisma from "../db.server";
 import {
-  CONNECTION_LIFETIME_MS,
+  CONNECTION_IDLE_MS,
   agentResource,
   agentScopes,
 } from "./agent-access.server";
@@ -208,7 +208,7 @@ export async function finishAgentConsent(
           clientId: flow.clientId,
           scopes: flow.scopes,
           browserHash: digest(browser),
-          expiresAt: new Date(Date.now() + CONNECTION_LIFETIME_MS),
+          expiresAt: new Date(Date.now() + CONNECTION_IDLE_MS),
         },
       });
     return result.count;

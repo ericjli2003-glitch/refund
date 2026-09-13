@@ -130,10 +130,10 @@ export default function AgentConsent() {
             Open those links in this browser.
           </p>
           <p>
-            Each store link lasts up to four hours, and this connection lasts up
-            to 30 days. Refund remembers which stores you’ve linked to it. You
-            can unlink a store from that store’s return portal, or remove Refund
-            from your assistant at any time.
+            Most stores stay linked while you keep using them; a store can ask
+            you to sign in again after four hours. The connection ends after a
+            year without use. You can unlink a store from that store’s return
+            portal, or remove Refund from your assistant at any time.
           </p>
         </>
       ) : (

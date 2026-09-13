@@ -22,6 +22,11 @@ import {
   merchantProfilePath,
 } from "../services/merchant-directory.server";
 import { appOrigin } from "../services/customer-security.server";
+import { hasScope } from "../services/shopify-admin.server";
+import {
+  FINAL_SALE_COLLECTION_LIMIT,
+  RETURN_RULES_SCOPE,
+} from "../services/verified-customer-returns.server";
 import {
   RETURN_INSTRUCTIONS_MAX_LENGTH,
   cleanReturnInstructions,
@@ -111,6 +116,20 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw new Response(message, { status: 502 });
   }
 
+  // Final-sale collections for store links that skip signing in again.
+  const canReadProducts = hasScope(session.scope, RETURN_RULES_SCOPE);
+  let collections: Array<{ id: string; title: string }> = [];
+  if (canReadProducts) {
+    const collectionResponse = await admin.graphql(`#graphql
+      query FinalSaleCollectionChoices {
+        collections(first: 100, sortKey: TITLE) { nodes { id title } }
+      }`);
+    const collectionJson = (await collectionResponse.json()) as {
+      data?: { collections: { nodes: Array<{ id: string; title: string }> } };
+    };
+    collections = collectionJson.data?.collections.nodes ?? [];
+  }
+
   const [storedPolicy, agentReturns, privacyRequests, guidance] =
     await Promise.all([
       prisma.storePolicy.findUnique({ where: { shop: session.shop } }),
@@ -130,6 +149,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     orders: responseJson.data.orders.nodes,
     locations: responseJson.data.locations.nodes,
+    collections,
+    canReadProducts,
+    finalSaleCollectionLimit: FINAL_SALE_COLLECTION_LIMIT,
     query,
     saved: url.searchParams.get("saved") === "true",
     retried: url.searchParams.get("retried") === "true",
@@ -156,6 +178,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       returnInstructions: null as string | null,
       returnPolicyUrl: null as string | null,
       refundTiming: "IMMEDIATE",
+      verifiedStoreLinks: true,
+      restockingFeePercent: "0",
+      returnShippingFee: "0.00",
+      finalSaleCollectionIds: [] as string[],
+      returnRulesConfirmedAt: null as Date | null,
+      returnRulesMismatch: null as string | null,
     },
     instructionsMaxLength: RETURN_INSTRUCTIONS_MAX_LENGTH,
     agentsTemplateSection: merchantAgentsTemplateSection(guidance),
@@ -230,6 +258,50 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     throw new Response("Invalid automatic return policy.", { status: 400 });
   }
 
+  const restockingFeePercent = Number(formData.get("restockingFeePercent") || 0);
+  const returnShippingFee = Number(formData.get("returnShippingFee") || 0);
+  const finalSaleCollectionIds = [
+    ...new Set(
+      formData
+        .getAll("finalSaleCollectionIds")
+        .filter((value): value is string => typeof value === "string"),
+    ),
+  ];
+  if (
+    !Number.isFinite(restockingFeePercent) ||
+    restockingFeePercent < 0 ||
+    restockingFeePercent > 100 ||
+    !Number.isFinite(returnShippingFee) ||
+    returnShippingFee < 0 ||
+    returnShippingFee > 1_000 ||
+    finalSaleCollectionIds.length > FINAL_SALE_COLLECTION_LIMIT ||
+    finalSaleCollectionIds.some(
+      (id) => !/^gid:\/\/shopify\/Collection\/\d+$/.test(id),
+    )
+  ) {
+    throw new Response("Invalid return rules.", { status: 400 });
+  }
+  if (finalSaleCollectionIds.length) {
+    if (!hasScope(session.scope, RETURN_RULES_SCOPE))
+      throw new Response(
+        "Approve Refund's permission to read products before choosing final-sale collections.",
+        { status: 400 },
+      );
+    const collectionCheck = await admin.graphql(
+      `#graphql
+        query FinalSaleCollectionsCheck($ids: [ID!]!) {
+          nodes(ids: $ids) { ... on Collection { id } }
+        }`,
+      { variables: { ids: finalSaleCollectionIds } },
+    );
+    const found =
+      ((await collectionCheck.json()) as {
+        data?: { nodes: Array<{ id?: string } | null> };
+      }).data?.nodes ?? [];
+    if (finalSaleCollectionIds.some((id) => !found.some((node) => node?.id === id)))
+      throw new Response("Unknown final-sale collection.", { status: 400 });
+  }
+
   let returnInstructions: string | null;
   let returnPolicyUrl: string | null;
   try {
@@ -301,6 +373,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     returnPolicyUrl,
     refundTiming:
       formData.get("refundTiming") === "ON_RECEIPT" ? "ON_RECEIPT" : "IMMEDIATE",
+    verifiedStoreLinks: formData.get("verifiedStoreLinks") === "true",
+    restockingFeePercent: String(Math.round(restockingFeePercent * 100) / 100),
+    returnShippingFee: returnShippingFee.toFixed(2),
+    finalSaleCollectionIds,
+    // Saving the policy is the merchant's confirmation that these rules match
+    // their Shopify return rules, and clears any earlier mismatch.
+    returnRulesConfirmedAt: new Date(),
+    returnRulesMismatch: null,
   };
   await prisma.storePolicy.upsert({
     where: { shop: session.shop },
@@ -358,6 +438,9 @@ export default function RefundDashboard() {
   const {
     orders,
     locations,
+    collections,
+    canReadProducts,
+    finalSaleCollectionLimit,
     query,
     saved,
     retried,
@@ -422,6 +505,18 @@ export default function RefundDashboard() {
     policy.returnLocationId ?? "",
   );
   const [refundTiming, setRefundTiming] = useState(policy.refundTiming);
+  const [verifiedStoreLinks, setVerifiedStoreLinks] = useState(
+    policy.verifiedStoreLinks,
+  );
+  const [restockingFeePercent, setRestockingFeePercent] = useState(
+    policy.restockingFeePercent,
+  );
+  const [returnShippingFee, setReturnShippingFee] = useState(
+    policy.returnShippingFee,
+  );
+  const [finalSaleCollectionIds, setFinalSaleCollectionIds] = useState<
+    string[]
+  >(policy.finalSaleCollectionIds);
   const [returnInstructions, setReturnInstructions] = useState(
     policy.returnInstructions ?? "",
   );
@@ -655,6 +750,14 @@ export default function RefundDashboard() {
             formData.set("refundTiming", refundTiming);
             formData.set("returnInstructions", returnInstructions);
             formData.set("returnPolicyUrl", returnPolicyUrl);
+            formData.set(
+              "verifiedStoreLinks",
+              verifiedStoreLinks ? "true" : "false",
+            );
+            formData.set("restockingFeePercent", restockingFeePercent);
+            formData.set("returnShippingFee", returnShippingFee);
+            for (const id of finalSaleCollectionIds)
+              formData.append("finalSaleCollectionIds", id);
             submit(formData, { method: "post" });
           }}
         >
@@ -741,10 +844,103 @@ export default function RefundDashboard() {
               received items are recorded as not restocked.
             </s-paragraph>
             <s-paragraph color="subdued">
-              Restocking and return shipping fees come from your Shopify return
-              rules (Settings, then Policies). Customers see them in their
-              quote, and Refund deducts them from the refund it submits.
+              For customers signed in to your store, restocking and return
+              shipping fees come from your Shopify return rules (Settings, then
+              Policies). Customers see them in their quote, and Refund deducts
+              them from the refund it submits.
             </s-paragraph>
+            {policy.returnRulesMismatch && (
+              <s-banner
+                heading="Linked customers need to sign in again"
+                tone="warning"
+              >
+                {policy.returnRulesMismatch} Check the fees and final-sale
+                collections below against your Shopify return rules, then save.
+              </s-banner>
+            )}
+            <s-switch
+              label="Keep customers linked without signing in again"
+              checked={verifiedStoreLinks}
+              onChange={(event) =>
+                setVerifiedStoreLinks(event.currentTarget.checked)
+              }
+            ></s-switch>
+            <s-paragraph color="subdued">
+              Customers link your store to their assistant with a Shopify
+              sign-in, which Shopify ends after at most four hours. With this
+              on, the link keeps working while they use it and ends after a year
+              unused. Shopify doesn’t apply your return rules to those returns,
+              so Refund applies the fees and final-sale collections below.
+              Saving confirms they match your Shopify return rules. Turn this
+              off to have customers sign in again.
+            </s-paragraph>
+            <s-grid
+              gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+              gap="base"
+            >
+              <s-number-field
+                label="Restocking fee (%)"
+                min={0}
+                max={100}
+                step={0.01}
+                value={restockingFeePercent}
+                onChange={(event) =>
+                  setRestockingFeePercent(event.currentTarget.value)
+                }
+              ></s-number-field>
+              <s-money-field
+                label={`Return shipping fee (${policy.currencyCode})`}
+                min={0}
+                max={1000}
+                value={returnShippingFee}
+                onChange={(event) =>
+                  setReturnShippingFee(event.currentTarget.value)
+                }
+              ></s-money-field>
+            </s-grid>
+            {canReadProducts ? (
+              collections.length ? (
+                <s-stack direction="block" gap="small-200">
+                  <s-text>
+                    Final-sale collections (up to {finalSaleCollectionLimit})
+                  </s-text>
+                  {collections.map((collection) => {
+                    const checked = finalSaleCollectionIds.includes(
+                      collection.id,
+                    );
+                    return (
+                      <s-checkbox
+                        key={collection.id}
+                        label={collection.title}
+                        checked={checked}
+                        disabled={
+                          !checked &&
+                          finalSaleCollectionIds.length >=
+                            finalSaleCollectionLimit
+                        }
+                        onChange={(event) => {
+                          const selected = event.currentTarget.checked;
+                          setFinalSaleCollectionIds((current) =>
+                            selected
+                              ? [...current, collection.id]
+                              : current.filter((id) => id !== collection.id),
+                          );
+                        }}
+                      ></s-checkbox>
+                    );
+                  })}
+                </s-stack>
+              ) : (
+                <s-paragraph color="subdued">
+                  Your store has no collections to mark as final sale.
+                </s-paragraph>
+              )
+            ) : (
+              <s-paragraph color="subdued">
+                To mark final-sale collections, approve Refund&apos;s updated
+                permission to read products when Shopify asks.
+              </s-paragraph>
+            )}
             <s-text-area
               label="Return instructions for customers and assistants"
               details={`Shown with every quote, on your public return page, and in your store's Refund agent guide and manifest. Plain text, up to ${instructionsMaxLength} characters.`}

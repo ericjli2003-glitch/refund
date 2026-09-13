@@ -24,6 +24,7 @@ import {
   addReturnTracking,
   returnShippingFor,
 } from "./services/return-shipping.server";
+import type { CustomerAccess } from "./services/verified-customer-returns.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -114,7 +115,8 @@ export function createCustomerReturnsMcpServer({
     shop?: string,
   ) => Promise<{
     shop: string;
-    customerToken: string;
+    // A live Shopify customer session, or a store link's verified customer.
+    customerToken: CustomerAccess;
     customerSubjectHash?: string;
     draftId?: string | null;
   }>;
@@ -172,7 +174,7 @@ export function createCustomerReturnsMcpServer({
       {
         title: "List linked stores",
         description:
-          "Lists the stores this connection is linked to and whether each link is still active. A store link lasts up to four hours after the customer signs in to that store; renew an inactive one with link_store.",
+          "Lists the stores this connection is linked to, whether each link is active, and whether the store keeps links without the customer signing in again. Renew an inactive link with link_store.",
         inputSchema: {},
         annotations: {
           readOnlyHint: true,

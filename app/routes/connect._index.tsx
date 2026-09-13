@@ -72,9 +72,10 @@ export default function ConnectAllStores() {
           used to approve Refund, then return to the conversation.
         </p>
         <p>
-          A store link lasts up to four hours. After that your assistant sends a
-          new one, and if you’re still signed in to the store it opens straight
-          through. The connection itself lasts 30 days.
+          Most stores stay linked while you keep using them. If a store asks you
+          to sign in again, your assistant sends a new link, and if you’re still
+          signed in to that store it’s one click. The connection ends after a
+          year without use.
         </p>
       </section>
       <section>

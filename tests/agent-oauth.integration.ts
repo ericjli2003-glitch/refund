@@ -17,6 +17,7 @@ import {
   revokeAgentGrant,
 } from "../app/services/agent-access.server";
 import {
+  customerIdentityHash,
   digest,
   randomToken,
   seal,
@@ -620,12 +621,13 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       });
       const linkRaw = randomToken();
       const linkSessionId = digest(linkRaw);
+      const linkedCustomerId = "gid://shopify/Customer/777";
       await prisma.customerReturnSession.create({
         data: {
           id: linkSessionId,
           shop,
           csrfToken: randomToken(),
-          customerSubjectHash: "test-customer",
+          customerSubjectHash: customerIdentityHash(linkedCustomerId),
           accessToken: seal("linked-private-token", `${linkSessionId}:${shop}`),
           expiresAt: new Date(Date.now() + 4 * 3600_000),
         },
@@ -642,6 +644,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
             where: { resource: allStores, clientId: client.client_id },
           }),
           prisma.merchantDirectory.deleteMany({ where: { shop } }),
+          prisma.storePolicy.deleteMany({ where: { shop } }),
         ]);
       });
 
@@ -774,6 +777,18 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
           pattern: "/connect/stores/link/:token",
         });
       await assert.rejects(linkAction(connectionCookie), responseStatus(401));
+      // Linking verifies the signed-in customer with Shopify once.
+      const upstream = ctx.mock.method(
+        globalThis,
+        "fetch",
+        async (input: string | URL | Request) =>
+          String(input).includes("/.well-known/customer-account-api")
+            ? Response.json({
+                graphql_api:
+                  "https://shopify.com/1/account/customer/api/2026-07/graphql",
+              })
+            : Response.json({ data: { customer: { id: linkedCustomerId } } }),
+      );
       const linked = await linkAction(`${connectionCookie}; ${linkCustomerCookie}`);
       assert.equal(linked.status, 302);
       assert.match(linked.headers.get("Location")!, /\/connect\/stores\/linked\?shop=/);
@@ -781,6 +796,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         linkAction(`${connectionCookie}; ${linkCustomerCookie}`),
         responseStatus(400),
       );
+      upstream.mock.restore();
 
       assert.equal(
         (await connectionStore(connectionId, shop)).customerToken,
@@ -806,6 +822,35 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       const next = await refreshed.json();
       await authorizeConnection(`Bearer ${next.access_token}`);
       await assert.rejects(authorizeConnection(`Bearer ${tokens.access_token}`));
+
+      // After the Shopify session ends, the link keeps working only where the
+      // store has confirmed its return rules and allows it.
+      await prisma.customerReturnSession.update({
+        where: { id: linkSessionId },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      });
+      await assert.rejects(
+        connectionStore(connectionId, shop),
+        StoreLinkRequiredError,
+      );
+      await prisma.storePolicy.create({
+        data: { shop, returnRulesConfirmedAt: new Date() },
+      });
+      assert.deepEqual((await connectionStore(connectionId, shop)).customerToken, {
+        customerId: linkedCustomerId,
+      });
+      assert.equal(
+        (await listConnectionStores(connectionId))[0].staysLinkedWithoutSignIn,
+        true,
+      );
+      await prisma.storePolicy.update({
+        where: { shop },
+        data: { verifiedStoreLinks: false },
+      });
+      await assert.rejects(
+        connectionStore(connectionId, shop),
+        StoreLinkRequiredError,
+      );
 
       // The customer removes the link from that store's return portal.
       const listed = (await listAgentGrants(linkSessionId)).find((value) =>

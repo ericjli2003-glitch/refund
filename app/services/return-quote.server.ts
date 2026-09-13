@@ -10,6 +10,10 @@ import {
 } from "./automatic-return.server";
 import { moneyIsAbove, refundFromReturnTotal } from "./return-guards.server";
 import {
+  noteReturnRulesDrift,
+  type CustomerAccess,
+} from "./verified-customer-returns.server";
+import {
   customerIdentityHash,
   signQuote,
   verifyQuoteSignature,
@@ -71,7 +75,7 @@ export function readBoundQuote(
 
 export async function createReturnQuote(
   shop: string,
-  customerToken: string,
+  customerToken: CustomerAccess,
   input: unknown,
 ) {
   const { orderId, items } = quoteInputSchema.parse(input);
@@ -107,9 +111,13 @@ export async function createReturnQuote(
   const calculation = await calculateReturn(
     shop,
     customerToken,
-    orderId,
+    order,
     items,
   );
+  // A signed-in quote shows the fees and final-sale rules Shopify itself
+  // applies; pause verified links if Refund's saved rules would miss them.
+  if (typeof customerToken === "string" && policy)
+    await noteReturnRulesDrift(shop, policy, order, calculation);
   const expectedRefund = refundFromReturnTotal(
     calculation.financialSummary.returnTotalSet.presentmentMoney,
   );
@@ -185,7 +193,7 @@ export async function createReturnQuote(
 
 export async function submitReturnQuote(
   shop: string,
-  customerToken: string,
+  customerToken: CustomerAccess,
   input: unknown,
 ) {
   const { quoteToken, customerNote } = confirmInputSchema.parse(input);

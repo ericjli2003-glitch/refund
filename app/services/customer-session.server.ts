@@ -176,9 +176,9 @@ export async function startCustomerLogin(request: Request) {
       where: {
         OR: [
           { expiresAt: { lt: new Date() } },
-          // The browser holds one store sign-in at a time. A session linked to
-          // an all-stores connection stays until it expires, so signing in to
-          // another store doesn't unlink this one.
+          // The browser holds one store sign-in at a time. A session a store
+          // link uses stays until it expires, so signing in to another store
+          // doesn't end that link's live Shopify session early.
           ...(old ? [{ id: old.id, storeLinks: { none: {} } }] : []),
         ],
       },
@@ -346,6 +346,7 @@ export async function finishCustomerLogin(request: Request) {
         data: current,
       });
       await tx.agentAccessGrant.updateMany({ where: retired, data: current });
+      await tx.agentStoreLink.updateMany({ where: retired, data: current });
       await tx.privacyRequest.updateMany({ where: retired, data: current });
     }
     if (pending.draftId)

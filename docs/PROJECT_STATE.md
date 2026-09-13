@@ -280,17 +280,44 @@ network, not one store per connector. `/mcp/stores` is that connection
   access. Each store is linked (`AgentStoreLink`) with that store's own Shopify
   customer sign-in through the `link_store` tool, and each private tool takes a
   `shop` argument.
-- A link is the store's customer session, so it lasts at most four hours
-  (decision 2). The connection lasts 30 days, and its refresh tokens are bound
-  to the connection.
+- Links and the connection last while used and end after a year without use
+  (decision 9). The connection's refresh tokens are bound to the connection.
 - Links complete only in the browser that approved the connection, which
   prevents attaching a customer's sign-in to someone else's connection.
-- Store links cascade with the customer session (sign-out, redaction,
-  uninstall) and appear in privacy reports. A new sign-in in the same browser
-  keeps linked sessions.
+- Customer redaction and uninstall delete store links, and privacy reports
+  include them.
 
 **Not yet verified with a live host:** that ChatGPT and Claude show the
 `link_store` URL clearly and retry with `shop` after the customer links.
+
+### 9. Store links without signing in again (decided and implemented)
+
+Shopify issues apps no customer refresh token (decision 2), so a link that used
+only the customer's Shopify session needed a new sign-in every four hours.
+
+- Linking verifies the Shopify customer ID once through the store's own
+  sign-in, so the Customer Account API stays the authentication method (Built
+  for Shopify 5.12.4). The ID is stored encrypted on the link.
+- After that session ends, the link reads the customer's orders (`orders`
+  filtered by `customer_id`, ownership rechecked on every order), prices returns
+  (`returnCalculate`) and requests them (`returnRequest`, then the usual
+  approval and `returnProcess`) through the Admin API.
+- The Admin API doesn't apply the store's Shopify return rules, so Refund
+  applies the merchant's confirmed restocking fee, return shipping fee and
+  final-sale collections (5.12.3). Final-sale checks need `read_products`.
+  Refund's return window, automatic-refund cap and refund timing still apply,
+  and refunds still go only to the original payment method.
+- On by default (`StorePolicy.verifiedStoreLinks`), effective once the merchant
+  saves the rules; merchants can turn it off. A signed-in quote showing Shopify
+  charging fees or final-sale rules the saved rules miss pauses it until the
+  merchant saves again. Rules that charge more than Shopify don't pause it.
+- A link and the connection end after a year without use, as the retention
+  limit Shopify's protected customer data requirements call for.
+
+**Not yet verified against a live store:** that `returnCalculate` totals with
+fees match `Return.suggestedFinancialOutcome` after `returnRequest` (a mismatch
+stops before any refund), the `customer_id` order filter, and the
+`read_products` permission prompt.
 
 ## Review findings
 
