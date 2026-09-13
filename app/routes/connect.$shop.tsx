@@ -51,8 +51,11 @@ export function CustomerConnection({
       <h1>Connect your assistant to Refund.</h1>
       <p>
         Find purchases and prepare a return in your conversation. This
-        connection is only for <strong>{shop}</strong>, not all stores you shop
-        with.
+        connection is only for <strong>{shop}</strong>.
+      </p>
+      <p>
+        Shop at other stores that use Refund?{" "}
+        <a href="/connect">Connect once for every store</a> instead.
       </p>
       <section>
         <h2>1. Add Refund to your assistant</h2>

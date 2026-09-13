@@ -35,6 +35,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         "Customer redaction payload is missing a usable identity.",
       );
     }
+    // Deleting the customer's sessions also removes their assistant grants and
+    // all-stores store links, which reference those sessions.
     await prisma.$transaction([
       prisma.customerReturnSession.deleteMany({
         where: { shop, customerSubjectHash },
@@ -109,6 +111,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         expiresAt: true,
       },
     });
+    const storeLinks = await prisma.agentStoreLink.findMany({
+      where: { shop, session: { customerSubjectHash } },
+      select: {
+        createdAt: true,
+        connection: { select: { clientId: true, scopes: true } },
+        session: { select: { expiresAt: true } },
+      },
+    });
     const reportData = {
       returns,
       returnDrafts: drafts.map((value) => ({
@@ -128,6 +138,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         expiresAt: grant.expiresAt.toISOString(),
         revokedAt: grant.revokedAt?.toISOString() ?? null,
       })),
+      assistantStoreLinks: storeLinks.map((link) => ({
+        clientId: link.connection.clientId,
+        scopes: link.connection.scopes,
+        createdAt: link.createdAt.toISOString(),
+        expiresAt: link.session.expiresAt.toISOString(),
+      })),
     };
     await prisma.privacyRequest.upsert({
       where: { id: webhookId },
@@ -146,6 +162,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await prisma.$transaction([
       prisma.merchantOpportunity.deleteMany({ where: { knownShop: shop } }),
       prisma.merchantDirectory.deleteMany({ where: { shop } }),
+      prisma.agentStoreLinkRequest.deleteMany({ where: { shop } }),
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
       prisma.returnDraft.deleteMany({ where: { shop } }),
       prisma.agentOAuthRequest.deleteMany({ where: { shop } }),

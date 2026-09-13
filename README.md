@@ -7,8 +7,10 @@ merchant-specific remote MCP endpoint. The existing OAuth flow verifies their
 Shopify customer identity and obtains assistant consent before exposing purchase,
 quote, confirmation and status tools. Connecting is not refund consent.
 See [customer connection setup and test limits](docs/AGENT_ACCESS.md).
-The customer setup page is `/connect/:shop`; the private MCP URL is `/mcp/:shop`.
-This first version connects one merchant at a time and is not a directory listing.
+One connection covers every Refund store: set it up at `/connect` with the MCP
+URL `/mcp/stores`, then link each store with that store's own Shopify sign-in the
+first time the assistant needs it. A single store's connection (`/connect/:shop`,
+`/mcp/:shop`) is still available.
 
 ## Alternative browser flow
 

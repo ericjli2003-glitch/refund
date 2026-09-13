@@ -3,9 +3,14 @@ import test, { type TestContext } from "node:test";
 import prisma from "../db.server";
 import {
   AgentAccessError,
+  StoreLinkRequiredError,
   agentResource,
+  allStoresResource,
   authorizeAgent,
+  authorizeConnection,
+  connectionStore,
   issueApprovedAgentGrant,
+  issueConnectionGrant,
   revokeAgentGrant,
 } from "./agent-access.server";
 import { digest, randomToken, seal } from "./customer-security.server";
@@ -205,7 +210,7 @@ test("grant issuance requires approved exact scopes and stores only an expiring 
   );
 });
 
-test("revocation is restricted to the authenticated session's own grant", async (t) => {
+test("revocation is restricted to the authenticated session's own grant or the customer's store link", async (t) => {
   setup(t);
   const update = mockDelegate(
     t,
@@ -213,8 +218,27 @@ test("revocation is restricted to the authenticated session's own grant", async 
     "updateMany",
     async () => ({ count: 0 }),
   );
+  mockDelegate(t, prisma.customerReturnSession, "findUnique", async () => ({
+    shop,
+    customerSubjectHash: "customer-a",
+  }));
+  const unlink = mockDelegate(
+    t,
+    prisma.agentStoreLink,
+    "deleteMany",
+    async () => ({ count: 1 }),
+  );
   const publicId = "5b1d6a52-2f0e-4b5e-9c1a-7d8e6f4a3b21";
-  await revokeAgentGrant(publicId, "authenticated-session");
+  assert.deepEqual(await revokeAgentGrant(publicId, "authenticated-session"), {
+    count: 1,
+  });
+  assert.deepEqual(unlink.mock.calls[0].arguments[0], {
+    where: {
+      id: publicId,
+      shop,
+      session: { customerSubjectHash: "customer-a" },
+    },
+  });
   assert.deepEqual(update.mock.calls[0].arguments[0], {
     where: {
       publicId,
@@ -227,6 +251,117 @@ test("revocation is restricted to the authenticated session's own grant", async 
       ).data.revokedAt,
     },
   });
+});
+
+test("an all-stores grant holds no Shopify credential and never opens a single-store endpoint", async (t) => {
+  const { token, grant } = setup(t);
+  const connectionId = "0d9b7c1e-5a4f-4e2b-8c3d-1f6a7b8c9d0e";
+  const connection = {
+    id: connectionId,
+    clientId: "registered-client-a",
+    scopes: ["returns:read", "returns:quote"],
+    browserHash: "browser",
+    expiresAt: new Date(now + 30 * 86_400_000),
+    revokedAt: null as Date | null,
+  };
+  mockDelegate(t, prisma.agentConnection, "findUnique", async () => connection);
+  const records: Record<string, unknown>[] = [];
+  mockDelegate(
+    t,
+    prisma.agentAccessGrant,
+    "create",
+    async ({ data }: { data: Record<string, unknown> }) => {
+      records.push(data);
+      return data;
+    },
+  );
+  const input = {
+    connectionId,
+    clientId: "registered-client-a",
+    resource: allStoresResource(),
+    scopes: ["returns:read"],
+  };
+  for (const patch of [
+    { clientId: "other-client" },
+    { resource },
+    { scopes: ["returns:submit"] },
+    { connectionId: "not-a-uuid" },
+  ])
+    await assert.rejects(issueConnectionGrant({ ...input, ...patch }, now));
+  const issued = await issueConnectionGrant(input, now, prisma, true);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].connectionId, connectionId);
+  assert.equal(records[0].sessionId, undefined);
+  assert.equal(records[0].shop, undefined);
+  assert.equal(issued.expiresAt.getTime(), now + 60 * 60_000);
+  assert.equal(
+    (records[0].refreshExpiresAt as Date).getTime(),
+    connection.expiresAt.getTime(),
+  );
+  connection.revokedAt = new Date(now);
+  await assert.rejects(issueConnectionGrant(input, now), AgentAccessError);
+  connection.revokedAt = null;
+
+  // The same token lookup, now shaped as a connection grant.
+  Object.assign(grant, {
+    connectionId,
+    connection,
+    resource: allStoresResource(),
+    shop: null,
+    session: null,
+  });
+  assert.deepEqual(await authorizeConnection(`Bearer ${token}`, "returns:read", now), {
+    connectionId,
+    clientId: "registered-client-a",
+    scopes: ["returns:read"],
+  });
+  await assert.rejects(
+    authorizeConnection(`Bearer ${token}`, "returns:submit", now),
+    (error) =>
+      error instanceof AgentAccessError && error.code === "insufficient_scope",
+  );
+  await assert.rejects(
+    authorizeConnection(`Bearer ${token}`, "returns:read", connection.expiresAt.getTime()),
+    AgentAccessError,
+  );
+  await assert.rejects(authorizeAgent(`Bearer ${token}`, shop, undefined, now), AgentAccessError);
+});
+
+test("a connection reaches only stores it has linked, and only while that sign-in lasts", async (t) => {
+  setup(t);
+  const connectionId = "0d9b7c1e-5a4f-4e2b-8c3d-1f6a7b8c9d0e";
+  let link: unknown = null;
+  const find = mockDelegate(t, prisma.agentStoreLink, "findUnique", async () => link);
+  await assert.rejects(
+    connectionStore(connectionId, shop, now),
+    (error) =>
+      error instanceof StoreLinkRequiredError &&
+      error.shop === shop &&
+      error.reason === "not_linked",
+  );
+  assert.deepEqual(find.mock.calls[0].arguments[0], {
+    where: { connectionId_shop: { connectionId, shop } },
+    include: { session: true },
+  });
+  link = { connectionId, shop, session: { ...session(), draftId: null } };
+  assert.deepEqual(await connectionStore(connectionId, shop, now), {
+    shop,
+    customerToken: "upstream-shopify-secret",
+    sessionId: "session",
+    customerSubjectHash: "customer-a",
+    draftId: null,
+  });
+  await assert.rejects(
+    connectionStore(connectionId, shop, now + 120_000),
+    (error) =>
+      error instanceof StoreLinkRequiredError && error.reason === "expired",
+  );
+  link = {
+    connectionId,
+    shop,
+    session: { ...session(), shop: "other.myshopify.com" },
+  };
+  await assert.rejects(connectionStore(connectionId, shop, now), StoreLinkRequiredError);
 });
 
 test("protected HTTP rejects cookie/upstream access and does not advertise Shopify as Refund's issuer", async (t) => {

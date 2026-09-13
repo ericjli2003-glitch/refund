@@ -130,6 +130,97 @@ test("every private tool checks its own permission before any Shopify call", asy
   assert.equal(upstream.mock.callCount(), 0);
 });
 
+test("the all-stores server names the store on every private tool and asks to link unlinked stores", async (t) => {
+  const { createCustomerReturnsMcpServer } = await import("./mcp.server");
+  const { StoreLinkRequiredError } = await import(
+    "./services/agent-access.server"
+  );
+  const upstream = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("No upstream request is allowed");
+  });
+  const authorized: Array<[string, string | undefined]> = [];
+  const linked: string[] = [];
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const server = createCustomerReturnsMcpServer({
+    authorize: async (scope, shop) => {
+      authorized.push([scope, shop]);
+      throw new StoreLinkRequiredError(shop!, "not_linked");
+    },
+    resourceMetadataUrl: "https://refund.test/oauth/resource/stores",
+    stores: {
+      find: async (merchant) => ({ status: "found", merchant }),
+      link: async (merchant) => {
+        linked.push(merchant);
+        return { status: "sign_in_required", linkUrl: "https://refund.test/x" };
+      },
+      list: async () => [],
+    },
+  });
+  const client = new Client({ name: "stores-test", version: "1" });
+  t.after(async () => {
+    await client.close();
+    await server.close();
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const { tools } = await client.listTools();
+  assert.deepEqual(
+    tools.map((tool) => tool.name),
+    [
+      "find_store",
+      "list_linked_stores",
+      "link_store",
+      "get_return_session",
+      "check_return_status",
+      "find_returnable_items",
+      "quote_return",
+      "confirm_return",
+      "add_return_tracking",
+    ],
+  );
+  for (const tool of tools.slice(3)) {
+    const schema = tool.inputSchema as { required?: string[] };
+    assert.equal(schema.required?.includes("shop"), true, tool.name);
+  }
+  assert.equal(
+    tools.find((tool) => tool.name === "link_store")?.annotations
+      ?.destructiveHint,
+    false,
+  );
+
+  const missingShop = await client.callTool({
+    name: "find_returnable_items",
+    arguments: {},
+  });
+  assert.equal(missingShop.isError, true);
+  assert.equal(authorized.length, 0);
+
+  const result = await client.callTool({
+    name: "find_returnable_items",
+    arguments: { shop: "example.myshopify.com" },
+  });
+  assert.equal(result.isError, true);
+  assert.deepEqual(authorized, [["returns:read", "example.myshopify.com"]]);
+  assert.deepEqual(result.structuredContent, {
+    linkRequired: true,
+    shop: "example.myshopify.com",
+    reason: "not_linked",
+    nextTool: "link_store",
+    returnSubmitted: false,
+    refundSubmitted: false,
+  });
+
+  const link = await client.callTool({
+    name: "link_store",
+    arguments: { merchant: "example.myshopify.com" },
+  });
+  assert.notEqual(link.isError, true);
+  assert.deepEqual(linked, ["example.myshopify.com"]);
+  assert.equal(upstream.mock.callCount(), 0);
+});
+
 test("returnable order discovery accepts Shopify's null non-returnable summary", async (t) => {
   const { createCustomerReturnsMcpServer } = await import("./mcp.server");
   t.mock.method(

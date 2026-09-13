@@ -11,8 +11,49 @@ This is a backend implementation for host acceptance testing, not a claim that
 either host has completed a live test or that an unconnected chat can discover
 Refund automatically. Customers must enable a connection in the host for this
 first version. Assistants find stores across merchants through `/stores`, `/llms.txt`
-and the public MCP `find_store` tool; each store still needs its own connection and
-Shopify sign-in, because Shopify customer accounts are separate for every store.
+and the public MCP `find_store` tool.
+
+## One connection for every store
+
+Setup page: `/connect`. MCP URL:
+
+```text
+https://refund-ztxz.onrender.com/mcp/stores
+```
+
+The customer adds this once. Approving it on Refund's consent page needs no
+store sign-in, because the connection alone reaches no purchases. Shopify
+customer accounts are separate for every store, so each store is linked with
+its own sign-in:
+
+1. The assistant finds the store with `find_store` and calls a return tool with
+   that `shop`. An unlinked or expired store returns `linkRequired` with
+   `nextTool: "link_store"`.
+2. `link_store` returns a link, valid for 20 minutes, to
+   `/connect/stores/link/:token`. The customer opens it, signs in with Shopify
+   (silently when still signed in to that store) and approves the link.
+3. Return tools for that store then work. `list_linked_stores` shows each link
+   and whether it is still active.
+
+Limits and protections:
+
+- **Four-hour store links.** A link uses that store's customer session, which
+  Shopify caps with no refresh token for apps like Refund. After it expires the
+  assistant calls `link_store` again; with a live Shopify session that is one
+  approval click and no code.
+- **30-day connection.** Refund access and refresh tokens are issued against the
+  connection, not a store. Access tokens still last one hour and rotate.
+- **Same browser.** Approving the connection sets an HttpOnly
+  `__Host-refund_connection` cookie, and a store link completes only in that
+  browser. Someone who sends a customer their own link can't attach the
+  customer's store sign-in to the sender's assistant.
+- A store link belongs to the customer at that store. Their return portal lists
+  it under connected assistants and can remove it. Signing out of that sign-in,
+  customer redaction and uninstall delete it. Signing in to another store in the
+  same browser does not.
+- All-stores tokens are rejected by `/mcp/:shop`, and single-store tokens by
+  `/mcp/stores`. Submission still needs the signed quote and explicit
+  confirmation, and every tool checks its scope.
 
 ## Connect the Testing store
 

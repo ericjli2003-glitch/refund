@@ -8,6 +8,7 @@ import {
 import { makeContinuation, returnHints } from "./return-intake.server";
 import { getAgentAuthorizationRequest } from "./agent-oauth-flow.server";
 import { claimIntakeDraft } from "./return-draft.server";
+import { getStoreLinkRequest } from "./store-link.server";
 import {
   appOrigin,
   customerIdentityHashes,
@@ -120,11 +121,24 @@ export async function discoverCustomerLogin(shop: string): Promise<Discovery> {
   return result;
 }
 
+// Where a completed or abandoned sign-in returns: an assistant's consent page,
+// an all-stores store link, or the customer's return portal.
+function signInReturnPath(pending: {
+  shop: string;
+  agentRequestId: string | null;
+  linkRequestId: string | null;
+}) {
+  if (pending.agentRequestId) return `/agent/authorize/${pending.agentRequestId}`;
+  if (pending.linkRequestId) return `/connect/stores/link/${pending.linkRequestId}`;
+  return null;
+}
+
 export async function startCustomerLogin(request: Request) {
   const url = new URL(request.url);
   const shop = await requireInstalledShop(url.searchParams.get("shop") || "");
   const hints = returnHints(url, shop);
   const agentRequestId = url.searchParams.get("agentRequest");
+  const linkRequestId = url.searchParams.get("linkRequest");
   if (agentRequestId) {
     const flow = await getAgentAuthorizationRequest(request, agentRequestId);
     if (flow.shop !== shop)
@@ -133,12 +147,21 @@ export async function startCustomerLogin(request: Request) {
         headers: privateHeaders,
       });
   }
+  if (linkRequestId) {
+    const link = await getStoreLinkRequest(request, linkRequestId);
+    if (link.shop !== shop)
+      throw new Response("This store link belongs to another store.", {
+        status: 400,
+        headers: privateHeaders,
+      });
+  }
   // Shopify issues no refresh token to public PKCE app clients, so an expired
-  // assistant connection needs a new sign-in. prompt=none reuses the customer's
-  // live Shopify session without a login screen; it is limited to assistant
-  // connections, and a failure falls back to the ordinary sign-in choice.
+  // assistant connection or store link needs a new sign-in. prompt=none reuses
+  // the customer's live Shopify session without a login screen; it is limited
+  // to those assistant flows, and a failure falls back to the ordinary choice.
   const silent =
-    Boolean(agentRequestId) && url.searchParams.get("silent") === "1";
+    Boolean(agentRequestId || linkRequestId) &&
+    url.searchParams.get("silent") === "1";
   const clientId = process.env.SHOPIFY_API_KEY;
   if (!clientId) throw new Error("Customer sign-in is not configured.");
   const discovery = await discoverCustomerLogin(shop);
@@ -153,7 +176,10 @@ export async function startCustomerLogin(request: Request) {
       where: {
         OR: [
           { expiresAt: { lt: new Date() } },
-          ...(old ? [{ id: old.id }] : []),
+          // The browser holds one store sign-in at a time. A session linked to
+          // an all-stores connection stays until it expires, so signing in to
+          // another store doesn't unlink this one.
+          ...(old ? [{ id: old.id, storeLinks: { none: {} } }] : []),
         ],
       },
     }),
@@ -171,6 +197,7 @@ export async function startCustomerLogin(request: Request) {
         itemHint: hints.itemName,
         draftId: hints.draftId,
         agentRequestId,
+        linkRequestId,
         expiresAt: new Date(Date.now() + 600_000),
       },
     }),
@@ -222,12 +249,13 @@ export async function finishCustomerLogin(request: Request) {
       status: 400,
       headers: privateHeaders,
     });
+  const returnPath = signInReturnPath(pending);
   if (url.searchParams.has("error") || !url.searchParams.get("code")) {
     // A silent attempt without a live Shopify session is expected, not a
     // failure: return to the ordinary sign-in choice without an error.
-    if (pending.agentRequestId)
+    if (returnPath)
       return redirect(
-        `/agent/authorize/${pending.agentRequestId}?${silent ? "silentTried=1" : "loginError=1"}`,
+        `${returnPath}?${silent ? "silentTried=1" : "loginError=1"}`,
         { headers: privateHeaders },
       );
     const retry = new URLSearchParams({
@@ -342,12 +370,7 @@ export async function finishCustomerLogin(request: Request) {
       },
     });
   });
-  return redirect(
-    pending.agentRequestId
-      ? `/agent/authorize/${pending.agentRequestId}`
-      : `/returns/${pending.shop}`,
-    {
-      headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
-    },
-  );
+  return redirect(returnPath ?? `/returns/${pending.shop}`, {
+    headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
+  });
 }

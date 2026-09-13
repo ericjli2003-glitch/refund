@@ -13,7 +13,10 @@ import prisma from "../db.server";
 import {
   agentScopes,
   authorizeAgent,
+  authorizeConnection,
+  isAllStoresResource,
   issueApprovedAgentGrant,
+  issueConnectionGrant,
 } from "./agent-access.server";
 import {
   agentFlowCookie,
@@ -195,9 +198,11 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
       },
     },
     async authorize(client, params, res) {
-      let shop: string;
+      // The resource is either one store's connection or the all-stores one.
+      let shop: string | null = null;
       try {
-        shop = shopFromAgentResource(params.resource);
+        if (!isAllStoresResource(params.resource))
+          shop = shopFromAgentResource(params.resource);
         assistantForRedirect(params.redirectUri);
         if (
           !client.redirect_uris.includes(params.redirectUri) ||
@@ -217,6 +222,7 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
         throw new InvalidScopeError("Unsupported Refund permissions.");
       }
       if (
+        shop &&
         !(await prisma.session.findFirst({
           where: { shop, isOnline: false },
           select: { id: true },
@@ -292,7 +298,7 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
           flow.clientId !== client.client_id ||
           flow.redirectUri !== redirectUri ||
           flow.resource !== resource?.href ||
-          !flow.sessionId ||
+          !(flow.sessionId || flow.connectionId) ||
           !flow.codeExpiresAt ||
           flow.codeExpiresAt.getTime() <= Date.now() ||
           flow.expiresAt.getTime() <= Date.now()
@@ -318,19 +324,31 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
         const refreshEnabled = Boolean(
           client.grant_types?.includes("refresh_token"),
         );
-        const grant = await issueApprovedAgentGrant(
-          {
-            sessionId: flow.sessionId,
-            shop: flow.shop,
-            clientId: flow.clientId,
-            resource: flow.resource,
-            scopes: flow.scopes,
-            customerApproved: true,
-          },
-          Date.now(),
-          tx,
-          refreshEnabled,
-        );
+        const grant = flow.connectionId
+          ? await issueConnectionGrant(
+              {
+                connectionId: flow.connectionId,
+                clientId: flow.clientId,
+                resource: flow.resource,
+                scopes: flow.scopes,
+              },
+              Date.now(),
+              tx,
+              refreshEnabled,
+            )
+          : await issueApprovedAgentGrant(
+              {
+                sessionId: flow.sessionId,
+                shop: flow.shop,
+                clientId: flow.clientId,
+                resource: flow.resource,
+                scopes: flow.scopes,
+                customerApproved: true,
+              },
+              Date.now(),
+              tx,
+              refreshEnabled,
+            );
         await tx.agentOAuthRequest.update({
           where: { id: flow.id },
           data: { grantHash: digest(grant.accessToken) },
@@ -371,7 +389,7 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
         const refreshTokenHash = digest(refreshToken);
         const grant = await tx.agentAccessGrant.findUnique({
           where: { refreshTokenHash },
-          include: { session: true },
+          include: { session: true, connection: true },
         });
         if (!grant || grant.clientId !== client.client_id) return null;
         if (grant.revokedAt) {
@@ -379,16 +397,24 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
             await revokeGrantChain(tx, grant.rotatedToTokenHash, now);
           return null;
         }
+        // A connection grant stays refreshable for the connection's lifetime;
+        // a single-store grant only while its customer session lasts.
+        const stillValid = grant.connection
+          ? !grant.connection.revokedAt &&
+            grant.connection.expiresAt.getTime() > now.getTime()
+          : Boolean(
+              grant.session &&
+                grant.session.shop === grant.shop &&
+                grant.customerSubjectHash === grant.session.customerSubjectHash &&
+                grant.session.customerSubjectHash &&
+                grant.session.accessToken &&
+                grant.session.expiresAt.getTime() > now.getTime(),
+            );
         if (
           !grant.refreshExpiresAt ||
           grant.refreshExpiresAt.getTime() <= now.getTime() ||
           (resource && resource.href !== grant.resource) ||
-          !grant.session ||
-          grant.session.shop !== grant.shop ||
-          grant.customerSubjectHash !== grant.session.customerSubjectHash ||
-          !grant.session.customerSubjectHash ||
-          !grant.session.accessToken ||
-          grant.session.expiresAt.getTime() <= now.getTime()
+          !stillValid
         )
           return null;
         const nextScopes = requestedScopes || grant.scopes;
@@ -413,19 +439,31 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
             await revokeGrantChain(tx, used.rotatedToTokenHash, now);
           return null;
         }
-        const next = await issueApprovedAgentGrant(
-          {
-            sessionId: grant.sessionId,
-            shop: grant.shop,
-            clientId: grant.clientId,
-            resource: grant.resource,
-            scopes: nextScopes,
-            customerApproved: true,
-          },
-          now.getTime(),
-          tx,
-          true,
-        );
+        const next = grant.connectionId
+          ? await issueConnectionGrant(
+              {
+                connectionId: grant.connectionId,
+                clientId: grant.clientId,
+                resource: grant.resource,
+                scopes: nextScopes,
+              },
+              now.getTime(),
+              tx,
+              true,
+            )
+          : await issueApprovedAgentGrant(
+              {
+                sessionId: grant.sessionId,
+                shop: grant.shop,
+                clientId: grant.clientId,
+                resource: grant.resource,
+                scopes: nextScopes,
+                customerApproved: true,
+              },
+              now.getTime(),
+              tx,
+              true,
+            );
         await tx.agentAccessGrant.update({
           where: { tokenHash: grant.tokenHash },
           data: { rotatedToTokenHash: digest(next.accessToken) },
@@ -449,7 +487,8 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
         where: { tokenHash: digest(token) },
       });
       if (!grant) throw new InvalidGrantError("Invalid access token.");
-      await authorizeAgent(`Bearer ${token}`, grant.shop);
+      if (grant.connectionId) await authorizeConnection(`Bearer ${token}`);
+      else await authorizeAgent(`Bearer ${token}`, grant.shop ?? "");
       return {
         token,
         clientId: grant.clientId,

@@ -208,8 +208,8 @@ The manifest's `ucp` block states these boundaries, including
 - Resolving the store for a return (`start_return`) still requires an exact
   domain or a unique published name.
 - Sign-in stays per store. Shopify customer accounts are separate for every
-  store, so there is no cross-store customer identity, and each store needs its
-  own assistant connection.
+  store, so there is no cross-store customer identity. One assistant
+  connection still covers every store; see decision 8.
 
 ### 6. Refund timing and receiving returned items (decided and implemented)
 
@@ -269,6 +269,28 @@ carrier, so there is no carrier account, per-label cost or off-platform billing.
 
 **Not yet verified against a live store:** reading label fields and adding
 tracking on a return whose refund was already processed.
+
+### 8. One assistant connection for every store (decided and implemented)
+
+Customers who connect Refund expect it to work with every store in the Refund
+network, not one store per connector. `/mcp/stores` is that connection
+(`AgentConnection`); `/mcp/:shop` remains for single-store use.
+
+- Approving the connection needs no store sign-in and grants no purchase
+  access. Each store is linked (`AgentStoreLink`) with that store's own Shopify
+  customer sign-in through the `link_store` tool, and each private tool takes a
+  `shop` argument.
+- A link is the store's customer session, so it lasts at most four hours
+  (decision 2). The connection lasts 30 days, and its refresh tokens are bound
+  to the connection.
+- Links complete only in the browser that approved the connection, which
+  prevents attaching a customer's sign-in to someone else's connection.
+- Store links cascade with the customer session (sign-out, redaction,
+  uninstall) and appear in privacy reports. A new sign-in in the same browser
+  keeps linked sessions.
+
+**Not yet verified with a live host:** that ChatGPT and Claude show the
+`link_store` URL clearly and retry with `shop` after the customer links.
 
 ## Review findings
 

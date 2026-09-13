@@ -1,6 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { createCookie, redirect } from "react-router";
 import prisma from "../db.server";
-import { agentResource, agentScopes } from "./agent-access.server";
+import {
+  CONNECTION_LIFETIME_MS,
+  agentResource,
+  agentScopes,
+} from "./agent-access.server";
 import {
   appOrigin,
   digest,
@@ -10,6 +15,10 @@ import {
   unseal,
 } from "./customer-security.server";
 import { normalizeShopDomain } from "./customer-account.server";
+import {
+  connectionBrowserCookie,
+  readConnectionBrowser,
+} from "./store-link.server";
 
 export const agentFlowCookie = createCookie("__Host-refund_agent_flow", {
   httpOnly: true,
@@ -142,41 +151,69 @@ export async function finishAgentConsent(
       status: 403,
       headers: privateHeaders,
     });
-  if (decision === "allow" && (!session || session.shop !== flow.shop))
+  const allStores = flow.shop === null;
+  if (
+    decision === "allow" &&
+    !allStores &&
+    (!session || session.shop !== flow.shop)
+  )
     throw new Response("Sign in to this merchant before allowing access.", {
       status: 401,
       headers: privateHeaders,
     });
   // Revalidate installation and the registered callback even on a saved flow.
   assistantForRedirect(flow.redirectUri);
-  const installed = await prisma.session.findFirst({
-    where: { shop: flow.shop, isOnline: false },
-    select: { id: true },
-  });
-  if (!installed)
-    throw new Response("This merchant disconnected Refund.", {
-      status: 404,
-      headers: privateHeaders,
+  if (!allStores) {
+    const installed = await prisma.session.findFirst({
+      where: { shop: flow.shop!, isOnline: false },
+      select: { id: true },
     });
+    if (!installed)
+      throw new Response("This merchant disconnected Refund.", {
+        status: 404,
+        headers: privateHeaders,
+      });
+  }
   const code = randomToken();
-  const claimed = await prisma.agentOAuthRequest.updateMany({
-    where: {
-      id: flow.id,
-      status: "PENDING",
-      expiresAt: { gt: new Date() },
-      browserHash: flow.browserHash,
-    },
-    data:
-      decision === "allow"
-        ? {
-            status: "APPROVED",
-            sessionId: session!.id,
-            codeHash: digest(code),
-            codeExpiresAt: new Date(Date.now() + 120_000),
-          }
-        : { status: "DENIED" },
+  // An all-stores connection needs no store sign-in to approve because it
+  // grants no purchase access by itself. The approving browser is recorded so
+  // store links, which do grant access, complete only in this browser.
+  const browser =
+    allStores && decision === "allow"
+      ? ((await readConnectionBrowser(request)) ?? randomToken())
+      : null;
+  const connectionId = browser ? randomUUID() : null;
+  const claimed = await prisma.$transaction(async (tx) => {
+    const result = await tx.agentOAuthRequest.updateMany({
+      where: {
+        id: flow.id,
+        status: "PENDING",
+        expiresAt: { gt: new Date() },
+        browserHash: flow.browserHash,
+      },
+      data:
+        decision === "allow"
+          ? {
+              status: "APPROVED",
+              ...(connectionId ? { connectionId } : { sessionId: session!.id }),
+              codeHash: digest(code),
+              codeExpiresAt: new Date(Date.now() + 120_000),
+            }
+          : { status: "DENIED" },
+    });
+    if (result.count === 1 && connectionId && browser)
+      await tx.agentConnection.create({
+        data: {
+          id: connectionId,
+          clientId: flow.clientId,
+          scopes: flow.scopes,
+          browserHash: digest(browser),
+          expiresAt: new Date(Date.now() + CONNECTION_LIFETIME_MS),
+        },
+      });
+    return result.count;
   });
-  if (claimed.count !== 1)
+  if (claimed !== 1)
     throw new Response("This consent was already used.", {
       status: 409,
       headers: privateHeaders,
@@ -190,5 +227,12 @@ export async function finishAgentConsent(
     );
   if (decision === "allow") callback.searchParams.set("code", code);
   else callback.searchParams.set("error", "access_denied");
-  return redirect(callback.href, { headers: privateHeaders });
+  return redirect(callback.href, {
+    headers: {
+      ...privateHeaders,
+      ...(browser
+        ? { "Set-Cookie": await connectionBrowserCookie.serialize(browser) }
+        : {}),
+    },
+  });
 }

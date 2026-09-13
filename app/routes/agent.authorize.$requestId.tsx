@@ -28,13 +28,29 @@ export const headers = () => ({
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const rawId = params.requestId || "";
   const flow = await getAgentAuthorizationRequest(request, rawId);
-  await requireInstalledShop(flow.shop);
-  const session = await getCustomerSession(request, flow.shop);
   const url = new URL(request.url);
-  const loginQuery = new URLSearchParams({
-    shop: flow.shop,
-    agentRequest: rawId,
-  });
+  const common = {
+    assistant: assistantForRedirect(flow.redirectUri),
+    callbackHost: new URL(flow.redirectUri).hostname,
+    scopes: flow.scopes,
+    csrf: flow.csrfToken,
+    loginError: url.searchParams.has("loginError"),
+  };
+  // The all-stores connection is approved without any store sign-in.
+  if (flow.shop === null)
+    return data(
+      {
+        ...common,
+        allStores: true,
+        shop: null,
+        authenticated: false,
+        loginUrl: "",
+      },
+      { headers: headers() },
+    );
+  const shop = await requireInstalledShop(flow.shop);
+  const session = await getCustomerSession(request, shop);
+  const loginQuery = new URLSearchParams({ shop, agentRequest: rawId });
   // Try the customer's live Shopify session once, silently, so reconnecting an
   // expired assistant usually needs no code. The consent click still follows.
   if (
@@ -47,14 +63,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     });
   return data(
     {
-      shop: flow.shop,
-      assistant: assistantForRedirect(flow.redirectUri),
-      callbackHost: new URL(flow.redirectUri).hostname,
-      scopes: flow.scopes,
+      ...common,
+      allStores: false,
+      shop,
       authenticated: Boolean(session),
-      csrf: flow.csrfToken,
       loginUrl: `/customer/login?${loginQuery}`,
-      loginError: url.searchParams.has("loginError"),
     },
     { headers: headers() },
   );
@@ -63,7 +76,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
 export async function action({ request, params }: ActionFunctionArgs) {
   const rawId = params.requestId || "";
   const flow = await getAgentAuthorizationRequest(request, rawId);
-  const session = await getCustomerSession(request, flow.shop);
+  const session = flow.shop
+    ? await getCustomerSession(request, flow.shop)
+    : null;
   return finishAgentConsent(request, rawId, session);
 }
 
@@ -79,10 +94,18 @@ export default function AgentConsent() {
   const busy = useNavigation().state !== "idle";
   return (
     <main className="customer-returns">
-      <h1>Connect {info.assistant} to your returns</h1>
-      <p>
-        Merchant: <strong>{info.shop}</strong>
-      </p>
+      <h1>
+        {info.allStores
+          ? `Connect ${info.assistant} to Refund for every store`
+          : `Connect ${info.assistant} to your returns`}
+      </h1>
+      {info.allStores ? (
+        <p>This connection works with every store that uses Refund.</p>
+      ) : (
+        <p>
+          Merchant: <strong>{info.shop}</strong>
+        </p>
+      )}
       <p>
         Refund will send the connection back to{" "}
         <strong>{info.callbackHost}</strong>.
@@ -98,24 +121,39 @@ export default function AgentConsent() {
           <li key={scope}>{descriptions[scope]}</li>
         ))}
       </ul>
-      <p>
-        The assistant receives short-lived access that may refresh only while
-        your verified customer session remains active, for up to four hours.
-        Your Shopify sign-in credentials stay private. You can disconnect this
-        assistant from the return portal at any time.
-      </p>
+      {info.allStores ? (
+        <>
+          <p>
+            Approving this doesn’t give access to any purchases yet. When you
+            ask about a return, your assistant sends you a link to sign in to
+            that store with Shopify, and you approve each store separately.
+            Open those links in this browser.
+          </p>
+          <p>
+            Each store link lasts up to four hours, and this connection lasts up
+            to 30 days. Refund remembers which stores you’ve linked to it. You
+            can unlink a store from that store’s return portal, or remove Refund
+            from your assistant at any time.
+          </p>
+        </>
+      ) : (
+        <p>
+          The assistant receives short-lived access that may refresh only while
+          your verified customer session remains active, for up to four hours.
+          Your Shopify sign-in credentials stay private. You can disconnect this
+          assistant from the return portal at any time.
+        </p>
+      )}
       <p>
         <strong>Connecting does not submit a return or refund.</strong> The
         merchant’s return rules still apply.
       </p>
-      {!info.authenticated && (
+      {!info.allStores && !info.authenticated && (
         <p>
-          <a href={info.loginUrl}>
-            Sign in with the email used for this purchase
-          </a>
+          <a href={info.loginUrl}>Sign in with the email used for this purchase</a>
         </p>
       )}
-      {info.authenticated && (
+      {!info.allStores && info.authenticated && (
         <p>
           Using your verified customer session for this merchant.{" "}
           <a href={info.loginUrl}>Sign in as a different customer</a>
@@ -123,7 +161,7 @@ export default function AgentConsent() {
       )}
       <Form method="post">
         <input type="hidden" name="csrf" value={info.csrf} />
-        {info.authenticated && (
+        {(info.allStores || info.authenticated) && (
           <button name="decision" value="allow" disabled={busy}>
             Allow {info.assistant} access
           </button>

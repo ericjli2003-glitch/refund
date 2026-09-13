@@ -29,9 +29,41 @@ export class AgentAccessError extends Error {
   }
 }
 
+// An all-stores connection asked for a store it hasn't linked, or whose
+// Shopify customer session has ended. Linking the store again fixes both.
+export class StoreLinkRequiredError extends Error {
+  constructor(
+    public readonly shop: string,
+    public readonly reason: "not_linked" | "expired",
+  ) {
+    super(
+      reason === "expired"
+        ? `The link to ${shop} has expired. Use link_store to renew it; if the customer is still signed in to that store, no sign-in code is needed.`
+        : `This connection isn't linked to ${shop} yet. Use link_store so the customer can sign in to that store.`,
+    );
+  }
+}
+
 export function agentResource(shop: string) {
   return new URL(`/mcp/${normalizeShopDomain(shop)}`, appOrigin()).href;
 }
+
+// One assistant connection covering every Refund store. It reaches a store's
+// purchases only after the customer links that store with its own Shopify
+// sign-in, because Shopify customer accounts are separate for every store.
+export const allStoresResource = () => new URL("/mcp/stores", appOrigin()).href;
+export const isAllStoresResource = (value: URL | string | null | undefined) =>
+  (typeof value === "string" ? value : value?.href) === allStoresResource();
+
+export const CONNECTION_LIFETIME_MS = 30 * 86_400_000;
+
+const REFUND_ACCESS_TOKEN = /^Bearer (rfa_[A-Za-z0-9_-]{43})$/i;
+
+const scopeListSchema = z
+  .array(z.enum(agentScopes))
+  .min(1)
+  .max(agentScopes.length)
+  .refine((values) => new Set(values).size === values.length);
 
 const approvedGrantSchema = z
   .object({
@@ -39,11 +71,7 @@ const approvedGrantSchema = z
     shop: z.string(),
     clientId: z.string().trim().min(1).max(2048),
     resource: z.string().url(),
-    scopes: z
-      .array(z.enum(agentScopes))
-      .min(1)
-      .max(agentScopes.length)
-      .refine((values) => new Set(values).size === values.length),
+    scopes: scopeListSchema,
     customerApproved: z.literal(true),
   })
   .strict();
@@ -110,6 +138,63 @@ export async function issueApprovedAgentGrant(
   };
 }
 
+const connectionGrantSchema = z
+  .object({
+    connectionId: z.string().uuid(),
+    clientId: z.string().trim().min(1).max(2048),
+    resource: z.string().url(),
+    scopes: scopeListSchema,
+  })
+  .strict();
+
+// Same broker contract as issueApprovedAgentGrant, for an approved all-stores
+// connection. The grant carries no Shopify credential; store links do.
+export async function issueConnectionGrant(
+  input: unknown,
+  now = Date.now(),
+  db: Pick<Prisma.TransactionClient, "agentConnection" | "agentAccessGrant"> = prisma,
+  issueRefreshToken = false,
+) {
+  const approved = connectionGrantSchema.parse(input);
+  if (!isAllStoresResource(approved.resource))
+    throw new AgentAccessError("invalid_token");
+  const connection = await db.agentConnection.findUnique({
+    where: { id: approved.connectionId },
+  });
+  if (
+    !connection ||
+    connection.revokedAt ||
+    connection.expiresAt.getTime() <= now ||
+    connection.clientId !== approved.clientId ||
+    approved.scopes.some((scope) => !connection.scopes.includes(scope))
+  )
+    throw new AgentAccessError("invalid_token");
+  const accessToken = `rfa_${randomToken()}`;
+  const refreshToken = issueRefreshToken ? `rfr_${randomToken()}` : undefined;
+  const expiresAt = new Date(
+    Math.min(now + 60 * 60_000, connection.expiresAt.getTime()),
+  );
+  await db.agentAccessGrant.create({
+    data: {
+      tokenHash: digest(accessToken),
+      connectionId: connection.id,
+      clientId: approved.clientId,
+      resource: approved.resource,
+      scopes: approved.scopes,
+      expiresAt,
+      refreshTokenHash: refreshToken ? digest(refreshToken) : null,
+      refreshExpiresAt: refreshToken ? connection.expiresAt : null,
+    },
+  });
+  return {
+    accessToken,
+    refreshToken,
+    expiresAt,
+    refreshExpiresAt: refreshToken ? connection.expiresAt : undefined,
+    scopes: approved.scopes,
+  };
+}
+
 export async function authorizeAgent(
   authorization: string | null,
   shop: string,
@@ -118,7 +203,7 @@ export async function authorizeAgent(
 ) {
   // Only Refund's opaque tokens are accepted, never Shopify access tokens,
   // browser cookies, intake links, ID tokens or signed return quotes.
-  const token = authorization?.match(/^Bearer (rfa_[A-Za-z0-9_-]{43})$/i)?.[1];
+  const token = authorization?.match(REFUND_ACCESS_TOKEN)?.[1];
   if (!token) throw new AgentAccessError("invalid_token");
   const grant = await prisma.agentAccessGrant.findUnique({
     where: { tokenHash: digest(token) },
@@ -126,6 +211,8 @@ export async function authorizeAgent(
   });
   if (
     !grant ||
+    // An all-stores grant never authorizes a single-store endpoint.
+    grant.connectionId ||
     grant.revokedAt ||
     grant.expiresAt.getTime() <= now ||
     grant.shop !== shop ||
@@ -154,7 +241,7 @@ export async function authorizeAgent(
   try {
     customerToken = unseal(
       grant.session.accessToken,
-      `${grant.sessionId}:${shop}`,
+      `${grant.session.id}:${shop}`,
     );
   } catch {
     throw new AgentAccessError("invalid_token");
@@ -163,45 +250,190 @@ export async function authorizeAgent(
     shop,
     customerToken,
     clientId: grant.clientId,
-    sessionId: grant.sessionId,
-    customerSubjectHash: grant.customerSubjectHash,
+    sessionId: grant.session.id,
+    customerSubjectHash: grant.session.customerSubjectHash,
     draftId: grant.session.draftId,
   };
 }
 
-export async function revokeAgentGrant(publicId: string, sessionId: string) {
-  // Session ownership is required even when the caller knows a grant identifier.
-  return prisma.agentAccessGrant.updateMany({
-    where: { publicId, sessionId, revokedAt: null },
-    data: { revokedAt: new Date() },
+// Authorizes an all-stores connection itself. Store access is a separate check
+// (connectionStore), made for the specific store each tool call names.
+export async function authorizeConnection(
+  authorization: string | null,
+  requiredScope?: AgentScope,
+  now = Date.now(),
+) {
+  const token = authorization?.match(REFUND_ACCESS_TOKEN)?.[1];
+  if (!token) throw new AgentAccessError("invalid_token");
+  const grant = await prisma.agentAccessGrant.findUnique({
+    where: { tokenHash: digest(token) },
+    include: { connection: true },
   });
+  if (
+    !grant ||
+    grant.revokedAt ||
+    grant.expiresAt.getTime() <= now ||
+    !grant.connection ||
+    grant.connection.revokedAt ||
+    grant.connection.expiresAt.getTime() <= now ||
+    grant.connection.clientId !== grant.clientId ||
+    !isAllStoresResource(grant.resource) ||
+    !grant.scopes.length ||
+    grant.scopes.some((scope) => !agentScopes.includes(scope as AgentScope))
+  )
+    throw new AgentAccessError("invalid_token");
+  if (requiredScope && !grant.scopes.includes(requiredScope))
+    throw new AgentAccessError("insufficient_scope", requiredScope);
+  return {
+    connectionId: grant.connection.id,
+    clientId: grant.clientId,
+    scopes: grant.scopes,
+  };
 }
 
-export async function listAgentGrants(sessionId: string) {
-  const grants = await prisma.agentAccessGrant.findMany({
-    where: { sessionId, revokedAt: null, expiresAt: { gt: new Date() } },
-    select: { publicId: true, clientId: true, scopes: true, expiresAt: true },
+// The customer's live Shopify session for one store linked to a connection.
+export async function connectionStore(
+  connectionId: string,
+  shopInput: string,
+  now = Date.now(),
+) {
+  const shop = normalizeShopDomain(shopInput);
+  const [link, installed] = await Promise.all([
+    prisma.agentStoreLink.findUnique({
+      where: { connectionId_shop: { connectionId, shop } },
+      include: { session: true },
+    }),
+    prisma.session.findFirst({
+      where: { shop, isOnline: false },
+      select: { id: true },
+    }),
+  ]);
+  if (!installed) throw new Error(`${shop} no longer uses Refund.`);
+  if (!link) throw new StoreLinkRequiredError(shop, "not_linked");
+  const { session } = link;
+  if (
+    session.shop !== shop ||
+    !session.accessToken ||
+    !session.customerSubjectHash ||
+    session.expiresAt.getTime() <= now
+  )
+    throw new StoreLinkRequiredError(shop, "expired");
+  let customerToken: string;
+  try {
+    customerToken = unseal(session.accessToken, `${session.id}:${shop}`);
+  } catch {
+    throw new StoreLinkRequiredError(shop, "expired");
+  }
+  return {
+    shop,
+    customerToken,
+    sessionId: session.id,
+    customerSubjectHash: session.customerSubjectHash,
+    draftId: session.draftId,
+  };
+}
+
+export async function listConnectionStores(connectionId: string, now = Date.now()) {
+  const links = await prisma.agentStoreLink.findMany({
+    where: { connectionId },
+    include: { session: { select: { expiresAt: true } } },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
-  return Promise.all(
-    grants.map(async (grant) => {
-      const client = await prisma.agentOAuthClient.findUnique({
-        where: { id: grant.clientId },
-      });
-      const info = client
-        ? (JSON.parse(
-            unseal(client.sealedInformation, `agent-client:${grant.clientId}`),
-          ) as { client_name?: string })
-        : null;
-      return {
-        id: grant.publicId,
-        name: info?.client_name || "Assistant",
-        scopes: grant.scopes,
-        expiresAt: grant.expiresAt.toISOString(),
-      };
+  const directory = await prisma.merchantDirectory.findMany({
+    where: { shop: { in: links.map((link) => link.shop) } },
+    select: { shop: true, name: true },
+  });
+  return links.map((link) => ({
+    shop: link.shop,
+    name: directory.find((entry) => entry.shop === link.shop)?.name ?? link.shop,
+    active: link.session.expiresAt.getTime() > now,
+    expiresAt: link.session.expiresAt.toISOString(),
+  }));
+}
+
+export async function assistantName(clientId: string) {
+  const client = await prisma.agentOAuthClient.findUnique({
+    where: { id: clientId },
+  });
+  if (!client) return "Assistant";
+  try {
+    const info = JSON.parse(
+      unseal(client.sealedInformation, `agent-client:${clientId}`),
+    ) as { client_name?: string };
+    return info.client_name || "Assistant";
+  } catch {
+    return "Assistant";
+  }
+}
+
+// Store links belong to the customer at that store, not only to the sign-in
+// that created them: a later sign-in to the same store can still see and
+// remove them.
+async function customerStoreLinks(sessionId: string) {
+  const owner = await prisma.customerReturnSession.findUnique({
+    where: { id: sessionId },
+    select: { shop: true, customerSubjectHash: true },
+  });
+  return owner?.customerSubjectHash
+    ? {
+        shop: owner.shop,
+        session: { customerSubjectHash: owner.customerSubjectHash },
+      }
+    : null;
+}
+
+export async function revokeAgentGrant(publicId: string, sessionId: string) {
+  // Session ownership is required even when the caller knows an identifier.
+  // The identifier is either a single-store grant or an all-stores store link.
+  const revoked = await prisma.agentAccessGrant.updateMany({
+    where: { publicId, sessionId, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  const owned = await customerStoreLinks(sessionId);
+  const unlinked = owned
+    ? await prisma.agentStoreLink.deleteMany({
+        where: { id: publicId, ...owned },
+      })
+    : { count: 0 };
+  return { count: revoked.count + unlinked.count };
+}
+
+export async function listAgentGrants(sessionId: string) {
+  const owned = await customerStoreLinks(sessionId);
+  const [grants, links] = await Promise.all([
+    prisma.agentAccessGrant.findMany({
+      where: { sessionId, revokedAt: null, expiresAt: { gt: new Date() } },
+      select: { publicId: true, clientId: true, scopes: true, expiresAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 100,
     }),
-  );
+    prisma.agentStoreLink.findMany({
+      where: owned
+        ? { ...owned, session: { ...owned.session, expiresAt: { gt: new Date() } } }
+        : { id: "" },
+      select: {
+        id: true,
+        connection: { select: { clientId: true, scopes: true } },
+        session: { select: { expiresAt: true } },
+      },
+      take: 100,
+    }),
+  ]);
+  return Promise.all([
+    ...grants.map(async (grant) => ({
+      id: grant.publicId,
+      name: await assistantName(grant.clientId),
+      scopes: grant.scopes,
+      expiresAt: grant.expiresAt.toISOString(),
+    })),
+    ...links.map(async (link) => ({
+      id: link.id,
+      name: `${await assistantName(link.connection.clientId)} (all-stores connection)`,
+      scopes: link.connection.scopes,
+      expiresAt: link.session.expiresAt.toISOString(),
+    })),
+  ]);
 }
 
 export function agentChallenge(

@@ -110,10 +110,12 @@ model CustomerReturnSession {
   itemHint            String?
   draftId             String?
   agentRequestId      String?
+  linkRequestId       String?
   expiresAt           DateTime
   createdAt           DateTime            @default(now())
   agentGrants         AgentAccessGrant[]
   agentAuthorizations AgentOAuthRequest[]
+  storeLinks          AgentStoreLink[]
 
   @@index([shop, customerSubjectHash])
   @@index([expiresAt])
@@ -154,7 +156,8 @@ model AgentOAuthClient {
 model AgentOAuthRequest {
   id            String                 @id
   clientId      String
-  shop          String
+  // Null for an all-stores connection request.
+  shop          String?
   resource      String
   redirectUri   String
   scopes        String[]
@@ -168,6 +171,7 @@ model AgentOAuthRequest {
   grantHash     String?
   sessionId     String?
   session       CustomerReturnSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  connectionId  String?
   expiresAt     DateTime
   createdAt     DateTime               @default(now())
 
@@ -179,27 +183,79 @@ model AgentOAuthRequest {
 // Refund credentials are separate from the upstream Shopify token. Browser
 // session deletion (logout, rotation, redaction, uninstall) removes all grants.
 model AgentAccessGrant {
-  tokenHash           String                @id
+  tokenHash           String                 @id
   // Opaque identifier for customer revoke controls; never derived from a token.
-  publicId            String                @unique @default(dbgenerated("(gen_random_uuid())::text"))
-  refreshTokenHash    String?               @unique
+  publicId            String                 @unique @default(dbgenerated("(gen_random_uuid())::text"))
+  refreshTokenHash    String?                @unique
   refreshExpiresAt    DateTime?
   rotatedToTokenHash  String?
-  sessionId           String
-  session             CustomerReturnSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  shop                String
-  customerSubjectHash String
+  // A single-store grant has a session, shop and customer; an all-stores
+  // grant has a connection instead.
+  sessionId           String?
+  session             CustomerReturnSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  shop                String?
+  customerSubjectHash String?
+  connectionId        String?
+  connection          AgentConnection?       @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   clientId            String
   resource            String
   scopes              String[]
   expiresAt           DateTime
   revokedAt           DateTime?
-  createdAt           DateTime              @default(now())
+  createdAt           DateTime               @default(now())
 
   @@index([sessionId])
   @@index([shop, customerSubjectHash])
+  @@index([connectionId])
   @@index([expiresAt])
   @@index([refreshExpiresAt])
+}
+
+// One assistant connection covering every Refund store. It holds no Shopify
+// credential; each linked store keeps its own customer session.
+model AgentConnection {
+  id           String                  @id @default(uuid())
+  clientId     String
+  scopes       String[]
+  // The browser that approved the connection; store links complete only there.
+  browserHash  String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime                @default(now())
+  grants       AgentAccessGrant[]
+  stores       AgentStoreLink[]
+  linkRequests AgentStoreLinkRequest[]
+
+  @@index([expiresAt])
+}
+
+model AgentStoreLink {
+  id           String                @id @default(uuid())
+  connectionId String
+  connection   AgentConnection       @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  shop         String
+  sessionId    String
+  session      CustomerReturnSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime              @default(now())
+
+  @@unique([connectionId, shop])
+  @@index([sessionId])
+  @@index([shop])
+}
+
+model AgentStoreLinkRequest {
+  id           String          @id
+  connectionId String
+  connection   AgentConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  shop         String
+  csrfToken    String
+  status       String          @default("PENDING")
+  expiresAt    DateTime
+  createdAt    DateTime        @default(now())
+
+  @@index([connectionId])
+  @@index([shop])
+  @@index([expiresAt])
 }
 
 model AgentReturn {
