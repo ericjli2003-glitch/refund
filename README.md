@@ -112,8 +112,10 @@ Reauthentication never overwrites the merchant's existing financial settings.
 currently installed merchants. `/stores/testing-bl7vdfur.myshopify.com` is the
 public Testing Storefront return page and registers the same top-level tools as
 the theme embed. The page includes canonical metadata, visible merchant identity,
-structured data, and a sitemap entry. Only Testing is published in this release;
-other installations are not automatically publicly listed.
+structured data, and a sitemap entry. Installed stores are listed by default, and
+a merchant can hide the store from the Refund dashboard. `/llms.txt` lists them for
+assistants, and the public MCP's `find_store` tool searches them by partial name or
+website, returning every match for the customer to choose from.
 
 Intake accepts exact published names/aliases as well as domains. Multiple name
 matches require the customer to identify the website; no match is selected by

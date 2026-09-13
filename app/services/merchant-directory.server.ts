@@ -116,11 +116,9 @@ export async function syncMerchantDirectory(
   };
   const profile = await prisma.merchantDirectory.upsert({
     where: { shop },
-    create: {
-      shop,
-      ...data,
-      discoveryPublished: shop === "testing-bl7vdfur.myshopify.com",
-    },
+    // New installations are listed by default. Updates never change the
+    // merchant's listing choice.
+    create: { shop, ...data },
     update: data,
   });
   return { ...profile, currencyCode: info.currencyCode };

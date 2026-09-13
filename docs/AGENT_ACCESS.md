@@ -10,7 +10,9 @@ the existing browser tools remain separate and available.
 This is a backend implementation for host acceptance testing, not a claim that
 either host has completed a live test or that an unconnected chat can discover
 Refund automatically. Customers must enable a connection in the host for this
-first version. Cross-merchant discovery and directory publication remain future work.
+first version. Assistants find stores across merchants through `/stores`, `/llms.txt`
+and the public MCP `find_store` tool; each store still needs its own connection and
+Shopify sign-in, because Shopify customer accounts are separate for every store.
 
 ## Connect the Testing store
 

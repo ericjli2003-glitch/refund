@@ -55,7 +55,8 @@ model MerchantDirectory {
   primaryDomain String   @unique
   name          String
   aliases       String[] @default([])
-  discoveryPublished Boolean @default(false)
+  // Listed by default; the merchant can hide the store from the directory.
+  discoveryPublished Boolean @default(true)
   verifiedAt    DateTime @default(now())
 }
 

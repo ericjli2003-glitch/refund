@@ -131,7 +131,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     query,
     saved: url.searchParams.get("saved") === "true",
     retried: url.searchParams.get("retried") === "true",
+    listingSaved: url.searchParams.get("listingSaved") === "true",
     returnPortalUrl: `${appOrigin()}/returns/${session.shop}`,
+    listed: merchant.discoveryPublished,
     merchantProfileUrl: merchant.discoveryPublished
       ? appOrigin() + merchantProfilePath(session.shop)
       : null,
@@ -191,6 +193,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       };
     }
     return redirect("/app?retried=true");
+  }
+
+  if (formData.get("intent") === "setListing") {
+    // Listing affects only the public store directory, never an existing return.
+    await prisma.merchantDirectory.updateMany({
+      where: { shop: session.shop },
+      data: { discoveryPublished: formData.get("listed") === "true" },
+    });
+    return redirect("/app?listingSaved=true");
   }
 
   const returnWindowDays = Number(formData.get("returnWindowDays"));
@@ -336,6 +347,8 @@ export default function RefundDashboard() {
     query,
     saved,
     retried,
+    listed,
+    listingSaved,
     privacyResolved,
     policy,
     siteToolsActivationUrl,
@@ -477,6 +490,49 @@ export default function RefundDashboard() {
           Check the return&apos;s status under Recent customer-agent returns.
         </s-banner>
       )}
+
+      {listingSaved && (
+        <s-banner heading="Directory listing saved" tone="success">
+          {listed
+            ? "Your store is listed in Refund's store directory."
+            : "Your store is hidden from Refund's store directory."}
+        </s-banner>
+      )}
+
+      <s-section heading="Store directory listing">
+        <form
+          method="post"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit(event.currentTarget);
+          }}
+        >
+          <input type="hidden" name="intent" value="setListing" />
+          <input type="hidden" name="listed" value={listed ? "false" : "true"} />
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              {listed
+                ? "Your store is listed, so customers and assistants can find it by name in Refund's store directory."
+                : "Your store is hidden from Refund's store directory."}
+            </s-paragraph>
+            <s-paragraph color="subdued">
+              Listing publishes only your store name, website and Refund return
+              page, at /stores, in /llms.txt and to assistants searching the
+              directory. Customers still verify every purchase with your
+              store&apos;s Shopify sign-in. Hiding the store doesn&apos;t affect
+              your return portal, your app proxy guide, or returns started from
+              your own website.
+            </s-paragraph>
+            <s-box>
+              <s-button type="submit" variant="secondary">
+                {listed
+                  ? "Hide my store from the directory"
+                  : "List my store in the directory"}
+              </s-button>
+            </s-box>
+          </s-stack>
+        </form>
+      </s-section>
 
       {actionData?.error && (
         <s-banner heading={actionData.heading} tone="critical">

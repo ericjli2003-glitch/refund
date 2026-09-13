@@ -196,9 +196,10 @@ test("public MCP lists and executes only anonymous intake, never a refund tool",
     const { tools } = await client.listTools();
     assert.deepEqual(
       tools.map((tool) => tool.name),
-      ["start_return"],
+      ["find_store", "start_return"],
     );
-    assert.deepEqual(tools[0]._meta?.securitySchemes, [{ type: "noauth" }]);
+    for (const tool of tools)
+      assert.deepEqual(tool._meta?.securitySchemes, [{ type: "noauth" }]);
     const result = await client.callTool({
       name: "start_return",
       arguments: { merchant: shop, orderName: "#1001" },
@@ -267,7 +268,7 @@ test("public HTTP surfaces enforce JSON limits and return working MCP JSON respo
   assert.equal(rpc.status, 200);
   assert.deepEqual(
     (await rpc.json()).result.tools.map((tool: { name: string }) => tool.name),
-    ["start_return"],
+    ["find_store", "start_return"],
   );
 });
 

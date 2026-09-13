@@ -78,7 +78,7 @@ await rpc("initialize", {
 const list = await rpc("tools/list");
 assert.deepEqual(
   list.tools.map((tool) => tool.name),
-  ["start_return"],
+  ["find_store", "start_return"],
 );
 console.log(
   "Live health, OAuth metadata, protected MCP challenge, browser preflight and anonymous tool discovery passed.",

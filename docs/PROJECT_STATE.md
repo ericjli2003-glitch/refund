@@ -193,6 +193,24 @@ merchants paste it again after changing their guidance.
 The manifest's `ucp` block states these boundaries, including
 `refundPublishesUcpOrderEvents: false`.
 
+### 5. Cross-merchant discovery (decided and implemented)
+
+- Installed stores are listed in Refund's store directory by default
+  (`MerchantDirectory.discoveryPublished` defaults to true, and the migration
+  listed existing stores, which had no hide control before). Merchants can hide
+  the store from the dashboard. Only the Shopify store name, primary domain and
+  Refund return page are published, and uninstalling removes the listing.
+- Assistants find stores through `/stores`, `/llms.txt`, `GET /api/merchants`
+  and the public MCP `find_store` tool, which matches partial names or exact
+  domains across listed, installed stores. Several matches are all returned for
+  the customer to choose from; nothing is picked for them, and no match stops
+  the request.
+- Resolving the store for a return (`start_return`) still requires an exact
+  domain or a unique published name.
+- Sign-in stays per store. Shopify customer accounts are separate for every
+  store, so there is no cross-store customer identity, and each store needs its
+  own assistant connection.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.
