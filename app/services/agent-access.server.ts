@@ -7,7 +7,9 @@ import {
   customerIdentityHashes,
   digest,
   randomToken,
+  seal,
   unseal,
+  unsealWithRotation,
 } from "./customer-security.server";
 import {
   verifiedLinksAllowed,
@@ -384,10 +386,22 @@ export async function connectionStore(
   if (!link) throw new StoreLinkRequiredError(shop, "not_linked");
   const access = storeLinkAccess(link, policy, installed.scope, now);
   if (!access) throw new StoreLinkRequiredError(shop, "expired");
-  if (now - link.lastUsedAt.getTime() > LINK_USE_RECORD_INTERVAL_MS)
+  // A link can last years while used; move its customer ID onto the current
+  // secret so retiring an old secret never silently breaks it.
+  const context = storeLinkCustomerContext(connectionId, shop);
+  const reseal =
+    typeof access !== "string" &&
+    link.sealedCustomerId &&
+    !unsealWithRotation(link.sealedCustomerId, context).current
+      ? { sealedCustomerId: seal(access.customerId, context) }
+      : {};
+  if (
+    now - link.lastUsedAt.getTime() > LINK_USE_RECORD_INTERVAL_MS ||
+    "sealedCustomerId" in reseal
+  )
     await prisma.agentStoreLink.updateMany({
       where: { id: link.id },
-      data: { lastUsedAt: new Date(now) },
+      data: { lastUsedAt: new Date(now), ...reseal },
     });
   return {
     shop,
@@ -395,6 +409,44 @@ export async function connectionStore(
     customerSubjectHash: link.customerSubjectHash,
     draftId: typeof access === "string" ? link.session?.draftId : null,
   };
+}
+
+// Revoked connections are kept a day so a late replayed token still finds its
+// connection revoked rather than missing.
+const REVOKED_CONNECTION_RETENTION_MS = 86_400_000;
+
+// Deletes access that can no longer be used, so nothing is kept longer than
+// needed: ended connections (with their grants, store links and link
+// requests), store links unused for a year, and expired sign-ins, grants and
+// authorization requests. Runs with background maintenance.
+export async function pruneExpiredCustomerAccess(now = Date.now()) {
+  const current = new Date(now);
+  await prisma.$transaction([
+    prisma.agentConnection.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: current } },
+          { revokedAt: { lt: new Date(now - REVOKED_CONNECTION_RETENTION_MS) } },
+        ],
+      },
+    }),
+    prisma.agentStoreLink.deleteMany({
+      where: { lastUsedAt: { lt: new Date(now - STORE_LINK_IDLE_MS) } },
+    }),
+    prisma.agentStoreLinkRequest.deleteMany({
+      where: { expiresAt: { lt: current } },
+    }),
+    prisma.agentOAuthRequest.deleteMany({ where: { expiresAt: { lt: current } } }),
+    prisma.agentAccessGrant.deleteMany({
+      where: {
+        expiresAt: { lt: current },
+        OR: [{ refreshExpiresAt: null }, { refreshExpiresAt: { lt: current } }],
+      },
+    }),
+    prisma.customerReturnSession.deleteMany({
+      where: { expiresAt: { lt: current } },
+    }),
+  ]);
 }
 
 export async function listConnectionStores(connectionId: string, now = Date.now()) {

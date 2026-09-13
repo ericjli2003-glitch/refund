@@ -28,6 +28,15 @@ export function publicRatePolicy(path: string): RatePolicy | null {
     return { bucket: "authorize", limit: 60, seconds: 600 };
   if (normalized === "/token" || normalized === "/revoke")
     return { bucket: "oauth-token", limit: 120, seconds: 60 };
+  // Each sign-in start writes a pending session and calls Shopify. These are
+  // browser requests, so the customer's own address is the identity; assistant
+  // MCP calls arrive from shared host addresses and rely on bearer tokens.
+  if (
+    normalized === "/customer/login" ||
+    normalized === "/customer/callback" ||
+    normalized.startsWith("/connect/stores/link/")
+  )
+    return { bucket: "sign-in", limit: 60, seconds: 60 };
   if (["/mcp", "/api/return-intake", "/start-return"].includes(normalized))
     return { bucket: "intake", limit: 120, seconds: 60 };
   if (

@@ -62,7 +62,11 @@ cannot finish cleanly are marked `NEEDS_ATTENTION` for merchant review.
   PKCE, one-use state, verified ID-token signatures/nonce, and same-origin CSRF
   checks protect sign-in and portal actions. Sessions are removed on sign-out,
   expiry cleanup, customer redaction, shop redaction, and uninstall.
-- Customer identity is stored as a keyed hash, not a raw customer ID.
+- Customer identity is stored as a keyed hash. The one exception is an
+  assistant store link that stays active without a new sign-in, which keeps the
+  verified Shopify customer ID encrypted (AES-256-GCM) so Refund can act for
+  that customer. Disconnecting the assistant, customer redaction, uninstall and
+  a year without use delete it.
 - Refund does not collect card numbers. Shopify refunds the original order
   transaction.
 - The app handles Shopify's customer data-request, customer-redaction,

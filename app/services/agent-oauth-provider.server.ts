@@ -52,25 +52,47 @@ export function agentOAuthMetadata() {
 }
 
 async function revokeGrantChain(
-  db: Pick<Prisma.TransactionClient, "agentAccessGrant">,
+  db: Pick<
+    Prisma.TransactionClient,
+    "agentAccessGrant" | "agentConnection" | "agentStoreLink" | "agentStoreLinkRequest"
+  >,
   firstTokenHash: string,
   revokedAt = new Date(),
 ) {
   let tokenHash: string | null = firstTokenHash;
   const visited = new Set<string>();
+  const connections = new Set<string>();
   while (tokenHash && visited.size < 100 && !visited.has(tokenHash)) {
     visited.add(tokenHash);
-    const grant: { rotatedToTokenHash: string | null } | null =
-      await db.agentAccessGrant.findUnique({
-        where: { tokenHash },
-        select: { rotatedToTokenHash: true },
-      });
+    const grant: {
+      rotatedToTokenHash: string | null;
+      connectionId: string | null;
+    } | null = await db.agentAccessGrant.findUnique({
+      where: { tokenHash },
+      select: { rotatedToTokenHash: true, connectionId: true },
+    });
     if (!grant) break;
+    if (grant.connectionId) connections.add(grant.connectionId);
     await db.agentAccessGrant.updateMany({
       where: { tokenHash, revokedAt: null },
       data: { revokedAt },
     });
     tokenHash = grant.rotatedToTokenHash;
+  }
+  // Removing Refund from an assistant, or a replayed code or refresh token,
+  // ends an all-stores connection outright: every grant it issued stops
+  // working, and the store links holding encrypted customer IDs are deleted.
+  for (const connectionId of connections) {
+    await db.agentConnection.updateMany({
+      where: { id: connectionId, revokedAt: null },
+      data: { revokedAt },
+    });
+    await db.agentAccessGrant.updateMany({
+      where: { connectionId, revokedAt: null },
+      data: { revokedAt },
+    });
+    await db.agentStoreLink.deleteMany({ where: { connectionId } });
+    await db.agentStoreLinkRequest.deleteMany({ where: { connectionId } });
   }
 }
 

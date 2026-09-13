@@ -18,7 +18,9 @@ import {
   customerIdentityHash,
   digest,
   randomToken,
+  refundSecrets,
   seal,
+  unsealWithRotation,
 } from "./customer-security.server";
 
 const shop = "example.myshopify.com";
@@ -437,6 +439,53 @@ test("a store link uses the live sign-in, then the verified customer only where 
     link = { ...base, session: null, ...patch };
     await assert.rejects(connectionStore(connectionId, shop, now), expired);
   }
+});
+
+test("a verified link opened with a retired secret is re-sealed with the current one", async (t) => {
+  setup(t);
+  const connectionId = "0d9b7c1e-5a4f-4e2b-8c3d-1f6a7b8c9d0e";
+  const customerId = "gid://shopify/Customer/42";
+  const context = storeLinkCustomerContext(connectionId, shop);
+  const original = {
+    REFUND_SECRET: process.env.REFUND_SECRET,
+    REFUND_PREVIOUS_SECRETS: process.env.REFUND_PREVIOUS_SECRETS,
+  };
+  t.after(() => {
+    for (const [name, value] of Object.entries(original))
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+  });
+  const link = {
+    id: "link",
+    connectionId,
+    shop,
+    customerSubjectHash: customerIdentityHash(customerId),
+    sealedCustomerId: seal(customerId, context),
+    lastUsedAt: new Date(now),
+    session: null,
+  };
+  process.env.REFUND_PREVIOUS_SECRETS = refundSecrets()[0];
+  process.env.REFUND_SECRET = "rotated-refund-secret";
+  mockDelegate(t, prisma.agentStoreLink, "findUnique", async () => link);
+  mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
+    verifiedStoreLinks: true,
+    returnRulesConfirmedAt: new Date(now),
+    finalSaleCollectionIds: [],
+  }));
+  const update = mockDelegate(t, prisma.agentStoreLink, "updateMany", async () => ({
+    count: 1,
+  }));
+  assert.deepEqual(
+    (await connectionStore(connectionId, shop, now)).customerToken,
+    { customerId },
+  );
+  const { data } = update.mock.calls[0].arguments[0] as {
+    data: { sealedCustomerId: string };
+  };
+  assert.deepEqual(unsealWithRotation(data.sealedCustomerId, context), {
+    value: customerId,
+    current: true,
+  });
 });
 
 test("protected HTTP rejects cookie/upstream access and does not advertise Shopify as Refund's issuer", async (t) => {

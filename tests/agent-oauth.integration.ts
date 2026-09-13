@@ -14,6 +14,7 @@ import {
   connectionStore,
   listAgentGrants,
   listConnectionStores,
+  pruneExpiredCustomerAccess,
   revokeAgentGrant,
 } from "../app/services/agent-access.server";
 import {
@@ -861,6 +862,73 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       await assert.rejects(
         connectionStore(connectionId, shop),
         StoreLinkRequiredError,
+      );
+
+      // Removing Refund from the assistant revokes its token, which ends the
+      // whole connection and deletes everything it still held.
+      assert.equal(
+        await prisma.agentStoreLinkRequest.count({ where: { connectionId } }),
+        1,
+      );
+      assert.equal(
+        (
+          await post("/revoke", {
+            client_id: client.client_id,
+            token: next.refresh_token,
+          })
+        ).status,
+        200,
+      );
+      await assert.rejects(authorizeConnection(`Bearer ${next.access_token}`));
+      assert.ok(
+        (
+          await prisma.agentConnection.findUniqueOrThrow({
+            where: { id: connectionId },
+          })
+        ).revokedAt,
+      );
+      assert.equal(
+        await prisma.agentStoreLinkRequest.count({ where: { connectionId } }),
+        0,
+      );
+
+      // Maintenance deletes a link unused for a year and an ended connection,
+      // and keeps a connection that is still in use.
+      const inUse = await prisma.agentConnection.create({
+        data: {
+          clientId: client.client_id,
+          scopes: ["returns:read"],
+          browserHash: "ci",
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      });
+      await prisma.agentStoreLink.create({
+        data: {
+          connectionId: inUse.id,
+          shop,
+          customerSubjectHash: "idle-customer",
+          lastUsedAt: new Date(Date.now() - 366 * 86_400_000),
+        },
+      });
+      const ended = await prisma.agentConnection.create({
+        data: {
+          clientId: client.client_id,
+          scopes: ["returns:read"],
+          browserHash: "ci",
+          expiresAt: new Date(Date.now() - 1_000),
+        },
+      });
+      await pruneExpiredCustomerAccess();
+      assert.equal(
+        await prisma.agentStoreLink.count({ where: { connectionId: inUse.id } }),
+        0,
+      );
+      assert.ok(
+        await prisma.agentConnection.findUnique({ where: { id: inUse.id } }),
+      );
+      assert.equal(
+        await prisma.agentConnection.findUnique({ where: { id: ended.id } }),
+        null,
       );
     },
   );

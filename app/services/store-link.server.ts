@@ -31,6 +31,8 @@ export const connectionBrowserCookie = createCookie("__Host-refund_connection", 
 });
 
 const LINK_REQUEST_LIFETIME_MS = 20 * 60_000;
+// Unfinished link requests a connection can hold at once.
+const PENDING_LINK_REQUEST_LIMIT = 10;
 const OPAQUE_TOKEN = /^[\w-]{43}$/;
 
 export async function readConnectionBrowser(request: Request) {
@@ -73,6 +75,17 @@ export async function startStoreLink(
         existing.sealedCustomerId && verifiedLinksAllowed(policy, installed?.scope),
       ),
       nextStep: `This connection can already use ${store.shop}. Pass it as the shop argument.`,
+    };
+  const pending = await prisma.agentStoreLinkRequest.count({
+    where: { connectionId, status: "PENDING", expiresAt: { gt: new Date(now) } },
+  });
+  if (pending >= PENDING_LINK_REQUEST_LIMIT)
+    return {
+      status: "too_many_link_requests" as const,
+      merchant: store,
+      linkUrl: null,
+      nextStep:
+        "This connection has several unfinished store links. Ask the customer to finish one, or wait up to 20 minutes for them to expire, before starting another.",
     };
   const raw = randomToken();
   await prisma.agentStoreLinkRequest.deleteMany({

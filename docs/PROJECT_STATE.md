@@ -337,8 +337,9 @@ Severity is this reviewer's judgement, not a Shopify determination.
   webhooks match every identity hash, idempotent retries accept older hashes,
   OAuth client registrations are re-sealed when read, and a customer's older
   records are re-keyed to the current hash when that customer next signs in.
-  Customer IDs are never stored, so sign-in is the only point re-keying is
-  possible.
+  Customer IDs are stored only encrypted on assistant store links (decision 9),
+  so sign-in remains the main point re-keying is possible; verified store links
+  re-seal their customer ID onto the current secret when used.
 
   To decouple an existing deployment, set `REFUND_SECRET` to a new random value
   and `REFUND_PREVIOUS_SECRETS` to the current `SHOPIFY_API_SECRET` value, and
@@ -365,6 +366,53 @@ Severity is this reviewer's judgement, not a Shopify determination.
   context AAD; portal writes require an exact `Origin` match plus a CSRF header.
 - `authorizeAgent` accepts only Refund's own opaque `rfa_` tokens and rejects
   Shopify tokens, cookies, intake links and signed quotes.
+
+### Security review, 2026-09-12
+
+Covered every public, customer, assistant and merchant route, OAuth, store
+links, webhooks, data retention, dependencies and committed files.
+
+Checked and sound: all five webhook routes use `authenticate.webhook` (HMAC);
+the app proxy uses `authenticate.public.appProxy`; merchant routes use
+`authenticate.admin`; `npm audit --omit=dev` reports no vulnerabilities; no
+secrets are committed; the one `dangerouslySetInnerHTML` (store page JSON-LD)
+escapes `<`; consent and store-link pages send `frame-ancestors 'none'`;
+customer pages send `no-store`, `nosniff` and `X-Frame-Options: DENY`.
+
+Fixed:
+
+- **Expired access was never purged.** Expired sessions, grants and
+  authorization requests were cleaned only opportunistically, and ended
+  connections and idle store links (which hold encrypted customer IDs) were
+  never deleted. `pruneExpiredCustomerAccess` now runs with background
+  maintenance.
+- **Disconnecting an all-stores assistant left its data.** Revoking one of its
+  tokens (or a replayed code or refresh token) now revokes the connection and
+  all its grants and deletes its store links and link requests.
+- **Customer sign-in had no rate limit.** Each `/customer/login` request writes a
+  pending session and calls Shopify. `/customer/login`, `/customer/callback` and
+  store-link pages share a 60-per-minute per-address limit.
+- **`link_store` could create unbounded link requests.** A connection may hold
+  10 unfinished requests at once.
+- **No HSTS.** The production server sends `Strict-Transport-Security`.
+- **Year-long links pinned retired secrets.** A verified link opened with a
+  retired secret is re-sealed with the current one when used.
+- **Deploy scopes drifted.** `render.yaml` and `.env.example` now include
+  `read_products`, matching `shopify.app.toml`.
+
+Accepted risks:
+
+- `/mcp/*` has no per-address limit because assistant hosts share egress
+  addresses; bearer tokens gate it, and the OAuth `/token` limit is per address.
+- Someone in control of a customer's assistant account can use a verified store
+  link until it is removed or unused for a year. Returns still need the exact
+  confirmed quote, stay under the merchant's automatic-refund limit and refund
+  only the original payment method.
+- Verified-link returns use the merchant's saved Refund rules, not Shopify's;
+  drift is detected only from signed-in quotes.
+- Without `read_all_orders`, the Admin API returns only the last 60 days of
+  orders, so verified links see a shorter purchase history than a signed-in
+  customer.
 
 ## Environment note for agents
 
