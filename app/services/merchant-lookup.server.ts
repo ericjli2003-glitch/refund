@@ -80,8 +80,8 @@ export async function searchPublishedMerchants(query: string, limit = 20) {
   return profiles.filter((profile) => installed.has(profile.shop)).slice(0, limit);
 }
 
-// Several matches are returned for the customer to choose from; nothing is
-// ever picked on their behalf, and a store that isn't found stops the request.
+// A single match is used without asking; several matches go back to the
+// customer to choose from, and a store that isn't found stops the request.
 export async function findStore(query: string) {
   const label = opportunityLabel(query);
   if (!label)
@@ -110,13 +110,13 @@ export async function findStore(query: string) {
       status: "multiple_matches" as const,
       selectionRequired: true,
       nextStep:
-        "Show these store names and websites and ask the customer which one they bought from. Never choose for them. Then call start_return with that store's domain.",
+        "Ask the customer which of these stores they bought from, in one short, friendly question listing each store's name and website. Don't pick for them. Then continue with the store they choose.",
     };
   return {
     ...outcome,
     status: "matched" as const,
     selectionRequired: false,
     nextStep:
-      "Confirm with the customer that this is the store they bought from, then call start_return with its domain or open its returnPage.",
+      "Only one store matches, so go ahead with it without asking the customer to confirm. Mention its name naturally, like \"Found it, let's get your return started,\" so they can correct you if it's the wrong store. Then continue with its domain.",
   };
 }

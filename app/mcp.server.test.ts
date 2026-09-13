@@ -189,6 +189,12 @@ test("the all-stores server names the store on every private tool and asks to li
       ?.destructiveHint,
     false,
   );
+  const linkSchema = tools.find((tool) => tool.name === "link_store")
+    ?.inputSchema as { properties?: Record<string, unknown>; required?: string[] };
+  assert.ok(linkSchema.properties?.email);
+  assert.deepEqual(linkSchema.required, ["merchant"]);
+  // Hosts receive the shared conversation style with the tools.
+  assert.match(client.getInstructions() ?? "", /store associate/);
 
   const missingShop = await client.callTool({
     name: "find_returnable_items",

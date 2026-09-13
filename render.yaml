@@ -27,6 +27,10 @@ services:
         value: read_orders,write_orders,read_products,read_returns,write_returns,customer_read_customers,customer_read_orders,customer_write_orders,write_app_proxy
       - key: PUBLIC_SUPPORT_EMAIL
         sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: REFUND_EMAIL_FROM
+        sync: false
 
 databases:
   - name: refund-db

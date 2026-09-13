@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
+import { returnsChatStyle } from "./services/chat-style.server";
 import { findStore } from "./services/merchant-lookup.server";
 import {
   intakeSchema,
@@ -9,10 +10,10 @@ import {
 // Only the authenticated app-proxy handler may supply a bound shop. Never take
 // this value from JSON-RPC arguments or an unsigned query parameter.
 export function createIntakeMcpServer(shop?: string) {
-  const server = new McpServer({
-    name: "Refund merchant return intake",
-    version: "0.2.0",
-  });
+  const server = new McpServer(
+    { name: "Refund merchant return intake", version: "0.3.0" },
+    { instructions: returnsChatStyle },
+  );
   // A merchant-bound proxy endpoint already knows its store; only the global
   // endpoint searches across stores.
   if (!shop)
@@ -21,7 +22,7 @@ export function createIntakeMcpServer(shop?: string) {
       {
         title: "Find a store that uses Refund",
         description:
-          "Search Refund's directory of listed Shopify stores by business name or website. Returns matching stores with their websites and return pages. If several match, show them and ask the customer which one they bought from; never pick for them. If none match, stop. Send only a business name or domain, never customer, order, item, payment or sign-in details. Does not read purchases, start a return, or refund money.",
+          "Search Refund's directory of listed Shopify stores by business name or website. If exactly one store matches, go ahead with it without asking and mention its name naturally. If several match, ask which one they bought from in one short, friendly question listing each name and website. If none match, let the customer know kindly and stop. Send only a business name or domain, never customer, order, item, payment or sign-in details. Doesn't read purchases, start a return, or refund money.",
         inputSchema: {
           merchant: z
             .string()
@@ -50,7 +51,7 @@ export function createIntakeMcpServer(shop?: string) {
             content: [
               {
                 type: "text",
-                text: "Store search is unavailable. Stop without starting a return; nothing was submitted.",
+                text: "Store search isn't available right now. Let the customer know kindly and suggest trying again shortly. Don't start a return; nothing was submitted.",
               },
             ],
           };
@@ -85,7 +86,7 @@ export function createIntakeMcpServer(shop?: string) {
           content: [
             {
               type: "text",
-              text: "Could not identify the merchant. Stop without starting a return, substituting an item/store, requesting a URL fallback, or contacting the merchant. Nothing was submitted.",
+              text: "Refund couldn't find that store. Let the customer know kindly that it may not offer returns through Refund yet, and stop without starting a return, substituting another store or item, asking for a URL, or contacting the store yourself. Nothing was submitted.",
             },
           ],
         };

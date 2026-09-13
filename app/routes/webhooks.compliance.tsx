@@ -3,6 +3,8 @@ import type { ActionFunctionArgs } from "react-router";
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
 import { customerIdentityHashes } from "../services/customer-security.server";
+import { normalizeEmail } from "../services/email-verification.server";
+import { emailSubject } from "../services/verified-customer-returns.server";
 
 function customerIdFromPayload(payload: Record<string, unknown>) {
   const customer = payload.customer;
@@ -20,13 +22,29 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const numericCustomerId = customerIdFromPayload(payload);
   // Match every configured secret so records hashed before a rotation are
   // still redacted and reported, not silently missed.
-  const subjectHashes = numericCustomerId
+  const customerIdHashes = numericCustomerId
     ? customerIdentityHashes(
         numericCustomerId.startsWith("gid://shopify/Customer/")
           ? numericCustomerId
           : `gid://shopify/Customer/${numericCustomerId}`,
       )
     : [];
+  // Store links confirmed by order email are keyed by that email instead.
+  const payloadEmail =
+    payload.customer &&
+    typeof payload.customer === "object" &&
+    "email" in payload.customer &&
+    typeof payload.customer.email === "string"
+      ? payload.customer.email
+      : null;
+  let emailHashes: string[] = [];
+  try {
+    if (payloadEmail)
+      emailHashes = customerIdentityHashes(emailSubject(normalizeEmail(payloadEmail)));
+  } catch {
+    // A malformed email matches nothing.
+  }
+  const subjectHashes = [...customerIdHashes, ...emailHashes];
   const customerSubjectHash = { in: subjectHashes };
 
   if (topic === "CUSTOMERS_REDACT") {
@@ -39,6 +57,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // Store links outlive sessions, so they are deleted directly.
     await prisma.$transaction([
       prisma.agentStoreLink.deleteMany({ where: { shop, customerSubjectHash } }),
+      prisma.emailVerification.deleteMany({
+        where: { shop, emailHash: customerSubjectHash },
+      }),
       prisma.customerReturnSession.deleteMany({
         where: { shop, customerSubjectHash },
       }),
@@ -165,6 +186,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       prisma.merchantDirectory.deleteMany({ where: { shop } }),
       prisma.agentStoreLinkRequest.deleteMany({ where: { shop } }),
       prisma.agentStoreLink.deleteMany({ where: { shop } }),
+      prisma.emailVerification.deleteMany({ where: { shop } }),
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
       prisma.returnDraft.deleteMany({ where: { shop } }),
       prisma.agentOAuthRequest.deleteMany({ where: { shop } }),

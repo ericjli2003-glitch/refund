@@ -44,7 +44,7 @@ export const stoppedDiscovery = {
   returnSubmitted: false,
   refundSubmitted: false,
   nextStep:
-    "Stop here. Do not start a return, look up purchases, request a quote, substitute another store or item, or contact the merchant. Do not ask for a URL as a fallback. Nothing has been submitted.",
+    "Stop here, and let the customer know kindly that this store doesn't offer returns through Refund yet, so the store itself is the best place to ask. Don't start a return, look up purchases, quote, substitute another store or item, ask for a URL instead, or contact the store yourself. Nothing has been submitted.",
 };
 
 // Process-local abuse budget; no customer identifiers or IP addresses are kept.

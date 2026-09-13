@@ -34,7 +34,8 @@ export function publicRatePolicy(path: string): RatePolicy | null {
   if (
     normalized === "/customer/login" ||
     normalized === "/customer/callback" ||
-    normalized.startsWith("/connect/stores/link/")
+    normalized.startsWith("/connect/stores/link/") ||
+    normalized.startsWith("/verify/email/")
   )
     return { bucket: "sign-in", limit: 60, seconds: 60 };
   if (["/mcp", "/api/return-intake", "/start-return"].includes(normalized))

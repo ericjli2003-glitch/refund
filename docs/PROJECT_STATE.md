@@ -319,6 +319,42 @@ fees match `Return.suggestedFinancialOutcome` after `returnRequest` (a mismatch
 stops before any refund), the `customer_id` order filter, and the
 `read_products` permission prompt.
 
+### 10. Linking a store by order email (decided and implemented)
+
+The per-store Shopify sign-in was the main friction for customers, and guest
+shoppers don't think of themselves as having an account to sign in to.
+
+- `link_store` takes the email used at checkout. Refund checks it against the
+  store's orders (Admin API `orders` filtered by `email`; reading the email
+  field needs Level 2 protected customer data access) and sends a one-tap
+  confirmation through Resend (`RESEND_API_KEY`, `REFUND_EMAIL_FROM`).
+- The confirmation page asks for a two-digit number shown only in the
+  customer's chat, so someone who types another person's email can't finish
+  the link; a wrong number cancels it. Opening the link changes nothing, so
+  email scanners can't confirm on the customer's behalf.
+- An address with no order gets a "we couldn't find an order" note, and the
+  chat response is identical, so Refund can't reveal who shops where. Sending
+  is capped at 3 emails per address per store and 10 per connection an hour.
+- Email-confirmed links use the Admin API path from decision 9: only orders
+  whose email matches, with the merchant's confirmed return rules. They are
+  keyed by a hash of the email, which customer redaction also matches.
+- Stores that can't use it (email not configured, return rules not saved, or
+  order email access missing) fall back to the Shopify link, which is instant
+  when the customer is already signed in to the store.
+- A single store match is used without asking; several matches go back to the
+  customer. Both MCP servers send hosts a shared style guide
+  (`returnsChatStyle`) for a warm, brief, plain-language conversation.
+
+**Tradeoff:** Built for Shopify requirement 5.12.4 asks returns apps to support
+the Customer Account API as the primary authentication method. Shopify sign-in
+is still supported, but email confirmation is now the default in chat, which
+may affect Built for Shopify eligibility. Claude and ChatGPT don't pass a
+user's email to MCP servers, so the customer provides it.
+
+**Before it works live:** request Level 2 protected customer data (email) in the
+Partner Dashboard, create a Resend account with a verified sending domain, and
+set `RESEND_API_KEY` and `REFUND_EMAIL_FROM` in Render.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

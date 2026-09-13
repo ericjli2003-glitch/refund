@@ -66,10 +66,11 @@ export default function ConnectAllStores() {
       <section>
         <h2>2. Ask about a return</h2>
         <p>
-          Try: “Find my returnable purchases from [store] and show me a quote. Do
-          not submit anything.” Your assistant finds the store and sends you a
-          link to sign in to it with Shopify. Open it in the same browser you
-          used to approve Refund, then return to the conversation.
+          Try: “I’d like to return something from [store].” Your assistant finds
+          the store and asks for the email you used at checkout. Tap the
+          confirmation Refund emails you, pick the number your assistant shows,
+          and you’re connected. No store account needed. A few stores ask you to
+          sign in with Shopify instead; open those links in this browser.
         </p>
         <p>
           Most stores stay linked while you keep using them. If a store asks you
