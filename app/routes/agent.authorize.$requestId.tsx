@@ -125,9 +125,10 @@ export default function AgentConsent() {
         <>
           <p>
             Approving this doesn’t give access to any purchases yet. When you
-            ask about a return, your assistant sends you a link to sign in to
-            that store with Shopify, and you approve each store separately.
-            Open those links in this browser.
+            ask about a return, your assistant asks for the email you used at
+            that store, and Refund sends you a one-tap confirmation. A few
+            stores ask you to sign in with Shopify instead; open those links in
+            this browser.
           </p>
           <p>
             Most stores stay linked while you keep using them; a store can ask

@@ -51,7 +51,9 @@ use Shopify Billing and update the listing, terms, and reviewer instructions.
 | `customer_write_orders` | Request the customer-confirmed return in their own account. |
 
 Request protected customer data access for order and customer fields used in the
-workflow. The app hashes the customer identifier in operational records and does
+workflow, including Level 2 access to the order email: Refund matches the email
+a customer gives their assistant against the store's orders before emailing
+that address a one-tap confirmation. The app hashes the customer identifier in operational records and does
 not store Customer Account access tokens there.
 Short-lived portal tokens are encrypted in `CustomerReturnSession`, separate
 from operational records, and are purged by redaction and uninstall handlers.

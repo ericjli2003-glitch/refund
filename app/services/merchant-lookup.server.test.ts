@@ -41,7 +41,7 @@ function directory(t: TestContext, profiles: Profile[], installed: string[]) {
 const SNOW = { shop: "snow.myshopify.com", name: "Snow Supply", primaryDomain: "snowsupply.com" };
 const SNOWBOARD = { shop: "board.myshopify.com", name: "Snowboard Hut", primaryDomain: "snowboardhut.com" };
 
-test("a single listed, installed store matches by partial name and still asks the customer to confirm", async (t) => {
+test("a single listed, installed store matches by partial name and is used without asking", async (t) => {
   const { searches, opportunities } = directory(t, [SNOW], [SNOW.shop]);
   const result = await findStore("snow supply");
   assert.equal(result.status, "matched");
@@ -53,7 +53,8 @@ test("a single listed, installed store matches by partial name and still asks th
       returnPage: "https://refund.test/stores/snow.myshopify.com",
     },
   ]);
-  assert.match(result.nextStep, /Confirm with the customer/);
+  assert.equal(result.selectionRequired, false);
+  assert.match(result.nextStep, /go ahead with it without asking/);
   const where = (searches[0] as { where: Record<string, unknown> }).where;
   assert.equal(where.discoveryPublished, true);
   assert.equal(opportunities.length, 0);

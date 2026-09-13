@@ -9,8 +9,10 @@ quote, confirmation and status tools. Connecting is not refund consent.
 See [customer connection setup and test limits](docs/AGENT_ACCESS.md).
 One connection covers every Refund store: set it up at `/connect` with the MCP
 URL `/mcp/stores`, then link each store with that store's own Shopify sign-in the
-first time the assistant needs it. By default a linked store stays linked without
-another sign-in, using return rules the merchant confirms in Refund. A single
+first time the assistant needs it, usually by tapping a confirmation Refund emails
+to the address on their order, with no store account needed. By default a linked
+store stays linked without another sign-in, using return rules the merchant
+confirms in Refund. A single
 store's connection (`/connect/:shop`, `/mcp/:shop`) is still available.
 
 ## Alternative browser flow

@@ -21,8 +21,15 @@ type UserError = { field?: string[]; message: string };
 // rules, so Refund applies the fees and final-sale collections the merchant
 // confirmed in Refund instead.
 export type VerifiedCustomer = { customerId: string };
+// The email on the customer's orders, confirmed from their inbox. Covers
+// guest checkouts as well as account holders.
+export type VerifiedEmail = { email: string };
 // A string is a live Shopify customer access token.
-export type CustomerAccess = string | VerifiedCustomer;
+export type CustomerAccess = string | VerifiedCustomer | VerifiedEmail;
+
+// Identity for a confirmed order email, hashed like Shopify customer IDs but in
+// its own namespace.
+export const emailSubject = (email: string) => `email:${email}`;
 
 export const FINAL_SALE_COLLECTION_LIMIT = 25;
 export const RETURN_RULES_SCOPE = "read_products";
@@ -71,6 +78,7 @@ const ORDERS_QUERY = `#graphql
     $first: Int!
     $query: String!
     $withProducts: Boolean!
+    $withEmail: Boolean!
   ) {
     orders(first: $first, sortKey: PROCESSED_AT, reverse: true, query: $query) {
       nodes {
@@ -78,6 +86,7 @@ const ORDERS_QUERY = `#graphql
         name
         processedAt
         customer { id }
+        email @include(if: $withEmail)
         lineItems(first: 50) {
           nodes {
             id
@@ -96,6 +105,7 @@ type AdminOrder = {
   name: string;
   processedAt: string;
   customer: { id: string } | null;
+  email?: string | null;
   lineItems: {
     nodes: Array<{
       id: string;
@@ -214,13 +224,28 @@ async function finalSaleProducts(
 
 export async function verifiedCustomerOrders(
   shop: string,
-  customer: VerifiedCustomer,
+  access: VerifiedCustomer | VerifiedEmail,
   admin?: AdminGraphql,
 ): Promise<{ customerId: string; orders: ReturnableOrder[] }> {
-  const numericId = customer.customerId.match(
-    /^gid:\/\/shopify\/Customer\/(\d+)$/,
-  )?.[1];
-  if (!numericId) throw new Error("This store link has an invalid customer.");
+  let query: string;
+  let subject: string;
+  let owns: (order: AdminOrder) => boolean;
+  if ("email" in access) {
+    const email = access.email;
+    if (!/^[^"\\\s@]+@[^"\\\s@]+$/.test(email))
+      throw new Error("This store link has an invalid email.");
+    query = `email:"${email}"`;
+    subject = emailSubject(email);
+    owns = (order) => order.email?.toLowerCase() === email;
+  } else {
+    const numericId = access.customerId.match(
+      /^gid:\/\/shopify\/Customer\/(\d+)$/,
+    )?.[1];
+    if (!numericId) throw new Error("This store link has an invalid customer.");
+    query = `customer_id:${numericId}`;
+    subject = access.customerId;
+    owns = (order) => order.customer?.id === access.customerId;
+  }
   const rules = await confirmedRules(shop);
   const client = admin ?? (await adminFor(shop));
   const finalSale = rules.finalSaleCollectionIds.slice(
@@ -232,15 +257,14 @@ export async function verifiedCustomerOrders(
     ORDERS_QUERY,
     {
       first: 20,
-      query: `customer_id:${numericId}`,
+      query,
       withProducts: finalSale.length > 0,
+      withEmail: "email" in access,
     },
     "Shopify could not list this customer's orders.",
   );
   // The search narrows the list; ownership is still checked on every order.
-  const owned = orders.nodes.filter(
-    (order) => order.customer?.id === customer.customerId,
-  );
+  const owned = orders.nodes.filter(owns);
   const [returnable, excluded] = await Promise.all([
     returnableFulfillmentLines(
       client,
@@ -261,7 +285,7 @@ export async function verifiedCustomerOrders(
     ),
   ]);
   return {
-    customerId: customer.customerId,
+    customerId: subject,
     orders: owned.map((order) => {
       const byLine = returnable.get(order.id) ?? new Map();
       let finalSaleExcluded = false;

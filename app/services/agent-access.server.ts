@@ -12,6 +12,7 @@ import {
   unsealWithRotation,
 } from "./customer-security.server";
 import {
+  emailSubject,
   verifiedLinksAllowed,
   type CustomerAccess,
 } from "./verified-customer-returns.server";
@@ -45,8 +46,8 @@ export class StoreLinkRequiredError extends Error {
   ) {
     super(
       reason === "expired"
-        ? `The link to ${shop} needs the customer to sign in again. Use link_store to renew it; if they're still signed in to that store, it's one click.`
-        : `This connection isn't linked to ${shop} yet. Use link_store so the customer can sign in to that store.`,
+        ? `The customer needs a quick re-check for ${shop}. Use link_store to send them a fresh one, and let them know it only takes a moment.`
+        : `This connection isn't linked to ${shop} yet. Use link_store to connect it; it only takes the customer a moment.`,
     );
   }
 }
@@ -70,6 +71,8 @@ const LINK_USE_RECORD_INTERVAL_MS = 3_600_000;
 
 export const storeLinkCustomerContext = (connectionId: string, shop: string) =>
   `store-link:${connectionId}:${shop}`;
+export const storeLinkEmailContext = (connectionId: string, shop: string) =>
+  `store-link-email:${connectionId}:${shop}`;
 
 const REFUND_ACCESS_TOKEN = /^Bearer (rfa_[A-Za-z0-9_-]{43})$/i;
 
@@ -313,7 +316,9 @@ type StoreLinkState = {
   connectionId: string;
   shop: string;
   customerSubjectHash: string;
+  verifiedBy: string;
   sealedCustomerId: string | null;
+  sealedEmail: string | null;
   lastUsedAt: Date;
   session: {
     id: string;
@@ -349,9 +354,21 @@ export function storeLinkAccess(
       // Fall back to the verified customer.
     }
   }
-  if (!link.sealedCustomerId || !verifiedLinksAllowed(policy, grantedScopes))
-    return null;
+  if (!verifiedLinksAllowed(policy, grantedScopes)) return null;
   try {
+    if (link.verifiedBy === "EMAIL") {
+      if (!link.sealedEmail) return null;
+      const email = unseal(
+        link.sealedEmail,
+        storeLinkEmailContext(link.connectionId, link.shop),
+      );
+      return customerIdentityHashes(emailSubject(email)).includes(
+        link.customerSubjectHash,
+      )
+        ? { email }
+        : null;
+    }
+    if (!link.sealedCustomerId) return null;
     const customerId = unseal(
       link.sealedCustomerId,
       storeLinkCustomerContext(link.connectionId, link.shop),
@@ -388,16 +405,20 @@ export async function connectionStore(
   if (!access) throw new StoreLinkRequiredError(shop, "expired");
   // A link can last years while used; move its customer ID onto the current
   // secret so retiring an old secret never silently breaks it.
-  const context = storeLinkCustomerContext(connectionId, shop);
-  const reseal =
-    typeof access !== "string" &&
-    link.sealedCustomerId &&
-    !unsealWithRotation(link.sealedCustomerId, context).current
-      ? { sealedCustomerId: seal(access.customerId, context) }
-      : {};
+  let reseal: { sealedCustomerId?: string; sealedEmail?: string } = {};
+  if (typeof access !== "string" && "customerId" in access && link.sealedCustomerId) {
+    const context = storeLinkCustomerContext(connectionId, shop);
+    if (!unsealWithRotation(link.sealedCustomerId, context).current)
+      reseal = { sealedCustomerId: seal(access.customerId, context) };
+  }
+  if (typeof access !== "string" && "email" in access && link.sealedEmail) {
+    const context = storeLinkEmailContext(connectionId, shop);
+    if (!unsealWithRotation(link.sealedEmail, context).current)
+      reseal = { sealedEmail: seal(access.email, context) };
+  }
   if (
     now - link.lastUsedAt.getTime() > LINK_USE_RECORD_INTERVAL_MS ||
-    "sealedCustomerId" in reseal
+    Object.keys(reseal).length > 0
   )
     await prisma.agentStoreLink.updateMany({
       where: { id: link.id },
@@ -437,6 +458,10 @@ export async function pruneExpiredCustomerAccess(now = Date.now()) {
       where: { expiresAt: { lt: current } },
     }),
     prisma.agentOAuthRequest.deleteMany({ where: { expiresAt: { lt: current } } }),
+    // Kept an hour past expiry so email sending stays rate limited.
+    prisma.emailVerification.deleteMany({
+      where: { expiresAt: { lt: new Date(now - 3_600_000) } },
+    }),
     prisma.agentAccessGrant.deleteMany({
       where: {
         expiresAt: { lt: current },
@@ -475,8 +500,10 @@ export async function listConnectionStores(connectionId: string, now = Date.now(
       shop: link.shop,
       name: directory.find((entry) => entry.shop === link.shop)?.name ?? link.shop,
       active: Boolean(storeLinkAccess(link, policy, scope, now)),
+      linkedWith: link.verifiedBy === "EMAIL" ? "email" : "shopify",
       staysLinkedWithoutSignIn: Boolean(
-        link.sealedCustomerId && verifiedLinksAllowed(policy, scope),
+        (link.sealedCustomerId || link.sealedEmail) &&
+          verifiedLinksAllowed(policy, scope),
       ),
     };
   });
@@ -541,6 +568,7 @@ export async function listAgentGrants(sessionId: string) {
             id: true,
             lastUsedAt: true,
             sealedCustomerId: true,
+            sealedEmail: true,
             connection: { select: { clientId: true, scopes: true } },
             session: { select: { expiresAt: true } },
           },
@@ -559,7 +587,7 @@ export async function listAgentGrants(sessionId: string) {
       id: link.id,
       name: `${await assistantName(link.connection.clientId)} (all-stores connection)`,
       scopes: link.connection.scopes,
-      expiresAt: (link.sealedCustomerId
+      expiresAt: (link.sealedCustomerId || link.sealedEmail
         ? new Date(link.lastUsedAt.getTime() + STORE_LINK_IDLE_MS)
         : (link.session?.expiresAt ?? link.lastUsedAt)
       ).toISOString(),

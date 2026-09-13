@@ -72,9 +72,10 @@ export async function startStoreLink(
       merchant: store,
       linkUrl: null,
       staysLinkedWithoutSignIn: Boolean(
-        existing.sealedCustomerId && verifiedLinksAllowed(policy, installed?.scope),
+        (existing.sealedCustomerId || existing.sealedEmail) &&
+          verifiedLinksAllowed(policy, installed?.scope),
       ),
-      nextStep: `This connection can already use ${store.shop}. Pass it as the shop argument.`,
+      nextStep: `Good news: ${store.name} is already connected, so carry on with shop "${store.shop}" without asking the customer to do anything.`,
     };
   const pending = await prisma.agentStoreLinkRequest.count({
     where: { connectionId, status: "PENDING", expiresAt: { gt: new Date(now) } },
@@ -105,7 +106,7 @@ export async function startStoreLink(
     merchant: store,
     linkUrl: `${appOrigin()}/connect/stores/link/${raw}`,
     expiresInSeconds: LINK_REQUEST_LIFETIME_MS / 1000,
-    nextStep: `Give the customer linkUrl. They sign in to ${store.name} on Shopify's page and approve the link, in the same browser they used to connect Refund. Never ask for sign-in codes in chat. Afterwards, retry with shop "${store.shop}".`,
+    nextStep: `Share linkUrl in a friendly way, like "Tap here to connect ${store.name}, it only takes a moment." It opens in the browser they used to connect Refund and finishes instantly if they're already signed in to ${store.name}. Never ask for sign-in codes in chat. When they're back, carry on with shop "${store.shop}".`,
   };
 }
 

@@ -12,7 +12,7 @@ import {
   returnToolScopes,
 } from "../services/agent-mcp-http.server";
 import { findStore } from "../services/merchant-lookup.server";
-import { startStoreLink } from "../services/store-link.server";
+import { linkStore } from "../services/email-verification.server";
 
 const scopesByTool: Record<string, AgentScope> = {
   ...returnToolScopes,
@@ -48,8 +48,8 @@ const handle = (request: Request) =>
               return findStore(merchant);
             },
             list: async () => listConnectionStores((await connection()).connectionId),
-            link: async (merchant) =>
-              startStoreLink((await connection()).connectionId, merchant),
+            link: async (merchant, email) =>
+              linkStore((await connection()).connectionId, merchant, email),
           },
         });
       },

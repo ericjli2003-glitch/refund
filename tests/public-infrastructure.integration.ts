@@ -96,6 +96,7 @@ test("public infrastructure enforces shared limits and maintains installed merch
         "/customer/login",
         "/customer/callback.data",
         "/connect/stores/link/token",
+        "/verify/email/token",
       ])
         assert.equal(publicRatePolicy(path)?.bucket, "sign-in");
       assert.equal(publicRatePolicy("/mcp/stores"), null);

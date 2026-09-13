@@ -12,7 +12,9 @@ import {
   issueApprovedAgentGrant,
   issueConnectionGrant,
   revokeAgentGrant,
+  storeLinkAccess,
   storeLinkCustomerContext,
+  storeLinkEmailContext,
 } from "./agent-access.server";
 import {
   customerIdentityHash,
@@ -439,6 +441,47 @@ test("a store link uses the live sign-in, then the verified customer only where 
     link = { ...base, session: null, ...patch };
     await assert.rejects(connectionStore(connectionId, shop, now), expired);
   }
+});
+
+test("an email-confirmed store link opens only for that email, and only where the store allows it", (t) => {
+  setup(t);
+  const connectionId = "0d9b7c1e-5a4f-4e2b-8c3d-1f6a7b8c9d0e";
+  const email = "pat@example.com";
+  const policy = {
+    verifiedStoreLinks: true,
+    returnRulesConfirmedAt: new Date(now),
+    finalSaleCollectionIds: [],
+  };
+  const link = {
+    connectionId,
+    shop,
+    verifiedBy: "EMAIL",
+    customerSubjectHash: customerIdentityHash(`email:${email}`),
+    sealedCustomerId: null,
+    sealedEmail: seal(email, storeLinkEmailContext(connectionId, shop)),
+    lastUsedAt: new Date(now),
+    session: null,
+  };
+  assert.deepEqual(storeLinkAccess(link, policy, "read_orders", now), { email });
+  assert.equal(storeLinkAccess(link, null, "read_orders", now), null);
+  assert.equal(
+    storeLinkAccess(
+      { ...link, customerSubjectHash: customerIdentityHash("email:other@example.com") },
+      policy,
+      "read_orders",
+      now,
+    ),
+    null,
+  );
+  assert.equal(
+    storeLinkAccess(
+      { ...link, sealedEmail: seal(email, storeLinkEmailContext("other", shop)) },
+      policy,
+      "read_orders",
+      now,
+    ),
+    null,
+  );
 });
 
 test("a verified link opened with a retired secret is re-sealed with the current one", async (t) => {

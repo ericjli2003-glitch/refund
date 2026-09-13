@@ -236,7 +236,29 @@ model AgentConnection {
   grants       AgentAccessGrant[]
   stores       AgentStoreLink[]
   linkRequests AgentStoreLinkRequest[]
+  emailChecks  EmailVerification[]
 
+  @@index([expiresAt])
+}
+
+// A one-tap email confirmation that links a store without a Shopify sign-in.
+// NO_ORDERS rows record an email sent to an address with no matching order,
+// so sending stays rate limited without revealing that in chat.
+model EmailVerification {
+  id           String          @id
+  connectionId String
+  connection   AgentConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  shop         String
+  sealedEmail  String
+  emailHash    String
+  matchNumber  Int
+  csrfToken    String
+  status       String          @default("PENDING")
+  expiresAt    DateTime
+  createdAt    DateTime        @default(now())
+
+  @@index([connectionId, createdAt])
+  @@index([shop, emailHash, createdAt])
   @@index([expiresAt])
 }
 
@@ -246,9 +268,12 @@ model AgentStoreLink {
   connection          AgentConnection        @relation(fields: [connectionId], references: [id], onDelete: Cascade)
   shop                String
   customerSubjectHash String
-  // The Shopify customer ID verified by the sign-in that created the link,
-  // encrypted. Null only for links made before verified links existed.
+  // SHOPIFY: a Shopify sign-in verified the customer ID. EMAIL: the customer
+  // confirmed the email on their order.
+  verifiedBy          String                 @default("SHOPIFY")
+  // The verified Shopify customer ID or order email, encrypted.
   sealedCustomerId    String?
+  sealedEmail         String?
   // That sign-in, while it lasts.
   sessionId           String?
   session             CustomerReturnSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)

@@ -177,6 +177,60 @@ test("a verified customer's orders come only from their own account, without fin
   );
 });
 
+test("an email-confirmed link sees only orders placed with that email, including guest checkouts", async (t) => {
+  confirmedRules(t);
+  const { admin, calls } = adminMock(({ query }) => {
+    if (query.includes("VerifiedCustomerOrders"))
+      return {
+        orders: {
+          nodes: [
+            {
+              id: order.id,
+              name: order.name,
+              processedAt: order.processedAt,
+              customer: null,
+              email: "Pat@Example.com",
+              lineItems: {
+                nodes: [
+                  {
+                    id: "gid://shopify/LineItem/1",
+                    title: "Shirt",
+                    product: { id: "gid://shopify/Product/1" },
+                    discountedTotalSet: { presentmentMoney: money("40.00") },
+                  },
+                ],
+              },
+            },
+            {
+              id: "gid://shopify/Order/2",
+              name: "#1002",
+              processedAt: order.processedAt,
+              customer: null,
+              email: "someone.else@example.com",
+              lineItems: { nodes: [] },
+            },
+          ],
+        },
+      };
+    if (query.includes("VerifiedReturnableFulfillments")) return returnable;
+    if (query.includes("FinalSaleProducts"))
+      return { nodes: [{ id: "gid://shopify/Product/1", c0: false }] };
+    throw new Error(`Unexpected query: ${query}`);
+  });
+  const result = await verifiedCustomerOrders(shop, { email: "pat@example.com" }, admin);
+  assert.equal(calls[0].variables.query, 'email:"pat@example.com"');
+  assert.equal(calls[0].variables.withEmail, true);
+  assert.equal(result.customerId, "email:pat@example.com");
+  assert.deepEqual(
+    result.orders.map((entry) => entry.id),
+    [order.id],
+  );
+  await assert.rejects(
+    verifiedCustomerOrders(shop, { email: 'pat"@example.com' }, admin),
+    /invalid email/,
+  );
+});
+
 test("verified quotes and return requests apply the merchant's confirmed fees across fulfillments", async (t) => {
   confirmedRules(t);
   const { admin, find } = adminMock(({ query }) => {

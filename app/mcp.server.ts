@@ -25,6 +25,7 @@ import {
   returnShippingFor,
 } from "./services/return-shipping.server";
 import type { CustomerAccess } from "./services/verified-customer-returns.server";
+import { returnsChatStyle } from "./services/chat-style.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -98,7 +99,7 @@ const json = (value: unknown) => ({
 
 export type StoreDirectoryTools = {
   find: (merchant: string) => Promise<unknown>;
-  link: (merchant: string) => Promise<unknown>;
+  link: (merchant: string, email?: string) => Promise<unknown>;
   list: () => Promise<unknown>;
 };
 
@@ -123,10 +124,10 @@ export function createCustomerReturnsMcpServer({
   resourceMetadataUrl: string;
   stores?: StoreDirectoryTools;
 }) {
-  const server = new McpServer({
-    name: "Shopify customer returns",
-    version: "0.4.0",
-  });
+  const server = new McpServer(
+    { name: "Shopify customer returns", version: "0.5.0" },
+    { instructions: returnsChatStyle },
+  );
   const shopSchema = z
     .string()
     .min(1)
@@ -145,7 +146,7 @@ export function createCustomerReturnsMcpServer({
       {
         title: "Find a store that uses Refund",
         description:
-          "Search Refund's directory of stores by business name or website. If several match, show them and ask the customer which one they bought from; never pick for them. Each result's shop is what link_store and the other tools take.",
+          "Search Refund's directory of stores by business name or website. If exactly one store matches, go ahead with it without asking, and mention its name naturally so the customer can correct you. If several match, ask which one they bought from in one short, friendly question listing each name and website. Each result's shop is what link_store and the other tools take.",
         inputSchema: {
           merchant: z
             .string()
@@ -197,13 +198,18 @@ export function createCustomerReturnsMcpServer({
       {
         title: "Link a store to this connection",
         description:
-          "Starts linking a store so this connection can find the customer's purchases there. Returns a link the customer opens to sign in to that store with Shopify and approve, in the same browser they used to connect Refund; if they are still signed in there, no code is needed. Says so if the store is already linked. Never ask for sign-in codes in chat. Linking does not submit a return or refund.",
+          "Connects a store so this connection can see the customer's orders there. With the email they used at checkout, Refund emails them a one-tap confirmation, no Shopify sign-in and no account needed, and returns a number for them to pick on the confirmation page. Without an email, it asks you to get one, or returns a link to connect through Shopify when the store needs that. Says so if the store is already connected. Never ask for passwords or sign-in codes in chat. Connecting doesn't submit a return or refund.",
         inputSchema: {
           merchant: z
             .string()
             .min(1)
             .max(2048)
             .describe("The store's myshopify.com domain or website from find_store"),
+          email: z
+            .string()
+            .max(254)
+            .optional()
+            .describe("The email the customer used for their order at this store"),
         },
         annotations: {
           readOnlyHint: false,
@@ -213,9 +219,9 @@ export function createCustomerReturnsMcpServer({
         },
         _meta: { securitySchemes: securitySchemes("returns:read") },
       },
-      async ({ merchant }) => {
+      async ({ merchant, email }) => {
         try {
-          return json(await stores.link(merchant));
+          return json(await stores.link(merchant, email));
         } catch (error) {
           return toolError(error, resourceMetadataUrl);
         }
@@ -344,7 +350,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Quote a customer return",
       description:
-        "Revalidates selected Shopify line items, calculates the expected return total net of any fees from the merchant's Shopify return rules, and persists a resumable quote. Show the result to the customer, including returnFees and the returnShipping instructions. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
+        "Checks the selected items, calculates the exact refund after any return fees, and saves a resumable quote. Share it warmly in plain words: what's going back, any fees, the refund amount, when it arrives, and how to send the item back. If submissionAvailable is false, explain kindly that the store reviews these returns itself, and stop. Otherwise ask whether they'd like to go ahead, and wait for a clear yes.",
       inputSchema: withShop({
         orderId: z.string().min(1),
         items: itemsSchema,
@@ -377,7 +383,7 @@ export function createCustomerReturnsMcpServer({
                   ...(draft?.quote || quote),
                   correlationId: draft?.id,
                   nextStep:
-                    "Ask the customer to explicitly confirm this exact return and amount before using confirm_return.",
+                    "Summarize this for the customer in a friendly way, then ask something like \"Want me to go ahead with this return?\" Only call confirm_return after a clear yes to this exact return and amount.",
                 },
                 null,
                 2,

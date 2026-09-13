@@ -29,9 +29,17 @@ its own sign-in:
 1. The assistant finds the store with `find_store` and calls a return tool with
    that `shop`. An unlinked or expired store returns `linkRequired` with
    `nextTool: "link_store"`.
-2. `link_store` returns a link, valid for 20 minutes, to
-   `/connect/stores/link/:token`. The customer opens it, signs in with Shopify
-   (silently when still signed in to that store) and approves the link.
+2. `link_store` with the email the customer used at checkout sends a one-tap
+   confirmation from Refund (through Resend) and returns a two-digit number.
+   The customer taps "Yes, that's me" and picks that number on
+   `/verify/email/:token`; a wrong number cancels the request. No Shopify
+   sign-in or store account is needed, so guest checkouts work. An address with
+   no order at the store gets a short note instead, and the chat hears the same
+   thing either way. Without an email, `link_store` asks for one and offers a
+   Shopify link that finishes instantly when the customer is already signed in.
+   Stores that can't use email confirmation (email not configured, return rules
+   not saved, or no access to order emails) get that Shopify link:
+   `/connect/stores/link/:token`, opened in the browser that approved Refund.
 3. Return tools for that store then work. `list_linked_stores` shows each link
    and whether it is still active.
 
