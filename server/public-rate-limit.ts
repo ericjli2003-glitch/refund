@@ -35,9 +35,14 @@ export function publicRatePolicy(path: string): RatePolicy | null {
     normalized === "/customer/login" ||
     normalized === "/customer/callback" ||
     normalized.startsWith("/connect/stores/link/") ||
-    normalized.startsWith("/verify/email/")
+    normalized.startsWith("/verify/email/") ||
+    normalized.startsWith("/verify/connect-email/") ||
+    normalized === "/connect/manage"
   )
     return { bucket: "sign-in", limit: 60, seconds: 60 };
+  // The consent page refreshes itself while waiting for an email tap.
+  if (normalized.startsWith("/agent/authorize/"))
+    return { bucket: "consent", limit: 240, seconds: 60 };
   if (["/mcp", "/api/return-intake", "/start-return"].includes(normalized))
     return { bucket: "intake", limit: 120, seconds: 60 };
   if (

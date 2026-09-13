@@ -28,6 +28,8 @@ import { action as consentAction } from "../app/routes/agent.authorize.$requestI
 import { action as mcpAction } from "../app/routes/mcp.$shop";
 import { action as mcpStoresAction } from "../app/routes/mcp.stores";
 import { action as storeLinkAction } from "../app/routes/connect.stores.link.$token";
+import { action as connectEmailTapAction } from "../app/routes/verify.connect-email.$token";
+import { consentTapCsrf } from "../app/services/consent-email.server";
 import { startCustomerLogin } from "../app/services/customer-session.server";
 import {
   getStoreLinkRequest,
@@ -169,7 +171,8 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
     const cookie =
       options.cookie ??
       `${flow.cookie}${options.noCustomer ? "" : `; ${customerCookie}`}`;
-    return consentAction({
+    // Allow and Cancel always answer with a redirect response.
+    return (await consentAction({
       request: new Request(url, {
         method: "POST",
         headers: {
@@ -186,7 +189,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       context: {},
       url: new URL(url),
       pattern: "/agent/authorize/:requestId",
-    });
+    })) as Response;
   }
   const exchange = (
     flow: Flow,
@@ -649,11 +652,111 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         ]);
       });
 
-      // Approving the connection needs no store sign-in and reaches no store.
+      // Approving the connection needs no store sign-in and reaches no store,
+      // but first the customer confirms the email they shop with.
+      const savedEmailEnv = {
+        RESEND_API_KEY: process.env.RESEND_API_KEY,
+        REFUND_EMAIL_FROM: process.env.REFUND_EMAIL_FROM,
+      };
+      process.env.RESEND_API_KEY = "re_ci";
+      process.env.REFUND_EMAIL_FROM = "Refund <returns@refund.test>";
+      ctx.after(() => {
+        for (const [name, value] of Object.entries(savedEmailEnv))
+          if (value === undefined) delete process.env[name];
+          else process.env[name] = value;
+      });
+      const realFetch = globalThis.fetch.bind(globalThis);
+      const emails: Array<{ subject: string; text: string }> = [];
+      const resend = ctx.mock.method(
+        globalThis,
+        "fetch",
+        async (input: string | URL | Request, init?: RequestInit) => {
+          if (String(input).startsWith("https://api.resend.com/")) {
+            emails.push(JSON.parse(String(init?.body)));
+            return Response.json({ id: "ci" });
+          }
+          return realFetch(input, init);
+        },
+      );
+      const emailStep = async (flow: Flow, body: Record<string, string>) => {
+        const url = `https://refund.test/agent/authorize/${flow.rawId}`;
+        const result = await consentAction({
+          request: new Request(url, {
+            method: "POST",
+            headers: {
+              Cookie: flow.cookie,
+              Origin: "https://refund.test",
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({ csrf: flow.flow.csrfToken, ...body }),
+          }),
+          params: { requestId: flow.rawId },
+          context: {},
+          url: new URL(url),
+          pattern: "/agent/authorize/:requestId",
+        });
+        return (result as unknown as { data: { ok: boolean; message: string } }).data;
+      };
+      const pendingCheck = (flow: Flow) =>
+        prisma.consentEmailCheck.findFirstOrThrow({
+          where: { requestId: flow.flow.id, status: "PENDING" },
+          orderBy: { createdAt: "desc" },
+        });
+      const confirmByCode = async (flow: Flow, address: string) => {
+        assert.equal((await emailStep(flow, { intent: "send", email: address })).ok, true);
+        const code = emails.at(-1)!.subject.slice(0, 6);
+        const check = await pendingCheck(flow);
+        const wrong = String((Number(code) + 1) % 1_000_000).padStart(6, "0");
+        assert.equal(
+          (await emailStep(flow, { intent: "verify", checkId: check.id, code: wrong })).ok,
+          false,
+        );
+        assert.equal(
+          (await emailStep(flow, { intent: "verify", checkId: check.id, code })).ok,
+          true,
+        );
+      };
+
       const flow = await start("returns:read returns:quote", {
         resource: allStores,
       });
       assert.equal(flow.flow.shop, null);
+      await assert.rejects(
+        consent(flow, "allow", { noCustomer: true }),
+        responseStatus(400),
+      );
+      await confirmByCode(flow, "Pat@Example.com");
+      // A second email, confirmed on another device with the number shown on
+      // the page. Asking for another code straight away waits a moment.
+      assert.equal(
+        (await emailStep(flow, { intent: "send", email: "second@example.com" })).ok,
+        true,
+      );
+      const tapCheck = await pendingCheck(flow);
+      assert.match(
+        (await emailStep(flow, { intent: "resend", checkId: tapCheck.id })).message,
+        /just sent/,
+      );
+      const tapToken = emails.at(-1)!.text.match(/\/verify\/connect-email\/([\w-]{43})/)![1];
+      const tapUrl = `https://refund.test/verify/connect-email/${tapToken}`;
+      const tapped = await connectEmailTapAction({
+        request: new Request(tapUrl, {
+          method: "POST",
+          headers: {
+            Origin: "https://refund.test",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            csrf: consentTapCsrf(tapCheck.id),
+            choice: String(tapCheck.matchNumber),
+          }),
+        }),
+        params: { token: tapToken },
+        context: {},
+        url: new URL(tapUrl),
+        pattern: "/verify/connect-email/:token",
+      });
+      assert.match(tapped.headers.get("Location")!, /outcome=confirmed/);
       const approved = await consent(flow, "allow", { noCustomer: true });
       const connectionCookie = approved.headers
         .get("Set-Cookie")!
@@ -669,6 +772,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       const flow2 = await start("returns:read returns:quote", {
         resource: allStores,
       });
+      await confirmByCode(flow2, "pat@example.com");
       const code2 = new URL(
         (
           await consent(flow2, "allow", {
@@ -685,6 +789,27 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       const { connectionId } = await authorizeConnection(
         `Bearer ${tokens.access_token}`,
         "returns:quote",
+      );
+      // Emails confirmed on the consent page belong to the connection,
+      // encrypted, and the codes are cleared.
+      const confirmedEmails = await prisma.connectionEmail.findMany({
+        where: { connectionId },
+      });
+      assert.deepEqual(
+        confirmedEmails.map((row) => row.source),
+        ["ONBOARDING"],
+      );
+      assert.ok(!confirmedEmails[0].sealedEmail.includes("pat@example.com"));
+      assert.equal(
+        await prisma.consentEmailCheck.count({ where: { requestId: flow2.flow.id } }),
+        0,
+      );
+      const firstConnection = (
+        await prisma.agentOAuthRequest.findUniqueOrThrow({ where: { id: flow.flow.id } })
+      ).connectionId!;
+      assert.equal(
+        await prisma.connectionEmail.count({ where: { connectionId: firstConnection } }),
+        2,
       );
       // Reusing this browser's connection cookie binds both connections to it.
       const connections = await prisma.agentConnection.findMany({
@@ -777,6 +902,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
           url: new URL(linkUrl),
           pattern: "/connect/stores/link/:token",
         });
+      resend.mock.restore();
       await assert.rejects(linkAction(connectionCookie), responseStatus(401));
       // Linking verifies the signed-in customer with Shopify once.
       const upstream = ctx.mock.method(
@@ -891,6 +1017,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         await prisma.agentStoreLinkRequest.count({ where: { connectionId } }),
         0,
       );
+      assert.equal(await prisma.connectionEmail.count({ where: { connectionId } }), 0);
 
       // Maintenance deletes a link unused for a year and an ended connection,
       // and keeps a connection that is still in use.

@@ -16,6 +16,13 @@ import {
   verifiedLinksAllowed,
   type CustomerAccess,
 } from "./verified-customer-returns.server";
+import {
+  linkStoreByConnectionEmail,
+  storeLinkEmailContext,
+  type OrderEmailLookup,
+} from "./connection-email.server";
+
+export { storeLinkEmailContext };
 
 export const agentScopes = [
   "returns:read",
@@ -42,12 +49,14 @@ export class AgentAccessError extends Error {
 export class StoreLinkRequiredError extends Error {
   constructor(
     public readonly shop: string,
-    public readonly reason: "not_linked" | "expired",
+    public readonly reason: "not_linked" | "expired" | "email_not_found",
   ) {
     super(
-      reason === "expired"
-        ? `The customer needs a quick re-check for ${shop}. Use link_store to send them a fresh one, and let them know it only takes a moment.`
-        : `This connection isn't linked to ${shop} yet. Use link_store to connect it; it only takes the customer a moment.`,
+      reason === "email_not_found"
+        ? `None of the emails the customer confirmed has an order at ${shop}. Ask warmly, something like "Did you use a different email for that one?", and call link_store with it.`
+        : reason === "expired"
+          ? `The customer needs a quick re-check for ${shop}. Use link_store to send them a fresh one, and let them know it only takes a moment.`
+          : `This connection isn't linked to ${shop} yet. Use link_store to connect it; it only takes the customer a moment.`,
     );
   }
 }
@@ -71,8 +80,6 @@ const LINK_USE_RECORD_INTERVAL_MS = 3_600_000;
 
 export const storeLinkCustomerContext = (connectionId: string, shop: string) =>
   `store-link:${connectionId}:${shop}`;
-export const storeLinkEmailContext = (connectionId: string, shop: string) =>
-  `store-link-email:${connectionId}:${shop}`;
 
 const REFUND_ACCESS_TOKEN = /^Bearer (rfa_[A-Za-z0-9_-]{43})$/i;
 
@@ -386,9 +393,10 @@ export async function connectionStore(
   connectionId: string,
   shopInput: string,
   now = Date.now(),
+  lookup?: OrderEmailLookup,
 ) {
   const shop = normalizeShopDomain(shopInput);
-  const [link, installed, policy] = await Promise.all([
+  const [existing, installed, policy] = await Promise.all([
     prisma.agentStoreLink.findUnique({
       where: { connectionId_shop: { connectionId, shop } },
       include: { session: true },
@@ -400,9 +408,20 @@ export async function connectionStore(
     prisma.storePolicy.findUnique({ where: { shop } }),
   ]);
   if (!installed) throw new Error(`${shop} no longer uses Refund.`);
-  if (!link) throw new StoreLinkRequiredError(shop, "not_linked");
-  const access = storeLinkAccess(link, policy, installed.scope, now);
-  if (!access) throw new StoreLinkRequiredError(shop, "expired");
+  let link = existing;
+  let access = link ? storeLinkAccess(link, policy, installed.scope, now) : null;
+  if (!access && verifiedLinksAllowed(policy, installed.scope)) {
+    // One confirmation works at every store: look for orders under the emails
+    // this connection confirmed, with nothing for the customer to do.
+    const found = await linkStoreByConnectionEmail(connectionId, shop, lookup, now);
+    if (found.status === "linked") {
+      link = found.link;
+      access = storeLinkAccess(found.link, policy, installed.scope, now);
+    } else if (found.status === "no_match")
+      throw new StoreLinkRequiredError(shop, "email_not_found");
+  }
+  if (!link || !access)
+    throw new StoreLinkRequiredError(shop, existing ? "expired" : "not_linked");
   // A link can last years while used; move its customer ID onto the current
   // secret so retiring an old secret never silently breaks it.
   let reseal: { sealedCustomerId?: string; sealedEmail?: string } = {};
@@ -430,6 +449,33 @@ export async function connectionStore(
     customerSubjectHash: link.customerSubjectHash,
     draftId: typeof access === "string" ? link.session?.draftId : null,
   };
+}
+
+// Ends an all-stores connection outright: every grant it issued stops working,
+// and its store links, link requests and confirmed emails are deleted.
+export async function endConnection(
+  db: Pick<
+    Prisma.TransactionClient,
+    | "agentConnection"
+    | "agentAccessGrant"
+    | "agentStoreLink"
+    | "agentStoreLinkRequest"
+    | "connectionEmail"
+  >,
+  connectionId: string,
+  revokedAt = new Date(),
+) {
+  await db.agentConnection.updateMany({
+    where: { id: connectionId, revokedAt: null },
+    data: { revokedAt },
+  });
+  await db.agentAccessGrant.updateMany({
+    where: { connectionId, revokedAt: null },
+    data: { revokedAt },
+  });
+  await db.agentStoreLink.deleteMany({ where: { connectionId } });
+  await db.agentStoreLinkRequest.deleteMany({ where: { connectionId } });
+  await db.connectionEmail.deleteMany({ where: { connectionId } });
 }
 
 // Revoked connections are kept a day so a late replayed token still finds its

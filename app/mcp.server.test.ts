@@ -155,6 +155,10 @@ test("the all-stores server names the store on every private tool and asks to li
         return { status: "sign_in_required", linkUrl: "https://refund.test/x" };
       },
       list: async () => [],
+      emails: {
+        list: async () => [],
+        remove: async () => ({ removed: true }),
+      },
     },
   });
   const client = new Client({ name: "stores-test", version: "1" });
@@ -172,6 +176,8 @@ test("the all-stores server names the store on every private tool and asks to li
       "find_store",
       "list_linked_stores",
       "link_store",
+      "list_confirmed_emails",
+      "remove_confirmed_email",
       "get_return_session",
       "check_return_status",
       "find_returnable_items",
@@ -180,7 +186,7 @@ test("the all-stores server names the store on every private tool and asks to li
       "add_return_tracking",
     ],
   );
-  for (const tool of tools.slice(3)) {
+  for (const tool of tools.slice(5)) {
     const schema = tool.inputSchema as { required?: string[] };
     assert.equal(schema.required?.includes("shop"), true, tool.name);
   }

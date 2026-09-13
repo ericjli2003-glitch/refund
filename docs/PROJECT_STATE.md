@@ -355,6 +355,36 @@ user's email to MCP servers, so the customer provides it.
 Partner Dashboard, create a Resend account with a verified sending domain, and
 set `RESEND_API_KEY` and `REFUND_EMAIL_FROM` in Render.
 
+### 11. Confirmed emails on the connection (decided and implemented)
+
+Returns in chat should just work at any Refund store, without a question or a
+tap for every store.
+
+- The all-stores consent page confirms the customer's shopping email before
+  Allow: a 6-digit code entered on the page (bound to the approving browser by
+  the flow cookie), or the email's button on another device with number
+  matching. Codes are keyed-hashed, expire in 15 minutes, allow 5 attempts and
+  are rate limited. Emails are saved on the `AgentConnection`
+  (`ConnectionEmail`), encrypted, with a keyed hash.
+- A tool call for a store with no link looks for orders under those emails and
+  links the store automatically. When none match, the assistant asks whether
+  the customer used a different email. The in-chat tap from decision 10 now
+  adds that email to the connection instead of to one store, and it is how
+  connections created before this change add an email.
+- Stores on Shopify sign-in get the first confirmed email as `login_hint`.
+- Customers view and remove emails in chat or at `/connect/manage`.
+  Disconnecting, a year unused and customer redaction delete them. Uninstall
+  and shop redaction delete only emails confirmed in a chat about that store,
+  since setup emails belong to the customer rather than any merchant.
+- Without Resend configured, the consent page skips the email step, so the
+  connector keeps working before email is set up.
+- Scope is `/mcp/stores` only; WebMCP, `/agents.md`, UCP, public intake and the
+  hosted portal are unchanged.
+
+**Not yet verified live:** Resend delivery, the consent page picking up a tap
+from another device, and order lookup by email, which needs Shopify's Level 2
+protected customer data approval.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

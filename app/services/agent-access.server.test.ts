@@ -16,6 +16,7 @@ import {
   storeLinkCustomerContext,
   storeLinkEmailContext,
 } from "./agent-access.server";
+import { connectionEmailContext } from "./connection-email.server";
 import {
   customerIdentityHash,
   digest,
@@ -78,6 +79,7 @@ function setup(t: TestContext) {
   mockDelegate(t, prisma.session, "findFirst", async () => ({
     id: "offline_store",
   }));
+  mockDelegate(t, prisma.connectionEmail, "findMany", async () => []);
   return { token, grant, find };
 }
 
@@ -441,6 +443,43 @@ test("a store link uses the live sign-in, then the verified customer only where 
     link = { ...base, session: null, ...patch };
     await assert.rejects(connectionStore(connectionId, shop, now), expired);
   }
+});
+
+test("one confirmed email reaches a store the connection never linked, with nothing for the customer to do", async (t) => {
+  setup(t);
+  const connectionId = "0d9b7c1e-5a4f-4e2b-8c3d-1f6a7b8c9d0e";
+  const email = "pat@example.com";
+  mockDelegate(t, prisma.agentStoreLink, "findUnique", async () => null);
+  mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
+    verifiedStoreLinks: true,
+    returnRulesConfirmedAt: new Date(now),
+    finalSaleCollectionIds: [],
+  }));
+  mockDelegate(t, prisma.connectionEmail, "findMany", async () => [
+    {
+      id: "email-1",
+      connectionId,
+      sealedEmail: seal(email, connectionEmailContext(connectionId)),
+      emailHash: customerIdentityHash(`email:${email}`),
+      source: "ONBOARDING",
+      sourceShop: null,
+      confirmedAt: new Date(now),
+    },
+  ]);
+  const links: Array<Record<string, unknown>> = [];
+  mockDelegate(t, prisma.agentStoreLink, "upsert", async (args: never) => {
+    const { create } = args as unknown as { create: Record<string, unknown> };
+    links.push(create);
+    return { id: "link", ...create, session: null };
+  });
+  const found = await connectionStore(connectionId, shop, now, async (_shop, address) => address === email);
+  assert.deepEqual(found.customerToken, { email });
+  assert.equal(links[0].connectionEmailId, "email-1");
+  await assert.rejects(
+    connectionStore(connectionId, shop, now, async () => false),
+    (error) =>
+      error instanceof StoreLinkRequiredError && error.reason === "email_not_found",
+  );
 });
 
 test("an email-confirmed store link opens only for that email, and only where the store allows it", (t) => {

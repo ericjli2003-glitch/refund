@@ -59,18 +59,20 @@ export default function ConnectAllStores() {
           {copyStatus}
         </p>
         <p>
-          Choose OAuth if asked, and leave client ID and secret blank. Approve
-          Refund on the page that opens; no store sign-in is needed yet.
+          Choose OAuth if asked, and leave client ID and secret blank. On the
+          page that opens, confirm the email you shop with and approve Refund.
+          No store sign-in needed.
         </p>
       </section>
       <section>
         <h2>2. Ask about a return</h2>
         <p>
-          Try: “I’d like to return something from [store].” Your assistant finds
-          the store and asks for the email you used at checkout. Tap the
-          confirmation Refund emails you, pick the number your assistant shows,
-          and you’re connected. No store account needed. A few stores ask you to
-          sign in with Shopify instead; open those links in this browser.
+          Try: “I’d like to return something from [store].” Refund looks for
+          your order there using the email you confirmed, so your assistant can
+          usually help right away. If you used a different email at that store,
+          it asks, and you tap a quick confirmation. No store account needed. A
+          few stores ask you to sign in with Shopify instead; open those links
+          in this browser.
         </p>
         <p>
           Most stores stay linked while you keep using them. If a store asks you
@@ -83,8 +85,11 @@ export default function ConnectAllStores() {
         <h2>3. Stay in control</h2>
         <p>
           A return and refund are only submitted after you confirm the exact
-          items and amount. You can unlink a store from its return portal or
-          remove Refund from your assistant at any time.
+          items and amount. Refund uses your email only to find your orders,
+          never for marketing. See and remove your confirmed emails and stores
+          on <a href="/connect/manage">your connection page</a> in the browser
+          where you approved Refund, or remove Refund from your assistant at any
+          time.
         </p>
       </section>
     </main>

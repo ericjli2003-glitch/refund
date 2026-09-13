@@ -21,16 +21,33 @@ Setup page: `/connect`. MCP URL:
 https://refund-ztxz.onrender.com/mcp/stores
 ```
 
-The customer adds this once. Approving it on Refund's consent page needs no
-store sign-in, because the connection alone reaches no purchases. Shopify
-customer accounts are separate for every store, so each store is linked with
-its own sign-in:
+The customer adds this once. Approving it needs no store sign-in. Once Resend is
+configured, the consent page first asks "What email do you use when you shop
+online?", sends a 6-digit code, and keeps Allow disabled until at least one
+email is confirmed. The code is entered on that page, which the authorization
+flow cookie binds to the approving browser. The same email carries a button for
+another device: it asks for the number shown on the consent page, and the page
+picks up the confirmation on its own. Codes last 15 minutes, allow 5 attempts,
+can be resent after 30 seconds, and are capped at 8 per authorization and 5 per
+address an hour. More emails can be added. Without Resend configured the email
+step is skipped.
+
+Confirmed emails are saved on the connection (`ConnectionEmail`), encrypted,
+with a keyed hash for lookups, and used only to find the customer's orders at
+stores that use Refund, never for marketing:
 
 1. The assistant finds the store with `find_store` and calls a return tool with
-   that `shop`. An unlinked or expired store returns `linkRequired` with
-   `nextTool: "link_store"`.
-2. `link_store` with the email the customer used at checkout sends a one-tap
-   confirmation from Refund (through Resend) and returns a two-digit number.
+   that `shop`. If the store has no link, Refund checks the connection's
+   confirmed emails for orders there and links the store to the first match,
+   with nothing for the customer to do. If none match, the tool returns
+   `linkRequired` with reason `email_not_found`, and the assistant asks
+   whether they used a different email. Otherwise an unlinked or expired store
+   returns `linkRequired` with `nextTool: "link_store"`.
+2. `link_store` tries the confirmed emails first. With a different email the
+   customer used at checkout, it sends a one-tap confirmation from Refund
+   (through Resend) and returns a two-digit number; once confirmed, that email
+   is added to the connection, so it works at every store too. This is also
+   how connections made before the consent-page step add their first email.
    The customer taps "Yes, that's me" and picks that number on
    `/verify/email/:token`; a wrong number cancels the request. No Shopify
    sign-in or store account is needed, so guest checkouts work. An address with
@@ -71,6 +88,19 @@ Limits and protections:
   store's return portal lists it under connected assistants and can remove it.
   Customer redaction and uninstall delete it; signing out ends only its live
   Shopify session.
+- Customers see and remove confirmed emails with `list_confirmed_emails` and
+  `remove_confirmed_email` in chat, or at `/connect/manage` in the approving
+  browser, which can also disconnect. Disconnecting, a year without use and
+  customer redaction (for that address, on every connection) delete them.
+  Uninstall and shop redaction delete emails confirmed in a chat about that
+  store; emails confirmed at setup belong to the customer and stay. Customer
+  data requests report when an address was confirmed, without naming other
+  stores.
+- Stores that still use Shopify sign-in get the first confirmed email as
+  `login_hint`, so Shopify's sign-in form is pre-filled.
+- Looking up orders by email needs Shopify's Level 2 protected customer data
+  approval for the order email field. Without it, lookups fail and stores fall
+  back to Shopify sign-in.
 - All-stores tokens are rejected by `/mcp/:shop`, and single-store tokens by
   `/mcp/stores`. Submission still needs the signed quote and explicit
   confirmation, and every tool checks its scope.

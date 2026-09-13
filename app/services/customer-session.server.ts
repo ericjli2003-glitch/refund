@@ -9,6 +9,7 @@ import { makeContinuation, returnHints } from "./return-intake.server";
 import { getAgentAuthorizationRequest } from "./agent-oauth-flow.server";
 import { claimIntakeDraft } from "./return-draft.server";
 import { getStoreLinkRequest } from "./store-link.server";
+import { listConnectionEmails } from "./connection-email.server";
 import {
   appOrigin,
   customerIdentityHashes,
@@ -147,6 +148,7 @@ export async function startCustomerLogin(request: Request) {
         headers: privateHeaders,
       });
   }
+  let loginHint: string | undefined;
   if (linkRequestId) {
     const link = await getStoreLinkRequest(request, linkRequestId);
     if (link.shop !== shop)
@@ -154,6 +156,8 @@ export async function startCustomerLogin(request: Request) {
         status: 400,
         headers: privateHeaders,
       });
+    // Pre-fill Shopify's sign-in with the email the customer confirmed.
+    loginHint = (await listConnectionEmails(link.connectionId))[0]?.email;
   }
   // Shopify issues no refresh token to public PKCE app clients, so an expired
   // assistant connection or store link needs a new sign-in. prompt=none reuses
@@ -215,6 +219,7 @@ export async function startCustomerLogin(request: Request) {
     code_challenge: digest(verifier),
     code_challenge_method: "S256",
     ...(silent ? { prompt: "none" } : {}),
+    ...(loginHint ? { login_hint: loginHint } : {}),
   }).toString();
   return redirect(authUrl.toString(), {
     headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },

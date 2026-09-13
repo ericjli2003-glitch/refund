@@ -17,6 +17,18 @@ const outcomes = {
     heading: "Got it, nothing was connected",
     body: "No one can see your orders from this request. You can close this page.",
   },
+  confirmed: {
+    heading: "Email confirmed",
+    body: "Go back to the Refund page on your other device. It will update in a moment, and you can finish connecting there.",
+  },
+  connect_mismatch: {
+    heading: "That number didn’t match",
+    body: "To keep your orders safe, we cancelled this code. Send a new one from the Refund page and pick the number it shows.",
+  },
+  connect_denied: {
+    heading: "Got it, that email wasn’t added",
+    body: "Nothing was confirmed. You can close this page.",
+  },
 };
 
 export function loader({ request }: LoaderFunctionArgs) {

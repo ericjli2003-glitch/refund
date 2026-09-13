@@ -13,12 +13,19 @@ import {
 } from "../services/agent-mcp-http.server";
 import { findStore } from "../services/merchant-lookup.server";
 import { linkStore } from "../services/email-verification.server";
+import {
+  listConnectionEmails,
+  removeConnectionEmail,
+} from "../services/connection-email.server";
+import { maskEmail } from "../services/email-address.server";
 
 const scopesByTool: Record<string, AgentScope> = {
   ...returnToolScopes,
   find_store: "returns:read",
   list_linked_stores: "returns:read",
   link_store: "returns:read",
+  list_confirmed_emails: "returns:read",
+  remove_confirmed_email: "returns:read",
 };
 
 // The all-stores connection. The resource path is static, so it never
@@ -50,6 +57,18 @@ const handle = (request: Request) =>
             list: async () => listConnectionStores((await connection()).connectionId),
             link: async (merchant, email) =>
               linkStore((await connection()).connectionId, merchant, email),
+            emails: {
+              list: async () =>
+                (await listConnectionEmails((await connection()).connectionId)).map(
+                  (entry) => ({
+                    id: entry.id,
+                    email: maskEmail(entry.email),
+                    confirmedAt: entry.confirmedAt.toISOString(),
+                  }),
+                ),
+              remove: async (emailId) =>
+                removeConnectionEmail((await connection()).connectionId, emailId),
+            },
           },
         });
       },

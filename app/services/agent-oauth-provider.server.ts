@@ -14,6 +14,7 @@ import {
   agentScopes,
   authorizeAgent,
   authorizeConnection,
+  endConnection,
   isAllStoresResource,
   issueApprovedAgentGrant,
   issueConnectionGrant,
@@ -54,7 +55,11 @@ export function agentOAuthMetadata() {
 async function revokeGrantChain(
   db: Pick<
     Prisma.TransactionClient,
-    "agentAccessGrant" | "agentConnection" | "agentStoreLink" | "agentStoreLinkRequest"
+    | "agentAccessGrant"
+    | "agentConnection"
+    | "agentStoreLink"
+    | "agentStoreLinkRequest"
+    | "connectionEmail"
   >,
   firstTokenHash: string,
   revokedAt = new Date(),
@@ -80,20 +85,9 @@ async function revokeGrantChain(
     tokenHash = grant.rotatedToTokenHash;
   }
   // Removing Refund from an assistant, or a replayed code or refresh token,
-  // ends an all-stores connection outright: every grant it issued stops
-  // working, and the store links holding encrypted customer IDs are deleted.
-  for (const connectionId of connections) {
-    await db.agentConnection.updateMany({
-      where: { id: connectionId, revokedAt: null },
-      data: { revokedAt },
-    });
-    await db.agentAccessGrant.updateMany({
-      where: { connectionId, revokedAt: null },
-      data: { revokedAt },
-    });
-    await db.agentStoreLink.deleteMany({ where: { connectionId } });
-    await db.agentStoreLinkRequest.deleteMany({ where: { connectionId } });
-  }
+  // ends an all-stores connection outright, including its confirmed emails.
+  for (const connectionId of connections)
+    await endConnection(db, connectionId, revokedAt);
 }
 
 export function createAgentOAuthProvider(): OAuthServerProvider {

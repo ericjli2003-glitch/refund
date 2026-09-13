@@ -1,11 +1,16 @@
 import { randomInt } from "node:crypto";
-import * as z from "zod/v4";
 import prisma from "../db.server";
 import {
   assistantName,
   storeLinkAccess,
   storeLinkEmailContext,
 } from "./agent-access.server";
+import {
+  addConnectionEmail,
+  hasOrdersForEmail,
+  linkStoreByConnectionEmail,
+  type OrderEmailLookup,
+} from "./connection-email.server";
 import {
   appOrigin,
   customerIdentityHash,
@@ -16,59 +21,24 @@ import {
   seal,
   unseal,
 } from "./customer-security.server";
+import { maskEmail, normalizeEmail } from "./email-address.server";
 import { emailConfigured, escapeHtml, sendEmail } from "./email.server";
 import { resolveMerchant } from "./merchant-directory.server";
-import { adminData, adminFor, type AdminGraphql } from "./shopify-admin.server";
+import type { AdminGraphql } from "./shopify-admin.server";
 import { startStoreLink } from "./store-link.server";
 import {
   emailSubject,
   verifiedLinksAllowed,
 } from "./verified-customer-returns.server";
 
+export { maskEmail, normalizeEmail, numberChoices } from "./email-address.server";
+
 const VERIFICATION_LIFETIME_MS = 20 * 60_000;
 const EMAILS_PER_CONNECTION_PER_HOUR = 10;
 const EMAILS_PER_ADDRESS_PER_HOUR = 3;
 const OPAQUE_TOKEN = /^[\w-]{43}$/;
 
-export function normalizeEmail(value: string) {
-  const email = value.trim().toLowerCase();
-  if (
-    email.length > 254 ||
-    /["\\\s]/.test(email) ||
-    !z.email().safeParse(email).success
-  )
-    throw new Error("That doesn't look like an email address.");
-  return email;
-}
-
-export function maskEmail(email: string) {
-  const [local, domain] = email.split("@");
-  return `${local.slice(0, 1)}${"•".repeat(Math.min(Math.max(local.length - 1, 2), 5))}@${domain}`;
-}
-
 export const verificationEmailContext = (id: string) => `email-verification:${id}`;
-
-// Three numbers to choose from, including the one shown in the customer's
-// chat. Someone who starts a link with another person's email can't see it.
-export function numberChoices(matchNumber: number) {
-  const choices = new Set([matchNumber]);
-  while (choices.size < 3) choices.add(randomInt(10, 100));
-  return [...choices].sort((left, right) => left - right);
-}
-
-const ORDERS_BY_EMAIL = `#graphql
-  query OrdersForEmailCheck($query: String!) {
-    orders(first: 5, query: $query) { nodes { id email } }
-  }
-`;
-
-async function hasOrdersForEmail(shop: string, email: string, admin?: AdminGraphql) {
-  const client = admin ?? (await adminFor(shop));
-  const { orders } = await adminData<{
-    orders: { nodes: Array<{ id: string; email: string | null }> };
-  }>(client, ORDERS_BY_EMAIL, { query: `email:"${email}"` }, "Shopify could not look up orders.");
-  return orders.nodes.some((order) => order.email?.toLowerCase() === email);
-}
 
 function button(url: string, label: string) {
   return `<a href="${escapeHtml(url)}" style="display:inline-block;background:#0a6b52;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">${escapeHtml(label)}</a>`;
@@ -82,9 +52,10 @@ function emailLayout(paragraphs: string[], action?: string) {
 
 type Store = { shop: string; name: string };
 
-// Sends the one-tap confirmation. An address with no order at the store gets a
-// short "we couldn't find an order" note instead, and the chat hears the same
-// thing either way, so nobody can use Refund to learn who shops where.
+// Sends the one-tap confirmation for an email the connection hasn't confirmed.
+// An address with no order at the store gets a short "we couldn't find an
+// order" note instead, and the chat hears the same thing either way, so
+// nobody can use Refund to learn who shops where.
 export async function startEmailVerification(
   connectionId: string,
   store: Store,
@@ -150,12 +121,12 @@ export async function startEmailVerification(
         ? {
             to: email,
             subject: `Confirm your return with ${store.name}`,
-            text: `Hi there,\n\nYou asked ${assistant} to help with a return from ${store.name}. Tap the link below to confirm it's you. You'll pick the number ${assistant} is showing you.\n\nYes, that's me: ${url}\n\nThe link works for 20 minutes. If you didn't ask for this, just ignore this email and nothing will happen.\n\nRefund, returns for ${store.name}`,
+            text: `Hi there,\n\nYou asked ${assistant} to help with a return from ${store.name}. Tap the link below to confirm it's you. You'll pick the number ${assistant} is showing you.\n\nYes, that's me: ${url}\n\nThe link works for 20 minutes. If you didn't ask for this, just ignore this email and nothing will happen.\n\nRefund uses this email only to find your orders at stores that use Refund. Never for marketing.`,
             html: emailLayout(
               [
                 "Hi there,",
                 `You asked ${assistantHtml} to help with a return from <strong>${storeName}</strong>. Tap below to confirm it’s you. You’ll pick the number ${assistantHtml} is showing you.`,
-                `<span style="color:#56635e;font-size:14px">The link works for 20 minutes. If you didn’t ask for this, just ignore this email and nothing will happen.</span>`,
+                `<span style="color:#56635e;font-size:14px">The link works for 20 minutes. If you didn’t ask for this, just ignore this email and nothing will happen. Refund uses this email only to find your orders at stores that use Refund, never for marketing.</span>`,
               ],
               button(url, "Yes, that’s me"),
             ),
@@ -164,7 +135,7 @@ export async function startEmailVerification(
         : {
             to: email,
             subject: `About your return with ${store.name}`,
-            text: `Hi there,\n\nYou asked ${assistant} to help with a return from ${store.name}, but we couldn't find an order there for this email address. If you checked out with a different email, just give that one to ${assistant}.\n\nIf you didn't ask for this, you can ignore this email.\n\nRefund, returns for ${store.name}`,
+            text: `Hi there,\n\nYou asked ${assistant} to help with a return from ${store.name}, but we couldn't find an order there for this email address. If you checked out with a different email, just give that one to ${assistant}.\n\nIf you didn't ask for this, you can ignore this email.`,
             html: emailLayout([
               "Hi there,",
               `You asked ${assistantHtml} to help with a return from <strong>${storeName}</strong>, but we couldn’t find an order there for this email address. If you checked out with a different email, just give that one to ${assistantHtml}.`,
@@ -188,8 +159,9 @@ export async function startEmailVerification(
   };
 }
 
-// link_store: already linked, the email confirmation, or a Shopify sign-in
-// link when this store can't use email confirmation.
+// link_store: already linked; found through an email the connection already
+// confirmed; an in-chat confirmation for a new email; or a Shopify link when
+// the store can't use email.
 export async function linkStore(
   connectionId: string,
   merchant: string,
@@ -212,10 +184,8 @@ export async function linkStore(
   ]);
   if (existing && storeLinkAccess(existing, policy, installed?.scope, now))
     return startStoreLink(connectionId, store.shop, now);
-  // Email-confirmed links always use the store's confirmed Refund return rules.
-  const emailReady = emailConfigured() && verifiedLinksAllowed(policy, installed?.scope);
-  if (emailReady && email) {
-    let address: string;
+  let address: string | undefined;
+  if (email) {
     try {
       address = normalizeEmail(email);
     } catch {
@@ -227,18 +197,50 @@ export async function linkStore(
           "That email doesn't look quite right. Ask the customer, kindly, to double-check it.",
       };
     }
+  }
+  // Email links always use the store's confirmed Refund return rules.
+  const verifiedReady = verifiedLinksAllowed(policy, installed?.scope);
+  const lookup: OrderEmailLookup = (shop, value) => hasOrdersForEmail(shop, value, admin);
+  // Emails the customer already confirmed come first: no question, no tap.
+  let confirmedEmailsMissed = false;
+  if (verifiedReady) {
+    const found = await linkStoreByConnectionEmail(
+      connectionId,
+      store.shop,
+      lookup,
+      now,
+      address,
+    );
+    if (found.status === "linked")
+      return {
+        status: "linked" as const,
+        merchant: store,
+        linkUrl: null,
+        nextStep: `${store.name} is connected with an email the customer already confirmed. Carry on with shop "${store.shop}" without asking them anything.`,
+      };
+    confirmedEmailsMissed = found.status === "no_match";
+  }
+  if (emailConfigured() && verifiedReady && address) {
     const sent = await startEmailVerification(connectionId, store, address, now, admin);
     if (sent) return sent;
   }
   const link = await startStoreLink(connectionId, store.shop, now);
-  if (emailReady && !email && link.status === "sign_in_required")
-    return {
-      status: "email_needed" as const,
-      merchant: store,
-      linkUrl: null,
-      signedInShortcutUrl: link.linkUrl,
-      nextStep: `Ask the customer, in one short friendly question, which email they used for their ${store.name} order. Then call link_store again with that email, and Refund will send a one-tap confirmation, no sign-in needed. If they'd rather not share it, offer signedInShortcutUrl instead, which finishes instantly if they're already signed in to ${store.name}.`,
-    };
+  if (emailConfigured() && verifiedReady && !address && link.status === "sign_in_required")
+    return confirmedEmailsMissed
+      ? {
+          status: "email_not_found" as const,
+          merchant: store,
+          linkUrl: null,
+          signedInShortcutUrl: link.linkUrl,
+          nextStep: `None of the emails the customer confirmed has an order at ${store.name}. Ask warmly, something like "Did you use a different email for that one?" If they share one, call link_store again with it and Refund will send a one-tap confirmation. They can also use signedInShortcutUrl, which finishes instantly if they're already signed in to ${store.name}.`,
+        }
+      : {
+          status: "email_needed" as const,
+          merchant: store,
+          linkUrl: null,
+          signedInShortcutUrl: link.linkUrl,
+          nextStep: `Ask the customer, in one short friendly question, which email they used for their ${store.name} order. Then call link_store again with that email, and Refund will send a one-tap confirmation, no sign-in needed. If they'd rather not share it, offer signedInShortcutUrl instead, which finishes instantly if they're already signed in to ${store.name}.`,
+        };
   return link;
 }
 
@@ -300,10 +302,19 @@ export async function completeEmailVerification(request: Request, raw: string) {
       data: { status: matched ? "VERIFIED" : "CANCELLED" },
     });
     if (result.count === 1 && email) {
+      // The email joins the connection, so it works at every Refund store.
+      const confirmed = await addConnectionEmail(
+        tx,
+        check.connectionId,
+        email,
+        "CHAT",
+        check.shop,
+      );
       const linkData = {
         verifiedBy: "EMAIL",
-        customerSubjectHash: check.emailHash,
+        customerSubjectHash: confirmed.emailHash,
         sealedEmail: seal(email, storeLinkEmailContext(check.connectionId, check.shop)),
+        connectionEmailId: confirmed.id,
         sealedCustomerId: null,
         sessionId: null,
         lastUsedAt: new Date(),

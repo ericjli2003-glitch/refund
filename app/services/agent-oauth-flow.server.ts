@@ -15,6 +15,8 @@ import {
   unseal,
 } from "./customer-security.server";
 import { normalizeShopDomain } from "./customer-account.server";
+import { moveConfirmedEmails } from "./consent-email.server";
+import { emailConfigured } from "./email.server";
 import {
   connectionBrowserCookie,
   readConnectionBrowser,
@@ -174,6 +176,19 @@ export async function finishAgentConsent(
         headers: privateHeaders,
       });
   }
+  // Returns in chat start from a confirmed shopping email, once email is set up.
+  if (
+    allStores &&
+    decision === "allow" &&
+    emailConfigured() &&
+    !(await prisma.consentEmailCheck.count({
+      where: { requestId: flow.id, status: "CONFIRMED" },
+    }))
+  )
+    throw new Response("Confirm an email before allowing access.", {
+      status: 400,
+      headers: privateHeaders,
+    });
   const code = randomToken();
   // An all-stores connection needs no store sign-in to approve because it
   // grants no purchase access by itself. The approving browser is recorded so
@@ -201,7 +216,7 @@ export async function finishAgentConsent(
             }
           : { status: "DENIED" },
     });
-    if (result.count === 1 && connectionId && browser)
+    if (result.count === 1 && connectionId && browser) {
       await tx.agentConnection.create({
         data: {
           id: connectionId,
@@ -211,6 +226,10 @@ export async function finishAgentConsent(
           expiresAt: new Date(Date.now() + CONNECTION_IDLE_MS),
         },
       });
+      // Emails confirmed on the consent page now belong to the connection.
+      await moveConfirmedEmails(tx, flow.id, connectionId);
+    } else if (result.count === 1)
+      await tx.consentEmailCheck.deleteMany({ where: { requestId: flow.id } });
     return result.count;
   });
   if (claimed !== 1)
