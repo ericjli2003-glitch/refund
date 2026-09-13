@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  buildRefundTransactions,
   buildReturnApprovalVariables,
+  buildReturnProcessTransactions,
   type SuggestedRefundTransaction,
 } from "./shopify-inputs.server";
 
@@ -14,22 +14,22 @@ test("return approval variables use Shopify's required id field", () => {
   );
 });
 
-test("suggested transactions become refundCreate transaction inputs", () => {
+test("suggested transactions become returnProcess order transaction inputs", () => {
   assert.deepEqual(
-    buildRefundTransactions("gid://shopify/Order/123", [
-      {
-        amountSet: { presentmentMoney: { amount: "42.00", currencyCode: "CAD" } },
-        gateway: "shopify_payments",
-        parentTransaction: { id: "gid://shopify/OrderTransaction/123", gateway: "shopify_payments", manualPaymentGateway: false },
-      },
-    ], { amount: "42.00", currencyCode: "CAD" }),
+    buildReturnProcessTransactions(
+      [
+        {
+          amountSet: { presentmentMoney: { amount: "42.00", currencyCode: "CAD" } },
+          gateway: "shopify_payments",
+          parentTransaction: { id: "gid://shopify/OrderTransaction/123", gateway: "shopify_payments", manualPaymentGateway: false },
+        },
+      ],
+      { amount: "42.00", currencyCode: "CAD" },
+    ),
     [
       {
-        amount: "42.00",
-        gateway: "shopify_payments",
-        kind: "REFUND",
-        orderId: "gid://shopify/Order/123",
         parentId: "gid://shopify/OrderTransaction/123",
+        transactionAmount: { amount: "42.00", currencyCode: "CAD" },
       },
     ],
   );
@@ -48,11 +48,11 @@ function transaction(amount: string, id = "123"): SuggestedRefundTransaction {
 }
 
 test("split original payments must match the exact confirmed total", () => {
-  assert.equal(buildRefundTransactions("order", [transaction("0.10"), transaction("0.20", "124")],
+  assert.equal(buildReturnProcessTransactions([transaction("0.10"), transaction("0.20", "124")],
     { amount: "0.30", currencyCode: "CAD" }).length, 2);
-  assert.equal(buildRefundTransactions("order", [transaction("1.005"), transaction("2.010", "124")],
+  assert.equal(buildReturnProcessTransactions([transaction("1.005"), transaction("2.010", "124")],
     { amount: "3.015", currencyCode: "CAD" }).length, 2);
-  assert.throws(() => buildRefundTransactions("order", [transaction("13.99")],
+  assert.throws(() => buildReturnProcessTransactions([transaction("13.99")],
     { amount: "14", currencyCode: "CAD" }), /original payment processor/);
 });
 
@@ -69,7 +69,7 @@ test("no refund can be routed to a replacement gateway, manual payment, missing 
     [transaction("7"), transaction("7")],
     [transaction("-14")], [transaction("0")], [transaction("NaN")],
   ]) {
-    assert.throws(() => buildRefundTransactions("order", transactions,
+    assert.throws(() => buildReturnProcessTransactions(transactions,
       { amount: "14", currencyCode: "CAD" }), /original payment processor/);
   }
 });

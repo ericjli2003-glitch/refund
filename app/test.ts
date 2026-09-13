@@ -1,5 +1,6 @@
 import "./services/return-guards.server.test";
 import "./services/shopify-inputs.server.test";
+import "./services/return-processing.server.test";
 import "./refund-status.test";
 import "./mcp.server.test";
 import "./services/customer-bridge.server.test";
@@ -9,3 +10,11 @@ import "./services/agent-oauth-provider.server.test";
 import "./browser-return-tools.test";
 import "./services/merchant-readiness.server.test";
 import "./services/merchant-opportunity.server.test";
+import "./services/customer-security.server.test";
+import "./services/return-guidance.server.test";
+import "./services/customer-session.server.test";
+import "./services/automatic-return.server.test";
+import "./services/merchant-lookup.server.test";
+import "./services/return-shipping.server.test";
+import "./services/verified-customer-returns.server.test";
+import "./services/store-link.server.test";

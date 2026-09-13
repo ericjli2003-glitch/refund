@@ -1,4 +1,4 @@
-import type { ReturnDraft } from "@prisma/client";
+import type { Prisma, ReturnDraft } from "@prisma/client";
 import prisma from "../db.server";
 import { describeRefundProgress } from "../refund-status";
 import { seal, unseal } from "./customer-security.server";
@@ -22,9 +22,14 @@ function sameSelection(left: unknown, right: unknown) {
 }
 
 // Only a validated continuation after Shopify verification may claim an intake.
-// Knowing a correlation ID alone never authorizes this operation.
-export async function claimIntakeDraft(context: CustomerContext & { draftId: string }) {
-  const claimed = await prisma.returnDraft.updateMany({
+// Knowing a correlation ID alone never authorizes this operation. Accepts a
+// transaction client so a caller can commit the claim atomically with
+// whatever else depends on it (e.g. the session that lets the customer use it).
+export async function claimIntakeDraft(
+  context: CustomerContext & { draftId: string },
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+) {
+  const claimed = await client.returnDraft.updateMany({
     where: {
       id: context.draftId, shop: context.shop,
       expiresAt: { gt: new Date() },
@@ -68,7 +73,7 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
   try {
     const quoteToken = unseal(draft.sealedQuoteToken, `return-draft:${draft.id}:${context.shop}`);
     const bound = readBoundQuote(quoteToken, context.shop, context.customerSubjectHash);
-    const snapshot = draft.quoteSnapshot as { expectedRefund?: Quote["expectedRefund"]; paymentMethod?: string; returnShipping?: string } | null;
+    const snapshot = draft.quoteSnapshot as { expectedRefund?: Quote["expectedRefund"]; paymentMethod?: string; returnShipping?: string; returnFees?: Quote["returnFees"] } | null;
     if (bound.id !== draft.quoteId || bound.orderId !== draft.orderId ||
         bound.expiresAt !== draft.quoteExpiresAt.getTime() ||
         !sameSelection(draft.selectedItems, bound.items) ||
@@ -79,8 +84,10 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
       orderId: bound.orderId, orderName: draft.orderName || "",
       items: draft.selectedItems as Quote["items"], expectedRefund: bound.expectedRefund,
       submissionAvailable: bound.submissionAvailable,
+      refundTiming: bound.refundTiming,
       quoteToken, expiresAt: draft.quoteExpiresAt.toISOString(),
       paymentMethod: snapshot.paymentMethod || "Original payment method.",
+      returnFees: snapshot.returnFees || { restocking: null, returnShipping: null },
       returnShipping: snapshot.returnShipping || "Follow the store's instructions.",
       nextStep: bound.submissionAvailable
         ? "Review the exact quote. Stop before submission unless the customer explicitly confirms it."
@@ -90,14 +97,14 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
 }
 
 function sameQuote(a: Quote, b: Quote) {
-  return a.submissionAvailable === b.submissionAvailable && a.orderId === b.orderId && sameSelection(a.items, b.items) &&
+  return a.submissionAvailable === b.submissionAvailable && a.refundTiming === b.refundTiming && a.orderId === b.orderId && sameSelection(a.items, b.items) &&
     a.expectedRefund.currencyCode === b.expectedRefund.currencyCode &&
     moneyAmountsMatch(a.expectedRefund.amount, b.expectedRefund.amount);
 }
 
 export async function saveReturnQuote(context: CustomerContext, quote: Quote) {
   const bound = readBoundQuote(quote.quoteToken, context.shop, context.customerSubjectHash);
-  if (bound.submissionAvailable !== quote.submissionAvailable || bound.orderId !== quote.orderId || !sameSelection(quote.items, bound.items) ||
+  if (bound.submissionAvailable !== quote.submissionAvailable || bound.refundTiming !== quote.refundTiming || bound.orderId !== quote.orderId || !sameSelection(quote.items, bound.items) ||
       !moneyAmountsMatch(bound.expectedRefund.amount, quote.expectedRefund.amount) ||
       bound.expectedRefund.currencyCode !== quote.expectedRefund.currencyCode)
     throw new Error("Quote details do not match their signed authorization.");
@@ -111,7 +118,7 @@ export async function saveReturnQuote(context: CustomerContext, quote: Quote) {
     data: {
       stage: "QUOTED", orderId: quote.orderId, orderName: quote.orderName,
       selectedItems: quote.items,
-      quoteSnapshot: { expectedRefund: quote.expectedRefund, paymentMethod: quote.paymentMethod, returnShipping: quote.returnShipping },
+      quoteSnapshot: { expectedRefund: quote.expectedRefund, paymentMethod: quote.paymentMethod, returnShipping: quote.returnShipping, returnFees: quote.returnFees },
       quoteId: bound.id, quoteExpiresAt: new Date(bound.expiresAt),
       sealedQuoteToken: seal(quote.quoteToken, `return-draft:${draft.id}:${context.shop}`),
       expiresAt: new Date(Date.now() + DRAFT_LIFETIME_MS),

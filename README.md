@@ -1,5 +1,20 @@
 # Refund
 
+## Customer MCP connection
+
+Customers can explicitly connect Refund to hosted ChatGPT or Claude using a
+merchant-specific remote MCP endpoint. The existing OAuth flow verifies their
+Shopify customer identity and obtains assistant consent before exposing purchase,
+quote, confirmation and status tools. Connecting is not refund consent.
+See [customer connection setup and test limits](docs/AGENT_ACCESS.md).
+One connection covers every Refund store: set it up at `/connect` with the MCP
+URL `/mcp/stores`, then link each store with that store's own Shopify sign-in the
+first time the assistant needs it. By default a linked store stays linked without
+another sign-in, using return rules the merchant confirms in Refund. A single
+store's connection (`/connect/:shop`, `/mcp/:shop`) is still available.
+
+## Alternative browser flow
+
 Merchant-owned `/agents.md` and Shopify App Proxy entry points are documented in
 [Merchant App Proxy setup and proof](docs/MERCHANT_APP_PROXY.md). This optional
 path reuses the existing portal and execution engine without a shopper connector
@@ -47,7 +62,11 @@ cannot finish cleanly are marked `NEEDS_ATTENTION` for merchant review.
   PKCE, one-use state, verified ID-token signatures/nonce, and same-origin CSRF
   checks protect sign-in and portal actions. Sessions are removed on sign-out,
   expiry cleanup, customer redaction, shop redaction, and uninstall.
-- Customer identity is stored as a keyed hash, not a raw customer ID.
+- Customer identity is stored as a keyed hash. The one exception is an
+  assistant store link that stays active without a new sign-in, which keeps the
+  verified Shopify customer ID encrypted (AES-256-GCM) so Refund can act for
+  that customer. Disconnecting the assistant, customer redaction, uninstall and
+  a year without use delete it.
 - Refund does not collect card numbers. Shopify refunds the original order
   transaction.
 - The app handles Shopify's customer data-request, customer-redaction,
@@ -100,8 +119,10 @@ Reauthentication never overwrites the merchant's existing financial settings.
 currently installed merchants. `/stores/testing-bl7vdfur.myshopify.com` is the
 public Testing Storefront return page and registers the same top-level tools as
 the theme embed. The page includes canonical metadata, visible merchant identity,
-structured data, and a sitemap entry. Only Testing is published in this release;
-other installations are not automatically publicly listed.
+structured data, and a sitemap entry. Installed stores are listed by default, and
+a merchant can hide the store from the Refund dashboard. `/llms.txt` lists them for
+assistants, and the public MCP's `find_store` tool searches them by partial name or
+website, returning every match for the customer to choose from.
 
 Intake accepts exact published names/aliases as well as domains. Multiple name
 matches require the customer to identify the website; no match is selected by
@@ -268,6 +289,10 @@ The app uses PostgreSQL and runs Prisma migrations before starting the server.
 1. Create a Render Blueprint from this repository and branch.
 2. Set `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, and
    `PUBLIC_SUPPORT_EMAIL` in Render. The blueprint supplies `DATABASE_URL`.
+   Also set `REFUND_SECRET` to a long random value so rotating the Shopify app
+   secret cannot orphan Refund's sealed data or customer identity hashes. On an
+   existing deployment, set `REFUND_PREVIOUS_SECRETS` to the current
+   `SHOPIFY_API_SECRET` value at the same time; see `docs/PROJECT_STATE.md`.
 3. Keep `application_url`, the `/auth/callback` admin redirect,
    `[customer_authentication]` `/customer/callback` redirect and JavaScript origin,
    aligned to the deployed HTTPS host. Storefront URLs are generated from that

@@ -62,6 +62,36 @@ try {
       discoveryPublished: false,
     },
   });
+  // Customer connector onboarding is public metadata only, not authorization.
+  const connectPage = await fetch(`http://127.0.0.1:3037/connect/${shop}`);
+  assert.equal(connectPage.status, 200);
+  assert.match(connectPage.headers.get("Cache-Control") || "", /no-store/);
+  assert.match(
+    connectPage.headers.get("Content-Security-Policy") || "",
+    /frame-ancestors 'none'/,
+  );
+  const connectHtml = await connectPage.text();
+  assert.ok(connectHtml.includes(`https://refund.test/mcp/${shop}`));
+  assert.ok(connectHtml.includes("Connect your assistant to Refund."));
+  assert.ok(
+    connectHtml.includes("Connecting does not submit a return or refund."),
+  );
+  assert.ok(!connectHtml.includes("private-smoke-token-never-sent"));
+  assert.equal(
+    (await fetch("http://127.0.0.1:3037/connect/not-a-shop")).status,
+    400,
+  );
+  assert.equal(
+    (
+      await fetch(
+        `http://127.0.0.1:3037/connect/missing-${randomUUID()}.myshopify.com`,
+      )
+    ).status,
+    404,
+  );
+  assert.equal(await prisma.agentAccessGrant.count({ where: { shop } }), 0);
+  assert.equal(await prisma.agentOAuthRequest.count({ where: { shop } }), 0);
+
   // Exercise the built React Router splat route, not only imported handlers.
   const proxyParams = {
     shop,
@@ -70,24 +100,48 @@ try {
     timestamp: String(Math.floor(Date.now() / 1000)),
   };
   const signature = createHmac("sha256", process.env.SHOPIFY_API_SECRET)
-    .update(Object.entries(proxyParams).sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `${key}=${value}`).join(""))
+    .update(
+      Object.entries(proxyParams)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => `${key}=${value}`)
+        .join(""),
+    )
     .digest("hex");
   const proxyQuery = new URLSearchParams({ ...proxyParams, signature });
   const proxyUrl = `http://127.0.0.1:3037/proxy/refund/agents.md?${proxyQuery}`;
   const agentGuide = await fetch(proxyUrl);
   assert.equal(agentGuide.status, 200);
   assert.match(agentGuide.headers.get("Content-Type"), /text\/markdown/);
-  assert.ok((await agentGuide.text()).includes(`https://${shop}/apps/refund/mcp`));
-  assert.equal((await fetch("http://127.0.0.1:3037/proxy/refund/agents.md")).status, 400);
-  const proxyManifest = await (await fetch(`http://127.0.0.1:3037/proxy/refund/manifest.json?${proxyQuery}`)).json();
+  assert.ok(
+    (await agentGuide.text()).includes(`https://${shop}/apps/refund/mcp`),
+  );
+  assert.equal(
+    (await fetch("http://127.0.0.1:3037/proxy/refund/agents.md")).status,
+    400,
+  );
+  const proxyManifest = await (
+    await fetch(
+      `http://127.0.0.1:3037/proxy/refund/manifest.json?${proxyQuery}`,
+    )
+  ).json();
   assert.equal(proxyManifest.merchant.shop, shop);
   assert.equal(proxyManifest.browser.connectorRequired, false);
-  const proxyMcp = await fetch(`http://127.0.0.1:3037/proxy/refund/mcp?${proxyQuery}`, {
-    method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
-  });
+  const proxyMcp = await fetch(
+    `http://127.0.0.1:3037/proxy/refund/mcp?${proxyQuery}`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    },
+  );
   assert.equal(proxyMcp.status, 200);
-  assert.deepEqual((await proxyMcp.json()).result.tools.map(tool => tool.name), ["start_return"]);
+  assert.deepEqual(
+    (await proxyMcp.json()).result.tools.map((tool) => tool.name),
+    ["start_return"],
+  );
   const profileUrl = `http://127.0.0.1:3037/stores/${shop}`;
   assert.equal(
     (await fetch(profileUrl)).status,
@@ -176,7 +230,11 @@ try {
     /Disallow: \/returns\//,
   );
   await prisma.session.deleteMany({ where: { shop } });
-  assert.equal((await fetch(proxyUrl)).status, 404, "Uninstalled proxies must not advertise capability");
+  assert.equal(
+    (await fetch(proxyUrl)).status,
+    404,
+    "Uninstalled proxies must not advertise capability",
+  );
   assert.equal(
     (await fetch(profileUrl)).status,
     404,
@@ -270,8 +328,16 @@ try {
     429,
     "Single-fetch navigation must share the browser intake quota",
   );
-  assert.equal((await fetch(proxyUrl)).status, 429, "Proxy traffic must share the intake quota");
-  assert.equal((await fetch("http://127.0.0.1:3037/%70roxy/refund/agents.md")).status, 429, "Encoded route characters must not bypass the proxy quota");
+  assert.equal(
+    (await fetch(proxyUrl)).status,
+    429,
+    "Proxy traffic must share the intake quota",
+  );
+  assert.equal(
+    (await fetch("http://127.0.0.1:3037/%70roxy/refund/agents.md")).status,
+    429,
+    "Encoded route characters must not bypass the proxy quota",
+  );
   console.log(
     "Production HTTP startup, discovery, MCP challenge, shared intake rate limits and browser preflight passed.",
   );

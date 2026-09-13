@@ -20,7 +20,7 @@ function quote(number: string) {
     expectedRefund: { amount: number, currencyCode: "CAD" }, expiresAt,
   };
   return { ...value, items: value.items.map(item => ({ ...item, title: `Item ${number}` })), orderName: `#${number}`,
-    quoteToken: signQuote(value), expiresAt: new Date(expiresAt).toISOString(), paymentMethod: "Original", returnShipping: "Store instructions", nextStep: "Stop at quote" };
+    quoteToken: signQuote(value), expiresAt: new Date(expiresAt).toISOString(), paymentMethod: "Original", refundTiming: "IMMEDIATE" as const, returnFees: { restocking: null, returnShipping: null }, returnShipping: "Store instructions", nextStep: "Stop at quote" };
 }
 try {
   await prisma.session.create({ data: { id: `offline_${shop}`, shop, isOnline: false, state: "test", accessToken: "test-only-never-sent" } });

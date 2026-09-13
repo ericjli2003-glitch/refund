@@ -89,3 +89,11 @@ capability negotiation, but provides no app registration API for appending
 Refund's tools to that Shopify-owned profile. A Refund-hosted JSON file alone
 would not publish the app through the merchant's UCP service. Keep the existing
 WebMCP/MCP surfaces until a supported Shopify publication mechanism is available.
+
+The UCP Order capability (`dev.ucp.shopping.order`) is business-pushed: the
+business sends order `adjustments`, including returns and refunds, to the
+platform. Refund processes returns natively with `returnProcess`, so they are
+ordinary Shopify returns, and any UCP order update about them is Shopify's to
+publish. UCP also requires vendor capabilities to use the vendor's own
+reverse-domain namespace hosted on that domain, so Refund defines none while it
+is served from a Render subdomain.

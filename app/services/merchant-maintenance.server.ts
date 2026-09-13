@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import prisma from "../db.server";
+import { pruneExpiredCustomerAccess } from "./agent-access.server";
 import { syncMerchantDirectory } from "./merchant-directory.server";
 import { prunePublicRateLimits } from "./public-rate-limit.server";
 
@@ -61,6 +62,7 @@ export async function runMerchantMaintenance(
   let nextRunSeconds = 300;
   try {
     await prunePublicRateLimits();
+    await pruneExpiredCustomerAccess();
     const result = await refresh(undefined, async () => {
       const renewed = await prisma.$executeRaw`
         UPDATE "MaintenanceLease" SET "expiresAt" = CURRENT_TIMESTAMP + INTERVAL '5 minutes'

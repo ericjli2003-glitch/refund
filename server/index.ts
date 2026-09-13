@@ -8,6 +8,11 @@ import { startMerchantMaintenance } from "../app/services/merchant-maintenance.s
 
 const app = express();
 app.disable("x-powered-by");
+// SHOPIFY_APP_URL must be HTTPS, so browsers should never fall back to HTTP.
+app.use((_req, res, next) => {
+  res.set("Strict-Transport-Security", "max-age=31536000");
+  next();
+});
 // Render terminates HTTPS at its reverse proxy; URLs come from SHOPIFY_APP_URL,
 // never from Host/forwarded headers. One trusted hop is used for rate limiting.
 app.set("trust proxy", trustedProxyHops());

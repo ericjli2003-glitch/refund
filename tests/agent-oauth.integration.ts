@@ -7,8 +7,18 @@ import { createCookie } from "react-router";
 import prisma from "../app/db.server";
 import { createOAuthRouter } from "../server/oauth";
 import { createAgentOAuthProvider } from "../app/services/agent-oauth-provider.server";
-import { authorizeAgent } from "../app/services/agent-access.server";
 import {
+  StoreLinkRequiredError,
+  authorizeAgent,
+  authorizeConnection,
+  connectionStore,
+  listAgentGrants,
+  listConnectionStores,
+  pruneExpiredCustomerAccess,
+  revokeAgentGrant,
+} from "../app/services/agent-access.server";
+import {
+  customerIdentityHash,
   digest,
   randomToken,
   seal,
@@ -16,7 +26,13 @@ import {
 import { getAgentAuthorizationRequest } from "../app/services/agent-oauth-flow.server";
 import { action as consentAction } from "../app/routes/agent.authorize.$requestId";
 import { action as mcpAction } from "../app/routes/mcp.$shop";
+import { action as mcpStoresAction } from "../app/routes/mcp.stores";
+import { action as storeLinkAction } from "../app/routes/connect.stores.link.$token";
 import { startCustomerLogin } from "../app/services/customer-session.server";
+import {
+  getStoreLinkRequest,
+  startStoreLink,
+} from "../app/services/store-link.server";
 
 const dbUrl = new URL(process.env.DATABASE_URL || "");
 assert.ok(
@@ -590,6 +606,329 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
           })
         ).status,
         400,
+      );
+    },
+  );
+  await t.test(
+    "one all-stores connection links each store with that store's own sign-in",
+    async (ctx) => {
+      const allStores = "https://refund.test/mcp/stores";
+      await prisma.merchantDirectory.create({
+        data: {
+          shop,
+          primaryDomain: `${shop.split(".")[0]}.example.test`,
+          name: "OAuth CI Store",
+        },
+      });
+      const linkRaw = randomToken();
+      const linkSessionId = digest(linkRaw);
+      const linkedCustomerId = "gid://shopify/Customer/777";
+      await prisma.customerReturnSession.create({
+        data: {
+          id: linkSessionId,
+          shop,
+          csrfToken: randomToken(),
+          customerSubjectHash: customerIdentityHash(linkedCustomerId),
+          accessToken: seal("linked-private-token", `${linkSessionId}:${shop}`),
+          expiresAt: new Date(Date.now() + 4 * 3600_000),
+        },
+      });
+      const linkCustomerCookie = (
+        await createCookie("__Host-refund_customer").serialize(linkRaw)
+      ).split(";")[0];
+      ctx.after(async () => {
+        await prisma.$transaction([
+          prisma.agentConnection.deleteMany({
+            where: { clientId: client.client_id },
+          }),
+          prisma.agentOAuthRequest.deleteMany({
+            where: { resource: allStores, clientId: client.client_id },
+          }),
+          prisma.merchantDirectory.deleteMany({ where: { shop } }),
+          prisma.storePolicy.deleteMany({ where: { shop } }),
+        ]);
+      });
+
+      // Approving the connection needs no store sign-in and reaches no store.
+      const flow = await start("returns:read returns:quote", {
+        resource: allStores,
+      });
+      assert.equal(flow.flow.shop, null);
+      const approved = await consent(flow, "allow", { noCustomer: true });
+      const connectionCookie = approved.headers
+        .get("Set-Cookie")!
+        .split(";")[0];
+      assert.match(connectionCookie, /^__Host-refund_connection=/);
+      const code = new URL(approved.headers.get("Location")!).searchParams.get(
+        "code",
+      )!;
+      assert.equal(
+        (await exchange(flow, code, { resource: resource })).status,
+        400,
+      );
+      const flow2 = await start("returns:read returns:quote", {
+        resource: allStores,
+      });
+      const code2 = new URL(
+        (
+          await consent(flow2, "allow", {
+            cookie: `${flow2.cookie}; ${connectionCookie}`,
+          })
+        ).headers.get("Location")!,
+      ).searchParams.get("code")!;
+      const tokenResponse = await exchange(flow2, code2, {
+        resource: allStores,
+      });
+      assert.equal(tokenResponse.status, 200);
+      const tokens = await tokenResponse.json();
+      assert.match(tokens.refresh_token, /^rfr_/);
+      const { connectionId } = await authorizeConnection(
+        `Bearer ${tokens.access_token}`,
+        "returns:quote",
+      );
+      // Reusing this browser's connection cookie binds both connections to it.
+      const connections = await prisma.agentConnection.findMany({
+        where: { clientId: client.client_id },
+      });
+      assert.equal(new Set(connections.map((value) => value.browserHash)).size, 1);
+      await assert.rejects(authorizeAgent(`Bearer ${tokens.access_token}`, shop));
+
+      const callTool = (
+        authorization: string,
+        name: string,
+        args: Record<string, unknown>,
+      ) =>
+        mcpStoresAction({
+          request: new Request(allStores, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+              Authorization: authorization,
+            },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "tools/call",
+              params: { name, arguments: args },
+            }),
+          }),
+          params: {},
+          context: {},
+          url: new URL(allStores),
+          pattern: "/mcp/stores",
+        });
+      assert.equal(
+        (await callTool(`Bearer rfa_${randomToken()}`, "get_return_session", { shop }))
+          .status,
+        401,
+      );
+      assert.equal(
+        (
+          await callTool(`Bearer ${tokens.access_token}`, "confirm_return", {
+            shop,
+            quoteToken: "unused",
+            customerConfirmed: true,
+          })
+        ).status,
+        403,
+      );
+      const unlinked = await callTool(
+        `Bearer ${tokens.access_token}`,
+        "get_return_session",
+        { shop },
+      );
+      assert.equal(unlinked.status, 200);
+      const unlinkedBody = await unlinked.json();
+      assert.equal(unlinkedBody.result.structuredContent.linkRequired, true);
+      assert.equal(unlinkedBody.result.structuredContent.reason, "not_linked");
+
+      const started = await startStoreLink(connectionId, shop);
+      assert.equal(started.status, "sign_in_required");
+      const linkUrl = started.linkUrl!;
+      const rawLink = new URL(linkUrl).pathname.split("/").at(-1)!;
+      const pending = await prisma.agentStoreLinkRequest.findUniqueOrThrow({
+        where: { id: digest(rawLink) },
+      });
+      // A link opened in any other browser is refused, signed in or not.
+      await assert.rejects(
+        getStoreLinkRequest(
+          new Request(linkUrl, { headers: { Cookie: linkCustomerCookie } }),
+          rawLink,
+        ),
+        responseStatus(400),
+      );
+      const linkAction = (cookie: string) =>
+        storeLinkAction({
+          request: new Request(linkUrl, {
+            method: "POST",
+            headers: {
+              Cookie: cookie,
+              Origin: "https://refund.test",
+              "Content-Type": "application/x-www-form-urlencoded",
+            },
+            body: new URLSearchParams({
+              decision: "allow",
+              csrf: pending.csrfToken,
+            }),
+          }),
+          params: { token: rawLink },
+          context: {},
+          url: new URL(linkUrl),
+          pattern: "/connect/stores/link/:token",
+        });
+      await assert.rejects(linkAction(connectionCookie), responseStatus(401));
+      // Linking verifies the signed-in customer with Shopify once.
+      const upstream = ctx.mock.method(
+        globalThis,
+        "fetch",
+        async (input: string | URL | Request) =>
+          String(input).includes("/.well-known/customer-account-api")
+            ? Response.json({
+                graphql_api:
+                  "https://shopify.com/1/account/customer/api/2026-07/graphql",
+              })
+            : Response.json({ data: { customer: { id: linkedCustomerId } } }),
+      );
+      const linked = await linkAction(`${connectionCookie}; ${linkCustomerCookie}`);
+      assert.equal(linked.status, 302);
+      assert.match(linked.headers.get("Location")!, /\/connect\/stores\/linked\?shop=/);
+      await assert.rejects(
+        linkAction(`${connectionCookie}; ${linkCustomerCookie}`),
+        responseStatus(400),
+      );
+      upstream.mock.restore();
+
+      assert.equal(
+        (await connectionStore(connectionId, shop)).customerToken,
+        "linked-private-token",
+      );
+      assert.deepEqual(
+        (await listConnectionStores(connectionId)).map((value) => [
+          value.shop,
+          value.name,
+          value.active,
+        ]),
+        [[shop, "OAuth CI Store", true]],
+      );
+      assert.equal((await startStoreLink(connectionId, shop)).status, "already_linked");
+
+      const refreshed = await post("/token", {
+        client_id: client.client_id,
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token,
+        resource: allStores,
+      });
+      assert.equal(refreshed.status, 200);
+      const next = await refreshed.json();
+      await authorizeConnection(`Bearer ${next.access_token}`);
+      await assert.rejects(authorizeConnection(`Bearer ${tokens.access_token}`));
+
+      // After the Shopify session ends, the link keeps working only where the
+      // store has confirmed its return rules and allows it.
+      await prisma.customerReturnSession.update({
+        where: { id: linkSessionId },
+        data: { expiresAt: new Date(Date.now() - 1_000) },
+      });
+      await assert.rejects(
+        connectionStore(connectionId, shop),
+        StoreLinkRequiredError,
+      );
+      await prisma.storePolicy.create({
+        data: { shop, returnRulesConfirmedAt: new Date() },
+      });
+      assert.deepEqual((await connectionStore(connectionId, shop)).customerToken, {
+        customerId: linkedCustomerId,
+      });
+      assert.equal(
+        (await listConnectionStores(connectionId))[0].staysLinkedWithoutSignIn,
+        true,
+      );
+      await prisma.storePolicy.update({
+        where: { shop },
+        data: { verifiedStoreLinks: false },
+      });
+      await assert.rejects(
+        connectionStore(connectionId, shop),
+        StoreLinkRequiredError,
+      );
+
+      // The customer removes the link from that store's return portal.
+      const listed = (await listAgentGrants(linkSessionId)).find((value) =>
+        value.name.includes("all-stores connection"),
+      );
+      assert.ok(listed);
+      assert.equal((await revokeAgentGrant(listed.id, linkSessionId)).count, 1);
+      await assert.rejects(
+        connectionStore(connectionId, shop),
+        StoreLinkRequiredError,
+      );
+
+      // Removing Refund from the assistant revokes its token, which ends the
+      // whole connection and deletes everything it still held.
+      assert.equal(
+        await prisma.agentStoreLinkRequest.count({ where: { connectionId } }),
+        1,
+      );
+      assert.equal(
+        (
+          await post("/revoke", {
+            client_id: client.client_id,
+            token: next.refresh_token,
+          })
+        ).status,
+        200,
+      );
+      await assert.rejects(authorizeConnection(`Bearer ${next.access_token}`));
+      assert.ok(
+        (
+          await prisma.agentConnection.findUniqueOrThrow({
+            where: { id: connectionId },
+          })
+        ).revokedAt,
+      );
+      assert.equal(
+        await prisma.agentStoreLinkRequest.count({ where: { connectionId } }),
+        0,
+      );
+
+      // Maintenance deletes a link unused for a year and an ended connection,
+      // and keeps a connection that is still in use.
+      const inUse = await prisma.agentConnection.create({
+        data: {
+          clientId: client.client_id,
+          scopes: ["returns:read"],
+          browserHash: "ci",
+          expiresAt: new Date(Date.now() + 86_400_000),
+        },
+      });
+      await prisma.agentStoreLink.create({
+        data: {
+          connectionId: inUse.id,
+          shop,
+          customerSubjectHash: "idle-customer",
+          lastUsedAt: new Date(Date.now() - 366 * 86_400_000),
+        },
+      });
+      const ended = await prisma.agentConnection.create({
+        data: {
+          clientId: client.client_id,
+          scopes: ["returns:read"],
+          browserHash: "ci",
+          expiresAt: new Date(Date.now() - 1_000),
+        },
+      });
+      await pruneExpiredCustomerAccess();
+      assert.equal(
+        await prisma.agentStoreLink.count({ where: { connectionId: inUse.id } }),
+        0,
+      );
+      assert.ok(
+        await prisma.agentConnection.findUnique({ where: { id: inUse.id } }),
+      );
+      assert.equal(
+        await prisma.agentConnection.findUnique({ where: { id: ended.id } }),
+        null,
       );
     },
   );

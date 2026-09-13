@@ -17,10 +17,14 @@ services:
         sync: false
       - key: SHOPIFY_API_SECRET
         sync: false
+      - key: REFUND_SECRET
+        sync: false
+      - key: REFUND_PREVIOUS_SECRETS
+        sync: false
       - key: SHOPIFY_APP_URL
         sync: false
       - key: SCOPES
-        value: read_orders,write_orders,read_returns,write_returns,customer_read_customers,customer_read_orders,customer_write_orders,write_app_proxy
+        value: read_orders,write_orders,read_products,read_returns,write_returns,customer_read_customers,customer_read_orders,customer_write_orders,write_app_proxy
       - key: PUBLIC_SUPPORT_EMAIL
         sync: false
 

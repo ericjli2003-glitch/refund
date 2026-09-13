@@ -92,6 +92,13 @@ test("public infrastructure enforces shared limits and maintains installed merch
       assert.equal(publicRatePolicy("/REGISTER/")?.bucket, "register");
       assert.equal(publicRatePolicy("/start-return.data")?.bucket, "intake");
       assert.equal(publicRatePolicy("/health"), null);
+      for (const path of [
+        "/customer/login",
+        "/customer/callback.data",
+        "/connect/stores/link/token",
+      ])
+        assert.equal(publicRatePolicy(path)?.bucket, "sign-in");
+      assert.equal(publicRatePolicy("/mcp/stores"), null);
       assert.equal(trustedProxyHops("0"), 0);
       assert.throws(() => trustedProxyHops("true"));
       const identities: string[] = [];

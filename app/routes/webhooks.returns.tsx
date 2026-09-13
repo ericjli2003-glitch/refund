@@ -32,6 +32,20 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     process: async (transaction) => {
       if (!returnId || !returnStatus) return;
 
+      // A return waiting for its item that Shopify processes or closes outside
+      // Refund may already have been refunded there. Flag it so Retry refund
+      // records that refund instead of the merchant refunding twice. Refund's
+      // own receipt processing holds the record in RECEIVING, so it is skipped.
+      if (["PROCESSED", "CLOSED"].includes(returnStatus))
+        await transaction.agentReturn.updateMany({
+          where: { shop, returnId, status: "AWAITING_ITEM" },
+          data: {
+            status: "NEEDS_ATTENTION",
+            failureReason:
+              "Shopify processed this return outside Refund while it waited for the item. Use Retry refund to record any refund, or check the order in Shopify.",
+          },
+        });
+
       const terminalFailure = ["CANCELLED", "DECLINED"].includes(returnStatus);
       await transaction.agentReturn.updateMany({
         where: { shop, returnId },

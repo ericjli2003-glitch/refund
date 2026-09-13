@@ -8,10 +8,14 @@ card, bank account, or payout destination.
 ## Merchant setup
 
 In Refund's embedded dashboard, enable automatic refund payments and save the
-return window and maximum amount. New installations default to estimates only.
-Enabling payments authorizes eligible refunds on customer confirmation, before
-the merchant receives or inspects the goods. The merchant bears the risk of
-unreturned items and must provide return-shipping instructions.
+return window, maximum amount and refund timing. New installations default to
+estimates only. With immediate refunds (the default), enabling payments
+authorizes eligible refunds on customer confirmation, before the merchant
+receives or inspects the goods, and the merchant bears the risk of unreturned
+items. With refunds on receipt, the return is approved at confirmation and the
+refund is issued when the merchant marks the item received. Either way, marking
+the item received restocks it, and the merchant should provide return-shipping
+instructions.
 
 ## Customer flow
 
@@ -36,10 +40,13 @@ payment gateways, replacement gateways, and invalid totals stop payment
 submission and require merchant attention. Mixed original payment methods are
 supported when all allocations pass these checks.
 
-The current implementation uses `refundCreate` after return approval. Shopify
-continues to support original-method refunds this way, but recommends
-`returnProcess` for return-specific accounting, fees, and exchanges. Those
-capabilities require a separate migration and are not implemented here.
+The implementation uses `returnProcess` after return approval, which transfers
+the refund and disposes the return's line items (restocking them at the
+resolved location, or not restocking when none resolves) in the same call.
+See `docs/PROJECT_STATE.md` for what that migration did and did not resolve.
+Allocations come from the return's `suggestedFinancialOutcome`, which deducts
+restocking and return shipping fees set in the merchant's Shopify return rules.
+The quote shows those fees, and the confirmed amount already excludes them.
 
 ## Status meaning
 
@@ -48,7 +55,10 @@ capabilities require a separate migration and are not implemented here.
 - **Refund processed by Shopify:** All returned refund transactions report
   success. This does not prove the customer's bank has posted the credit.
 - **Merchant review needed:** A payment failed or the return needs attention.
-  A split refund might have partially succeeded; do not blindly retry.
+  A split refund might have partially succeeded; do not blindly retry. When no
+  refund is recorded, the dashboard's **Retry refund** rechecks Shopify first
+  and refunds the confirmed amount only if the return is still requested or
+  open and nothing was refunded for it or the order since the request.
 
 Status reflects the submission response and recorded Shopify webhooks. Refresh
 loads the latest stored evidence; it does not query the customer's bank or

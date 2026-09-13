@@ -80,7 +80,7 @@
     {
       name: "get_store_return_options",
       description:
-        `Check how to start a return or refund for an item bought from ${store.name}. ` +
+        `Check how to start a return or refund for an item bought from ${store.name}, including the merchant's published return policy link and instructions. ` +
         "Use this when a customer asks about returning or refunding a purchase from this store.",
       inputSchema: {
         type: "object",

@@ -9,6 +9,7 @@ import prisma from "../db.server";
 import { requireInstalledShop } from "../services/customer-session.server";
 import { appOrigin } from "../services/customer-security.server";
 import { merchantProfilePath } from "../services/merchant-directory.server";
+import { publicReturnGuidance } from "../services/return-guidance.server";
 import styles from "../styles/public.module.css";
 
 export async function loader({ params }: LoaderFunctionArgs) {
@@ -29,6 +30,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
       merchant,
       displayName,
       origin,
+      guidance: await publicReturnGuidance(shop),
       canonical: `${origin}${merchantProfilePath(shop)}`,
       continueUrl: `${origin}/start-return?merchant=${encodeURIComponent(shop)}`,
     },
@@ -53,7 +55,7 @@ export const meta: MetaFunction<typeof loader> = ({ data: value }) =>
     : [{ title: "Store not found | Refund" }];
 
 export default function MerchantReturns() {
-  const { merchant, displayName, origin, canonical, continueUrl } =
+  const { merchant, displayName, origin, guidance, canonical, continueUrl } =
     useLoaderData<typeof loader>();
   const structured = {
     "@context": "https://schema.org",
@@ -114,6 +116,23 @@ export default function MerchantReturns() {
             Tell your assistant which item you want to return from {displayName}
             .
           </p>
+        )}
+        {(guidance.returnPolicyUrl || guidance.returnInstructions) && (
+          <section aria-label={`${displayName} return policy`}>
+            <h2>{displayName}&apos;s return policy</h2>
+            {guidance.returnPolicyUrl && (
+              <p>
+                <a href={guidance.returnPolicyUrl} rel="noreferrer">
+                  Read the full return policy
+                </a>
+              </p>
+            )}
+            {guidance.returnInstructions && (
+              <p style={{ whiteSpace: "pre-line" }}>
+                {guidance.returnInstructions}
+              </p>
+            )}
+          </section>
         )}
         <p>
           Complete Shopify verification yourself. Review the exact item and

@@ -5,12 +5,13 @@ import {
   normalizeShopDomain,
   verifyCustomerAccess,
 } from "./customer-account.server";
-import { hashCustomerId } from "./return-guards.server";
 import { makeContinuation, returnHints } from "./return-intake.server";
 import { getAgentAuthorizationRequest } from "./agent-oauth-flow.server";
 import { claimIntakeDraft } from "./return-draft.server";
+import { getStoreLinkRequest } from "./store-link.server";
 import {
   appOrigin,
+  customerIdentityHashes,
   digest,
   privateHeaders,
   randomToken,
@@ -33,7 +34,12 @@ type Discovery = {
   token_endpoint: string;
   jwks_uri: string;
 };
-type PendingLogin = { verifier: string; nonce: string; discovery: Discovery };
+type PendingLogin = {
+  verifier: string;
+  nonce: string;
+  discovery: Discovery;
+  silent?: boolean;
+};
 
 export async function requireInstalledShop(value: string) {
   const shop = normalizeShopDomain(value);
@@ -115,11 +121,24 @@ export async function discoverCustomerLogin(shop: string): Promise<Discovery> {
   return result;
 }
 
+// Where a completed or abandoned sign-in returns: an assistant's consent page,
+// an all-stores store link, or the customer's return portal.
+function signInReturnPath(pending: {
+  shop: string;
+  agentRequestId: string | null;
+  linkRequestId: string | null;
+}) {
+  if (pending.agentRequestId) return `/agent/authorize/${pending.agentRequestId}`;
+  if (pending.linkRequestId) return `/connect/stores/link/${pending.linkRequestId}`;
+  return null;
+}
+
 export async function startCustomerLogin(request: Request) {
   const url = new URL(request.url);
   const shop = await requireInstalledShop(url.searchParams.get("shop") || "");
   const hints = returnHints(url, shop);
   const agentRequestId = url.searchParams.get("agentRequest");
+  const linkRequestId = url.searchParams.get("linkRequest");
   if (agentRequestId) {
     const flow = await getAgentAuthorizationRequest(request, agentRequestId);
     if (flow.shop !== shop)
@@ -128,6 +147,21 @@ export async function startCustomerLogin(request: Request) {
         headers: privateHeaders,
       });
   }
+  if (linkRequestId) {
+    const link = await getStoreLinkRequest(request, linkRequestId);
+    if (link.shop !== shop)
+      throw new Response("This store link belongs to another store.", {
+        status: 400,
+        headers: privateHeaders,
+      });
+  }
+  // Shopify issues no refresh token to public PKCE app clients, so an expired
+  // assistant connection or store link needs a new sign-in. prompt=none reuses
+  // the customer's live Shopify session without a login screen; it is limited
+  // to those assistant flows, and a failure falls back to the ordinary choice.
+  const silent =
+    Boolean(agentRequestId || linkRequestId) &&
+    url.searchParams.get("silent") === "1";
   const clientId = process.env.SHOPIFY_API_KEY;
   if (!clientId) throw new Error("Customer sign-in is not configured.");
   const discovery = await discoverCustomerLogin(shop);
@@ -142,7 +176,10 @@ export async function startCustomerLogin(request: Request) {
       where: {
         OR: [
           { expiresAt: { lt: new Date() } },
-          ...(old ? [{ id: old.id }] : []),
+          // The browser holds one store sign-in at a time. A session a store
+          // link uses stays until it expires, so signing in to another store
+          // doesn't end that link's live Shopify session early.
+          ...(old ? [{ id: old.id, storeLinks: { none: {} } }] : []),
         ],
       },
     }),
@@ -153,13 +190,14 @@ export async function startCustomerLogin(request: Request) {
         csrfToken: randomToken(),
         stateHash: digest(state),
         sealedState: seal(
-          JSON.stringify({ verifier, nonce, discovery }),
+          JSON.stringify({ verifier, nonce, discovery, silent }),
           `${id}:${shop}`,
         ),
         orderHint: hints.orderName,
         itemHint: hints.itemName,
         draftId: hints.draftId,
         agentRequestId,
+        linkRequestId,
         expiresAt: new Date(Date.now() + 600_000),
       },
     }),
@@ -176,6 +214,7 @@ export async function startCustomerLogin(request: Request) {
     nonce,
     code_challenge: digest(verifier),
     code_challenge_method: "S256",
+    ...(silent ? { prompt: "none" } : {}),
   }).toString();
   return redirect(authUrl.toString(), {
     headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
@@ -197,6 +236,9 @@ export async function finishCustomerLogin(request: Request) {
     );
   }
   await requireInstalledShop(pending.shop);
+  const { verifier, nonce, discovery, silent } = JSON.parse(
+    unseal(pending.sealedState, `${pending.id}:${pending.shop}`),
+  ) as PendingLogin;
   // Claim the callback exactly once, including errors and concurrent requests.
   const claimed = await prisma.customerReturnSession.updateMany({
     where: { id: pending.id, stateHash: pending.stateHash },
@@ -207,10 +249,13 @@ export async function finishCustomerLogin(request: Request) {
       status: 400,
       headers: privateHeaders,
     });
+  const returnPath = signInReturnPath(pending);
   if (url.searchParams.has("error") || !url.searchParams.get("code")) {
-    if (pending.agentRequestId)
+    // A silent attempt without a live Shopify session is expected, not a
+    // failure: return to the ordinary sign-in choice without an error.
+    if (returnPath)
       return redirect(
-        `/agent/authorize/${pending.agentRequestId}?loginError=1`,
+        `${returnPath}?${silent ? "silentTried=1" : "loginError=1"}`,
         { headers: privateHeaders },
       );
     const retry = new URLSearchParams({
@@ -225,9 +270,6 @@ export async function finishCustomerLogin(request: Request) {
       headers: privateHeaders,
     });
   }
-  const { verifier, nonce, discovery } = JSON.parse(
-    unseal(pending.sealedState, `${pending.id}:${pending.shop}`),
-  ) as PendingLogin;
   const clientId = process.env.SHOPIFY_API_KEY!;
   const response = await fetch(discovery.token_endpoint, {
     method: "POST",
@@ -264,6 +306,10 @@ export async function finishCustomerLogin(request: Request) {
   ) {
     throw new Error("Shopify returned an incomplete customer session.");
   }
+  // Narrowed to plain locals: property narrowing on `tokens` does not survive
+  // into the transaction closure below.
+  const accessToken = tokens.access_token;
+  const expiresIn = tokens.expires_in!;
   const { payload } = await jwtVerify(
     tokens.id_token,
     createRemoteJWKSet(new URL(discovery.jwks_uri)),
@@ -276,42 +322,56 @@ export async function finishCustomerLogin(request: Request) {
   );
   if (payload.nonce !== nonce)
     throw new Error("Customer sign-in verification failed.");
-  const customerId = await verifyCustomerAccess(
-    pending.shop,
-    tokens.access_token,
-  );
-  const customerSubjectHash = hashCustomerId(customerId, process.env.SHOPIFY_API_SECRET!);
-  if (pending.draftId)
-    await claimIntakeDraft({ shop: pending.shop, customerSubjectHash, draftId: pending.draftId });
+  const customerId = await verifyCustomerAccess(pending.shop, accessToken);
+  const [customerSubjectHash, ...retiredSubjectHashes] =
+    customerIdentityHashes(customerId);
   const raw = randomToken();
   const id = digest(raw);
-  await prisma.$transaction([
-    prisma.customerReturnSession.delete({ where: { id: pending.id } }),
-    prisma.customerReturnSession.create({
+  // The draft claim commits atomically with the session that lets the
+  // customer use it, so a failure never leaves a claimed draft orphaned
+  // with no session to resume it.
+  await prisma.$transaction(async (tx) => {
+    // Customer IDs are never stored, so records hashed under a retired secret
+    // can only be re-keyed when that customer proves their identity again.
+    if (retiredSubjectHashes.length) {
+      const retired = {
+        shop: pending.shop,
+        customerSubjectHash: { in: retiredSubjectHashes },
+      };
+      const current = { customerSubjectHash };
+      await tx.agentReturn.updateMany({ where: retired, data: current });
+      await tx.returnDraft.updateMany({ where: retired, data: current });
+      await tx.customerReturnSession.updateMany({
+        where: retired,
+        data: current,
+      });
+      await tx.agentAccessGrant.updateMany({ where: retired, data: current });
+      await tx.agentStoreLink.updateMany({ where: retired, data: current });
+      await tx.privacyRequest.updateMany({ where: retired, data: current });
+    }
+    if (pending.draftId)
+      await claimIntakeDraft(
+        { shop: pending.shop, customerSubjectHash, draftId: pending.draftId },
+        tx,
+      );
+    await tx.customerReturnSession.delete({ where: { id: pending.id } });
+    await tx.customerReturnSession.create({
       data: {
         id,
         shop: pending.shop,
         csrfToken: randomToken(),
-        accessToken: seal(tokens.access_token, `${id}:${pending.shop}`),
-        customerSubjectHash: hashCustomerId(
-          customerId,
-          process.env.SHOPIFY_API_SECRET!,
-        ),
+        accessToken: seal(accessToken, `${id}:${pending.shop}`),
+        customerSubjectHash,
         orderHint: pending.orderHint,
         itemHint: pending.itemHint,
         draftId: pending.draftId,
         expiresAt: new Date(
-          Date.now() + Math.min(tokens.expires_in! - 60, 14_400) * 1000,
+          Date.now() + Math.min(expiresIn - 60, 14_400) * 1000,
         ),
       },
-    }),
-  ]);
-  return redirect(
-    pending.agentRequestId
-      ? `/agent/authorize/${pending.agentRequestId}`
-      : `/returns/${pending.shop}`,
-    {
-      headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
-    },
-  );
+    });
+  });
+  return redirect(returnPath ?? `/returns/${pending.shop}`, {
+    headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
+  });
 }

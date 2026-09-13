@@ -2,7 +2,7 @@ import type { ActionFunctionArgs } from "react-router";
 
 import prisma from "../db.server";
 import { authenticate } from "../shopify.server";
-import { hashCustomerId } from "../services/return-guards.server";
+import { customerIdentityHashes } from "../services/customer-security.server";
 
 function customerIdFromPayload(payload: Record<string, unknown>) {
   const customer = payload.customer;
@@ -18,24 +18,27 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { payload, shop, topic, webhookId } =
     await authenticate.webhook(request);
   const numericCustomerId = customerIdFromPayload(payload);
-  const secret = process.env.SHOPIFY_API_SECRET;
-  const customerSubjectHash =
-    numericCustomerId && secret
-      ? hashCustomerId(
-          numericCustomerId.startsWith("gid://shopify/Customer/")
-            ? numericCustomerId
-            : `gid://shopify/Customer/${numericCustomerId}`,
-          secret,
-        )
-      : null;
+  // Match every configured secret so records hashed before a rotation are
+  // still redacted and reported, not silently missed.
+  const subjectHashes = numericCustomerId
+    ? customerIdentityHashes(
+        numericCustomerId.startsWith("gid://shopify/Customer/")
+          ? numericCustomerId
+          : `gid://shopify/Customer/${numericCustomerId}`,
+      )
+    : [];
+  const customerSubjectHash = { in: subjectHashes };
 
   if (topic === "CUSTOMERS_REDACT") {
-    if (!customerSubjectHash) {
+    if (!subjectHashes.length) {
       throw new Error(
         "Customer redaction payload is missing a usable identity.",
       );
     }
+    // Deleting the customer's sessions also removes their assistant grants.
+    // Store links outlive sessions, so they are deleted directly.
     await prisma.$transaction([
+      prisma.agentStoreLink.deleteMany({ where: { shop, customerSubjectHash } }),
       prisma.customerReturnSession.deleteMany({
         where: { shop, customerSubjectHash },
       }),
@@ -48,7 +51,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   }
 
   if (topic === "CUSTOMERS_DATA_REQUEST") {
-    if (!customerSubjectHash) {
+    if (!subjectHashes.length) {
       throw new Error("Customer data request is missing a usable identity.");
     }
     const records = await prisma.agentReturn.findMany({
@@ -109,6 +112,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         expiresAt: true,
       },
     });
+    const storeLinks = await prisma.agentStoreLink.findMany({
+      where: { shop, customerSubjectHash },
+      select: {
+        createdAt: true,
+        lastUsedAt: true,
+        connection: { select: { clientId: true, scopes: true } },
+      },
+    });
     const reportData = {
       returns,
       returnDrafts: drafts.map((value) => ({
@@ -128,6 +139,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         expiresAt: grant.expiresAt.toISOString(),
         revokedAt: grant.revokedAt?.toISOString() ?? null,
       })),
+      assistantStoreLinks: storeLinks.map((link) => ({
+        clientId: link.connection.clientId,
+        scopes: link.connection.scopes,
+        createdAt: link.createdAt.toISOString(),
+        lastUsedAt: link.lastUsedAt.toISOString(),
+      })),
     };
     await prisma.privacyRequest.upsert({
       where: { id: webhookId },
@@ -135,7 +152,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         id: webhookId,
         shop,
         type: String(topic),
-        customerSubjectHash,
+        customerSubjectHash: subjectHashes[0],
         reportData,
       },
       update: { reportData },
@@ -146,6 +163,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     await prisma.$transaction([
       prisma.merchantOpportunity.deleteMany({ where: { knownShop: shop } }),
       prisma.merchantDirectory.deleteMany({ where: { shop } }),
+      prisma.agentStoreLinkRequest.deleteMany({ where: { shop } }),
+      prisma.agentStoreLink.deleteMany({ where: { shop } }),
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
       prisma.returnDraft.deleteMany({ where: { shop } }),
       prisma.agentOAuthRequest.deleteMany({ where: { shop } }),

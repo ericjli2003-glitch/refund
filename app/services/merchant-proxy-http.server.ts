@@ -10,6 +10,7 @@ import { privateHeaders } from "./customer-security.server";
 import { startReturnIntake } from "./return-intake.server";
 import { readIntakeBody } from "./public-intake-http.server";
 import { handleIntakeMcp } from "./intake-mcp-http.server";
+import { publicReturnGuidance } from "./return-guidance.server";
 
 export async function handleMerchantProxy(request: Request, path: string) {
   try {
@@ -53,16 +54,20 @@ export async function handleMerchantProxy(request: Request, path: string) {
         },
       });
     if (route === "agents.md")
-      return new Response(merchantAgentsMarkdown(shop, pathPrefix), {
-        headers: {
-          ...privateHeaders,
-          "Content-Type": "text/markdown; charset=utf-8",
+      return new Response(
+        merchantAgentsMarkdown(shop, pathPrefix, await publicReturnGuidance(shop)),
+        {
+          headers: {
+            ...privateHeaders,
+            "Content-Type": "text/markdown; charset=utf-8",
+          },
         },
-      });
+      );
     if (route === "manifest.json" || route === "ucp")
-      return Response.json(merchantReturnDiscovery(shop, pathPrefix), {
-        headers: privateHeaders,
-      });
+      return Response.json(
+        merchantReturnDiscovery(shop, pathPrefix, await publicReturnGuidance(shop)),
+        { headers: privateHeaders },
+      );
     if (route === "schema.json")
       return Response.json(proxySchema(), { headers: privateHeaders });
     return merchantHandoffPage(shop, pathPrefix);

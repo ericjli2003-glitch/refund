@@ -157,9 +157,11 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
     items: [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1 }],
     expectedRefund: { amount: "14.00", currencyCode: "CAD" },
     expiresAt: Date.parse(expiresAt),
+    submissionAvailable: true,
   });
   const saved = await saveReturnQuote(context, {
     submissionAvailable: true,
+    refundTiming: "IMMEDIATE",
     orderId: "gid://shopify/Order/1",
     orderName: "#1001",
     items: [
@@ -173,6 +175,7 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
     quoteToken,
     expiresAt,
     paymentMethod: "Original payment method",
+    returnFees: { restocking: null, returnShipping: null },
     returnShipping: "Follow store instructions",
     nextStep: "Review",
   });
@@ -391,6 +394,7 @@ test("changed quote stops before any return record or Shopify mutation", async (
       items: [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1 }],
       idempotencyKey: randomUUID(),
       expectedRefund: { amount: "14.00", currencyCode: "CAD" },
+      refundTiming: "IMMEDIATE",
     }),
     /amount changed/,
   );

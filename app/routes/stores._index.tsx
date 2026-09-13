@@ -13,7 +13,10 @@ import {
 } from "../services/merchant-directory.server";
 import styles from "../styles/public.module.css";
 import { MerchantDiscoveryTools } from "../components/MerchantDiscoveryTools";
-import { lookupMerchant } from "../services/merchant-lookup.server";
+import {
+  lookupMerchant,
+  searchPublishedMerchants,
+} from "../services/merchant-lookup.server";
 import { opportunityLabel } from "../services/merchant-opportunity.server";
 import { privateHeaders } from "../services/customer-security.server";
 
@@ -46,7 +49,10 @@ export const meta: MetaFunction = () => [
 ];
 export async function loader({ request }: LoaderFunctionArgs) {
   const query = new URL(request.url).searchParams.get("q")?.trim() || "";
-  const merchants = await findPublishedMerchants(query);
+  // Browsing lists every listed store; a search shows partial-name candidates.
+  const merchants = query
+    ? await searchPublishedMerchants(query)
+    : await findPublishedMerchants();
   return {
     query,
     merchants: merchants.map((merchant) => ({

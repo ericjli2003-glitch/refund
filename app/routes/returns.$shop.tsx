@@ -20,6 +20,10 @@ import {
   claimIntakeDraft,
   getReturnSession,
 } from "../services/return-draft.server";
+import {
+  returnShippingFor,
+  type ReturnShipping,
+} from "../services/return-shipping.server";
 import type {
   createReturnQuote,
   submitReturnQuote,
@@ -82,6 +86,10 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
         authenticated = false;
     }
   }
+  const customer =
+    session && authenticated
+      ? { shop, customerSubjectHash: session.customerSubjectHash!, draftId }
+      : null;
   return data(
     {
       shop,
@@ -92,18 +100,83 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       orderHint,
       itemHint,
       draftId: draftId || null,
-      returnSession:
-        session && authenticated
-          ? await getReturnSession({
-              shop,
-              customerSubjectHash: session.customerSubjectHash!,
-              draftId,
-            })
-          : null,
+      returnSession: customer ? await getReturnSession(customer) : null,
+      shipping: customer ? await returnShippingFor(customer) : [],
       loginUrl: `/customer/login?${query}`,
       error,
     },
     { headers: privateHeaders },
+  );
+}
+
+function ReturnShippingDetails({
+  shipping,
+  busy,
+  onAddTracking,
+}: {
+  shipping: ReturnShipping;
+  busy: boolean;
+  onAddTracking: (input: {
+    trackingNumber: string;
+    trackingUrl?: string;
+  }) => Promise<unknown>;
+}) {
+  return (
+    <div className="return-shipping">
+      {shipping.labelUrl ? (
+        <p>
+          <a href={shipping.labelUrl} target="_blank" rel="noreferrer">
+            Download the store&apos;s return shipping label
+          </a>
+        </p>
+      ) : (
+        <p>
+          No return label yet. The store may add one; otherwise follow its
+          return instructions.
+        </p>
+      )}
+      {shipping.trackingNumber && (
+        <p>
+          Tracking: {shipping.carrierName ? `${shipping.carrierName} ` : ""}
+          {shipping.trackingUrl ? (
+            <a href={shipping.trackingUrl} target="_blank" rel="noreferrer">
+              {shipping.trackingNumber}
+            </a>
+          ) : (
+            shipping.trackingNumber
+          )}
+        </p>
+      )}
+      {shipping.canAddTracking && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const trackingUrl = String(form.get("trackingUrl") || "").trim();
+            void onAddTracking({
+              trackingNumber: String(form.get("trackingNumber") || ""),
+              ...(trackingUrl ? { trackingUrl } : {}),
+            }).catch(() => {});
+          }}
+        >
+          <p>Shipping it yourself? Add the tracking number so the store can follow it.</p>
+          <label>
+            Tracking number{" "}
+            <input name="trackingNumber" required minLength={4} maxLength={40} />
+          </label>
+          <label>
+            Tracking link (optional){" "}
+            <input
+              name="trackingUrl"
+              type="url"
+              maxLength={500}
+              placeholder="https://"
+            />
+          </label>
+          <button disabled={busy}>Add tracking</button>
+        </form>
+      )}
+    </div>
   );
 }
 
@@ -120,6 +193,7 @@ export default function CustomerReturns() {
   );
   const [result, setResult] = useState<Result | null>(null);
   const [returnSession, setReturnSession] = useState(initial.returnSession);
+  const [shipping, setShipping] = useState<ReturnShipping[]>(initial.shipping);
   const [error, setError] = useState(initial.error);
   const [busy, setBusy] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
@@ -146,6 +220,7 @@ export default function CustomerReturns() {
       if (!response.ok) throw new Error(payload.error || "The request failed.");
       if (payload.orders) setOrders(payload.orders);
       if (payload.grants) setGrants(payload.grants);
+      if (payload.shipping) setShipping(payload.shipping);
       if (payload.quote) {
         setQuote(payload.quote);
         setConfirmed(false);
@@ -232,7 +307,7 @@ export default function CustomerReturns() {
       {
         name: "check_return_status",
         description:
-          "Check the signed-in customer's current Refund draft or submitted return status. Use after a retry, interruption, or uncertain response before attempting any later action.",
+          "Check the signed-in customer's current Refund draft or submitted return status, including each approved return's shipping: the store's return label link, tracking, and whether the customer can add tracking. Use after a retry, interruption, or uncertain response before attempting any later action.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -240,6 +315,28 @@ export default function CustomerReturns() {
         },
         annotations: { readOnlyHint: true, destructiveHint: false },
         execute: run("status"),
+      },
+      {
+        name: "add_return_tracking",
+        description:
+          "Record the tracking number for a return the customer is shipping back themselves. Use an agentReturnId from check_return_status shipping entries where canAddTracking is true, and only a tracking number the customer gave you; never invent one. Does not change the refund.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            agentReturnId: { type: "string" },
+            trackingNumber: { type: "string", minLength: 4, maxLength: 40 },
+            trackingUrl: { type: "string", maxLength: 500 },
+          },
+          required: ["agentReturnId", "trackingNumber"],
+          additionalProperties: false,
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          untrustedContentHint: true,
+        },
+        execute: run("add_tracking"),
       },
       {
         name: "find_returnable_items",
@@ -260,7 +357,7 @@ export default function CustomerReturns() {
       {
         name: "quote_return",
         description:
-          "Calculate and persist a resumable return quote without submitting anything. Show the exact order, products, quantities, currency, amount, correlation ID, and shipping instructions in the conversation; do not require the customer to click the page's quote button. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
+          "Calculate and persist a resumable return quote without submitting anything. Show the exact order, products, quantities, currency, amount, any return fees already deducted, when the refund is issued, correlation ID, and the store's return instructions in the conversation; do not require the customer to click the page's quote button. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
         inputSchema: {
           type: "object",
           properties: { orderId: { type: "string" }, items },
@@ -278,7 +375,7 @@ export default function CustomerReturns() {
       {
         name: "confirm_return",
         description:
-          "CONSEQUENTIAL: opens a return and submits a refund to the original payment method. Only call after the customer explicitly confirms the exact quote from quote_return. Never infer consent from login or a request to check eligibility. Reuse the same quoteToken for retries.",
+          "CONSEQUENTIAL: opens a return and refunds the original payment method, either immediately or after the store receives the item, as the quote states. Only call after the customer explicitly confirms the exact quote from quote_return. Never infer consent from login or a request to check eligibility. Reuse the same quoteToken for retries.",
         inputSchema: {
           type: "object",
           properties: {
@@ -325,6 +422,10 @@ export default function CustomerReturns() {
       <p className="return-intro">
         Securely connected to {initial.shop}. Nothing is submitted until you
         confirm the items and refund amount.
+      </p>
+      <p>
+        Prefer a connected assistant?{" "}
+        <a href={`/connect/${initial.shop}`}>Connect ChatGPT or Claude to Refund</a>.
       </p>
       <p role="status">
         {browserTools === "checking" && "Checking browser return-tool support…"}
@@ -402,13 +503,30 @@ export default function CustomerReturns() {
               Refresh return status
             </button>
             {!returnSession?.submissions.length && !result && <p>No return submissions yet.</p>}
-            {returnSession?.submissions.map((submission) => (
-              <article key={submission.id}>
-                <h3>{submission.orderName || "Return"} · {submission.title}</h3>
-                <p>{submission.currencyCode} {submission.amount} · {submission.paymentMethod}</p>
-                <p>{submission.message}</p>
-              </article>
-            ))}
+            {returnSession?.submissions.map((submission) => {
+              const shipment = shipping.find(
+                (entry) => entry.agentReturnId === submission.id,
+              );
+              return (
+                <article key={submission.id}>
+                  <h3>{submission.orderName || "Return"} · {submission.title}</h3>
+                  <p>{submission.currencyCode} {submission.amount} · {submission.paymentMethod}</p>
+                  <p>{submission.message}</p>
+                  {shipment && (
+                    <ReturnShippingDetails
+                      shipping={shipment}
+                      busy={busy}
+                      onAddTracking={(input) =>
+                        call("add_tracking", {
+                          agentReturnId: submission.id,
+                          ...input,
+                        })
+                      }
+                    />
+                  )}
+                </article>
+              );
+            })}
           </section>
           {grants.length > 0 && (
             <section aria-label="Connected assistants">
@@ -452,6 +570,20 @@ export default function CustomerReturns() {
                 {quote.expectedRefund.currencyCode}{" "}
                 {quote.expectedRefund.amount}
               </p>
+              {(quote.returnFees?.restocking ||
+                quote.returnFees?.returnShipping) && (
+                <p>
+                  Already deducted under the store&apos;s return rules:{" "}
+                  {[
+                    quote.returnFees.restocking &&
+                      `restocking fee ${quote.returnFees.restocking.currencyCode} ${quote.returnFees.restocking.amount}`,
+                    quote.returnFees.returnShipping &&
+                      `return shipping fee ${quote.returnFees.returnShipping.currencyCode} ${quote.returnFees.returnShipping.amount}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
               <p>{quote.paymentMethod}</p>
               <p>{quote.returnShipping}</p>
               <p>Quote expires at {quote.expiresAt}.</p>
@@ -467,7 +599,9 @@ export default function CustomerReturns() {
                       checked={confirmed}
                       onChange={(event) => setConfirmed(event.target.checked)}
                     />{" "}
-                    I confirm these items and this amount for a refund to my original payment method. I will follow the store&apos;s return instructions.
+                    {quote.refundTiming === "ON_RECEIPT"
+                      ? "I confirm these items and this amount for a refund to my original payment method after the store receives them. I will follow the store's return instructions."
+                      : "I confirm these items and this amount for a refund to my original payment method. I will follow the store's return instructions."}
                   </label>
                   <button
                     disabled={busy || !confirmed}
