@@ -6,6 +6,7 @@ import {
   calculateReturn,
   executeAutomaticReturn,
   getReturnableOrders,
+  refundTimingOf,
 } from "./automatic-return.server";
 import { moneyIsAbove, refundFromReturnTotal } from "./return-guards.server";
 import {
@@ -48,6 +49,8 @@ const signedQuoteSchema = quoteInputSchema.extend({
   // Fail closed: a quote missing this field (an older or malformed token)
   // must not parse as submittable.
   submissionAvailable: z.boolean().optional().default(false),
+  // Quotes signed before refund timing existed were all immediate.
+  refundTiming: z.enum(["IMMEDIATE", "ON_RECEIPT"]).optional().default("IMMEDIATE"),
 });
 
 export function readBoundQuote(
@@ -82,6 +85,7 @@ export async function createReturnQuote(
   // Installing Refund enables estimates. Automatic payment authorization is
   // separate and is still rechecked by the submission service.
   const submissionAvailable = Boolean(policy?.automaticRefundsEnabled);
+  const refundTiming = refundTimingOf(policy?.refundTiming);
   const age = (Date.now() - Date.parse(order.processedAt)) / 86_400_000;
   if (!Number.isFinite(age)) throw new Error("Shopify did not provide a valid purchase date.");
   if (submissionAvailable && policy && age > policy.returnWindowDays)
@@ -129,6 +133,7 @@ export async function createReturnQuote(
     items,
     expectedRefund,
     submissionAvailable,
+    refundTiming,
     subject: customerIdentityHash(customerId),
     expiresAt: Date.now() + 600_000,
   };
@@ -146,6 +151,7 @@ export async function createReturnQuote(
     orderName: order.name,
     expectedRefund,
     submissionAvailable,
+    refundTiming,
     items: items.map((item) => ({
       ...item,
       title: available.find((entry) => entry.lineItem.id === item.lineItemId)!
@@ -154,10 +160,12 @@ export async function createReturnQuote(
     quoteToken: signQuote(quote),
     expiresAt: new Date(quote.expiresAt).toISOString(),
     nextStep: submissionAvailable
-      ? "Show the exact items, quantities, any return fees, and refund amount to the customer. Submit only after their explicit confirmation."
+      ? "Show the exact items, quantities, any return fees, refund amount and refund timing to the customer. Submit only after their explicit confirmation."
       : "This is a quote only. Contact the merchant to approve and complete the return. No return request has been sent and this estimate does not establish approval under the merchant's policy.",
     paymentMethod:
-      "Original payment method. Bank posting time is not guaranteed to be immediate.",
+      refundTiming === "ON_RECEIPT"
+        ? "Original payment method, refunded after the store receives the returned item. Bank posting time is not guaranteed to be immediate."
+        : "Original payment method, refunded as soon as the return is confirmed, before the item is shipped back. Bank posting time is not guaranteed to be immediate.",
     returnFees: {
       restocking: displayedFee(
         calculation.financialSummary.restockingFeeSubtotalSet?.presentmentMoney,
@@ -169,7 +177,7 @@ export async function createReturnQuote(
     },
     returnShipping:
       (submissionAvailable
-        ? "A return is opened after confirmation. Refund does not generate a shipping label."
+        ? "A return is opened after confirmation. The store may add a return shipping label in Shopify."
         : "Contact the merchant for return approval. No shipping label has been created.") +
       instructions,
   };
@@ -197,6 +205,7 @@ export async function submitReturnQuote(
     expectedRefund: quote.expectedRefund,
     idempotencyKey: quote.id,
     customerNote,
+    refundTiming: quote.refundTiming,
   });
   return {
     status: result.status,

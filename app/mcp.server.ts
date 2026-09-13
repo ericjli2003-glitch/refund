@@ -257,7 +257,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Confirm and submit a customer return",
       description:
-        "After the authenticated customer explicitly confirms the exact items and quoted amount, requests and opens the Shopify return and submits an idempotent refund to the original payment method. This is consequential and must never be called speculatively.",
+        "After the authenticated customer explicitly confirms the exact items and quoted amount, requests and opens the Shopify return and refunds the original payment method, either immediately or after the store receives the item, as the quote's refundTiming states. This is consequential and must never be called speculatively.",
       inputSchema: {
         quoteToken: z
           .string()

@@ -19,6 +19,12 @@ export function describeRefundProgress(record: { status: string; refundStatus?: 
       message: "This return needs the merchant's attention. A refund may be incomplete. Contact the merchant and do not submit another refund for these items.",
     };
   }
+  if (["AWAITING_ITEM", "RECEIVING"].includes(record.status)) {
+    return {
+      title: "Return approved, refund when the store receives it",
+      message: "Your return is approved. This store refunds your original payment method after it receives the item. Follow the store's return instructions and keep any shipping receipt or tracking number.",
+    };
+  }
   if (["REFUND_SUBMITTED", "REFUND_RECORDED"].includes(record.status)) {
     return {
       title: record.refundStatus === "SUCCESS" ? "Refund processed by Shopify" : "Refund submitted",

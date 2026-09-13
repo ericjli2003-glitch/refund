@@ -25,4 +25,7 @@ test("customer messages distinguish processor success, pending funds, and mercha
   const failed = describeRefundProgress({ status: "NEEDS_ATTENTION", refundStatus: "SUCCESS" });
   assert.equal(failed.title, "Merchant review needed");
   assert.match(failed.message, /do not submit another/);
+  const waiting = describeRefundProgress({ status: "AWAITING_ITEM", refundStatus: null });
+  assert.match(waiting.title, /refund when the store receives it/);
+  assert.match(waiting.message, /after it receives the item/);
 });

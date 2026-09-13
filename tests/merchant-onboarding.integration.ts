@@ -64,14 +64,19 @@ try {
   assert.equal(repeated.maxAutoRefundAmount, "17.00");
   assert.equal(repeated.automaticRefundsEnabled, true);
   assert.deepEqual(
-    await findPublishedMerchants(name),
-    [],
-    "Private installations are not published automatically",
+    (await findPublishedMerchants(name)).map((profile) => profile.shop).sort(),
+    [...shops].sort(),
+    "Installed stores are listed in the directory by default",
   );
   await prisma.merchantDirectory.update({
-    where: { shop: shops[0] },
-    data: { discoveryPublished: true },
+    where: { shop: shops[1] },
+    data: { discoveryPublished: false },
   });
+  assert.deepEqual(
+    (await findPublishedMerchants(name)).map((profile) => profile.shop),
+    [shops[0]],
+    "A merchant can hide the store from the directory",
+  );
   assert.equal(
     await resolveMerchant(""),
     null,
@@ -81,6 +86,13 @@ try {
   assert.equal(
     (await resolveMerchant(`  ${name.toUpperCase()}   STOREFRONT `))?.shop,
     shops[0],
+  );
+  await provisionMerchant(shops[1], admin(shops[1]));
+  assert.equal(
+    (await prisma.merchantDirectory.findUniqueOrThrow({ where: { shop: shops[1] } }))
+      .discoveryPublished,
+    false,
+    "Reprovisioning never relists a store the merchant hid",
   );
   await prisma.merchantDirectory.update({
     where: { shop: shops[1] },

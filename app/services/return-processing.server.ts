@@ -17,8 +17,9 @@ export type ReverseFulfillmentLineItemNode = {
 export type ReturnDisposition = {
   reverseFulfillmentOrderLineItemId: string;
   quantity: number;
-  locationId: string;
-  dispositionType: "RESTOCKED";
+  // Shopify requires a location only for RESTOCKED.
+  locationId?: string;
+  dispositionType: "RESTOCKED" | "NOT_RESTOCKED";
 };
 
 export type ReturnProcessLineItem = {
@@ -60,19 +61,22 @@ export async function resolveRestockLocation(
  * fulfillment orders key off the same fulfillment line item, which is what
  * makes the two sides joinable.
  *
- * With no location, line items are processed with no disposition: the return
- * closes and the refund is issued, but nothing re-enters sellable inventory.
+ * With no location, line items get no disposition unless `unlocatedDisposition`
+ * asks for one: a refund before receipt leaves the items undisposed, while
+ * receiving them without a restock location records them as not restocked.
  */
 export function buildReturnProcessLineItems({
   items,
   returnLineItems,
   reverseFulfillmentLineItems,
   locationId,
+  unlocatedDisposition,
 }: {
   items: RequestedItem[];
   returnLineItems: ReturnLineItemNode[];
   reverseFulfillmentLineItems: ReverseFulfillmentLineItemNode[];
   locationId: string | null;
+  unlocatedDisposition?: "NOT_RESTOCKED";
 }): ReturnProcessLineItem[] {
   const byOrderLineItem = (lineItemId: string) =>
     returnLineItems.find(
@@ -85,6 +89,7 @@ export function buildReturnProcessLineItems({
   const remaining = new Map(
     reverseFulfillmentLineItems.map((node) => [node.id, node.totalQuantity]),
   );
+  const dispositionType = locationId ? "RESTOCKED" : unlocatedDisposition;
 
   return items.map((item) => {
     const returnLineItem = byOrderLineItem(item.lineItemId);
@@ -100,7 +105,7 @@ export function buildReturnProcessLineItems({
     }
 
     const dispositions: ReturnDisposition[] = [];
-    if (locationId) {
+    if (dispositionType) {
       let outstanding = item.quantity;
       for (const candidate of reverseFulfillmentLineItems) {
         if (outstanding <= 0) break;
@@ -115,11 +120,11 @@ export function buildReturnProcessLineItems({
         dispositions.push({
           reverseFulfillmentOrderLineItemId: candidate.id,
           quantity,
-          locationId,
-          dispositionType: "RESTOCKED",
+          ...(locationId ? { locationId } : {}),
+          dispositionType,
         });
       }
-      // A partial allocation would restock less than was returned. Restock
+      // A partial allocation would dispose less than was returned. Dispose
       // nothing for this line rather than a misleading fraction; the refund
       // still proceeds and the merchant reconciles inventory manually.
       if (outstanding > 0) dispositions.length = 0;

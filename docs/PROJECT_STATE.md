@@ -211,6 +211,41 @@ The manifest's `ucp` block states these boundaries, including
   store, so there is no cross-store customer identity, and each store needs its
   own assistant connection.
 
+### 6. Refund timing and receiving returned items (decided and implemented)
+
+App Store requirement 1.1.15 allows refunds only through the original payment
+processor, and 1.1 prohibits unauthorized refund or payment services, so
+"immediate" means refunding the original payment method at confirmation, never
+advancing Refund's own money or paying out another way.
+
+- **Merchant choice** (`StorePolicy.refundTiming`): `IMMEDIATE` (the default)
+  refunds when the customer confirms; `ON_RECEIPT` approves the return then and
+  refunds once the merchant marks the item received. The timing is shown in the
+  quote and signed into it; if the store changes it before confirmation, the
+  submission fails closed and asks for a new quote.
+- **Restocking follows the physical item.** An immediate refund calls
+  `returnProcess` with no dispositions, so nothing re-enters inventory before it
+  is back; this replaces the earlier restock-at-refund behavior. Marking the
+  item received then disposes it with `reverseFulfillmentOrderDispose`:
+  `RESTOCKED` at the resolved location, or `NOT_RESTOCKED` when none resolves.
+- **On receipt**, **Mark received and refund** runs the same Shopify rechecks as
+  Retry refund (an existing linked refund is recorded, an order refunded outside
+  the return stops it, the return must still be open), then refunds and
+  restocks in one `returnProcess` call for the amount the customer confirmed.
+  The record is claimed (`RECEIVING`) so it runs once; a failure returns it to
+  waiting for its item.
+- A waiting return that Shopify processes or closes outside Refund is flagged
+  for merchant attention by the returns webhook, so Retry refund can record any
+  refund made there instead of refunding twice.
+- Returns submitted before refund timing existed were restocked at refund time
+  and cannot be marked received.
+
+**Not yet verified against a live store:** that `returnProcess` accepts a refund
+with empty dispositions and still lets the reverse fulfillment order be
+disposed afterwards. Shopify's input marks dispositions optional and documents
+no timing constraint on `reverseFulfillmentOrderDispose`, but neither case has
+been exercised.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

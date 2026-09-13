@@ -160,3 +160,22 @@ test("an approved quantity below the confirmed quantity stops the refund", () =>
     /smaller quantity than the customer confirmed/,
   );
 });
+
+test("receiving an item with no restock location records it as not restocked", () => {
+  const [line] = buildReturnProcessLineItems({
+    items: [{ lineItemId: LINE_ITEM, quantity: 1 }],
+    returnLineItems: [returnLineItem("gid://shopify/ReturnLineItem/1", LINE_ITEM, 1)],
+    reverseFulfillmentLineItems: [
+      reverseLineItem("gid://shopify/ReverseFulfillmentOrderLineItem/1", LINE_ITEM, 1),
+    ],
+    locationId: null,
+    unlocatedDisposition: "NOT_RESTOCKED",
+  });
+  assert.deepEqual(line.dispositions, [
+    {
+      reverseFulfillmentOrderLineItemId: "gid://shopify/ReverseFulfillmentOrderLineItem/1",
+      quantity: 1,
+      dispositionType: "NOT_RESTOCKED",
+    },
+  ]);
+});

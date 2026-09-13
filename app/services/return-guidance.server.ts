@@ -51,6 +51,8 @@ export function cleanReturnPolicyUrl(value: unknown, storeHosts: string[]) {
 
 export type ReturnGuidance = {
   automaticReturnWindowDays: number | null;
+  // Null when the merchant has not enabled automatic refunds.
+  refundTiming: "IMMEDIATE" | "ON_RECEIPT" | null;
   returnInstructions: string | null;
   returnPolicyUrl: string | null;
 };
@@ -63,6 +65,7 @@ export async function publicReturnGuidance(
     select: {
       automaticRefundsEnabled: true,
       returnWindowDays: true,
+      refundTiming: true,
       returnInstructions: true,
       returnPolicyUrl: true,
     },
@@ -70,6 +73,11 @@ export async function publicReturnGuidance(
   return {
     automaticReturnWindowDays: policy?.automaticRefundsEnabled
       ? policy.returnWindowDays
+      : null,
+    refundTiming: policy?.automaticRefundsEnabled
+      ? policy.refundTiming === "ON_RECEIPT"
+        ? "ON_RECEIPT"
+        : "IMMEDIATE"
       : null,
     returnInstructions: policy?.returnInstructions ?? null,
     returnPolicyUrl: policy?.returnPolicyUrl ?? null,
@@ -85,6 +93,12 @@ export function guidanceMarkdown(guidance: ReturnGuidance) {
   if (guidance.automaticReturnWindowDays)
     lines.push(
       `- Automatic returns through Refund: within ${guidance.automaticReturnWindowDays} days of purchase, subject to eligibility and the merchant's limits.`,
+    );
+  if (guidance.refundTiming)
+    lines.push(
+      guidance.refundTiming === "ON_RECEIPT"
+        ? "- Refund timing: to the original payment method after the store receives the returned item."
+        : "- Refund timing: to the original payment method as soon as the customer confirms the return, before the item is shipped back.",
     );
   if (guidance.returnInstructions) {
     if (lines.length) lines.push("");

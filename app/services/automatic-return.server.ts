@@ -29,6 +29,12 @@ export type { RequestedItem } from "./return-guards.server";
 export type Money = { amount: string; currencyCode: string };
 type UserError = { field?: string[]; message: string };
 
+// IMMEDIATE refunds when the customer confirms; ON_RECEIPT approves the
+// return then and refunds once the merchant marks the item received.
+export type RefundTiming = "IMMEDIATE" | "ON_RECEIPT";
+export const refundTimingOf = (value: string | null | undefined): RefundTiming =>
+  value === "ON_RECEIPT" ? "ON_RECEIPT" : "IMMEDIATE";
+
 export type AdminGraphql = {
   graphql: (
     query: string,
@@ -172,12 +178,11 @@ const RETURN_STATUS_QUERY = `#graphql
   }
 `;
 
-// Fetched after approval: the order's fulfillment locations (restock
-// resolution), the approved return's own line items (to check Shopify approved
-// every confirmed item and quantity) and its reverse fulfillment order line
-// items (what restock dispositions are allocated against). Return line items
-// are the ReturnLineItemType interface; only verified ReturnLineItem nodes
-// carry a fulfillment.
+// The order's fulfillment locations (restock resolution), the approved
+// return's own line items (to check Shopify approved every confirmed item and
+// quantity) and its reverse fulfillment order line items (what dispositions are
+// allocated against). Return line items are the ReturnLineItemType interface;
+// only verified ReturnLineItem nodes carry a fulfillment.
 const RETURN_DETAILS_QUERY = `#graphql
   query ReturnDetailsForProcessing($returnId: ID!) {
     return(id: $returnId) {
@@ -248,6 +253,17 @@ const RETURN_PROCESS_MUTATION = `#graphql
   }
 `;
 
+const DISPOSE_MUTATION = `#graphql
+  mutation ReceiveReturnedItems(
+    $dispositionInputs: [ReverseFulfillmentOrderDisposeInput!]!
+  ) {
+    reverseFulfillmentOrderDispose(dispositionInputs: $dispositionInputs) {
+      reverseFulfillmentOrderLineItems { id }
+      userErrors { field message }
+    }
+  }
+`;
+
 // returnProcess does not echo the refund it creates, so the refund a return
 // produced is found by matching Refund.return.id.
 const ORDER_REFUNDS_QUERY = `#graphql
@@ -295,6 +311,9 @@ async function adminFor(shop: string): Promise<AdminGraphql> {
   const { unauthenticated } = await import("../shopify.server");
   return (await unauthenticated.admin(shop)).admin;
 }
+
+const errorText = (error: unknown, fallback: string) =>
+  (error instanceof Error ? error.message : fallback).slice(0, 1_000);
 
 async function approveReturn(
   admin: AdminGraphql,
@@ -358,24 +377,21 @@ function recordRefund(recordId: string, refund: OrderRefund) {
   });
 }
 
-// Everything after Shopify has an OPEN return: restock dispositions, the
-// fee-aware refund allocation, one returnProcess call, then the refund record.
-export async function processApprovedReturn({
+// Maps the confirmed items onto the approved return. With `dispose`, each
+// item is also disposed: restocked at the resolved location, or recorded as
+// not restocked when no single location resolves.
+async function returnLineItemsFor({
   admin,
   shop,
-  recordId,
-  orderId,
   returnId,
   items,
-  confirmed,
+  dispose,
 }: {
   admin: AdminGraphql;
   shop: string;
-  recordId: string;
-  orderId: string;
   returnId: string;
   items: RequestedItem[];
-  confirmed: Money;
+  dispose: boolean;
 }) {
   const noDetails =
     "Shopify did not return the approved return's line items. No refund was submitted.";
@@ -391,12 +407,7 @@ export async function processApprovedReturn({
     }>(admin, RETURN_DETAILS_QUERY, { returnId }, noDetails)
   ).return;
   if (!details) throw new Error(noDetails);
-
-  const restockLocationId = await resolveRestockLocation(
-    shop,
-    details.order.fulfillments.map((fulfillment) => fulfillment.location?.id),
-  );
-  const returnProcessLineItems = buildReturnProcessLineItems({
+  return buildReturnProcessLineItems({
     items,
     returnLineItems: details.returnLineItems.nodes.filter(
       (node): node is ReturnLineItemNode => typeof node.id === "string",
@@ -404,7 +415,44 @@ export async function processApprovedReturn({
     reverseFulfillmentLineItems: details.reverseFulfillmentOrders.nodes.flatMap(
       (node) => node.lineItems.nodes,
     ),
-    locationId: restockLocationId,
+    locationId: dispose
+      ? await resolveRestockLocation(
+          shop,
+          details.order.fulfillments.map((fulfillment) => fulfillment.location?.id),
+        )
+      : null,
+    unlocatedDisposition: dispose ? "NOT_RESTOCKED" : undefined,
+  });
+}
+
+// Everything after Shopify has an OPEN return: the fee-aware refund
+// allocation, one returnProcess call, then the refund record. Items are
+// disposed in the same call only when they are already back with the store.
+export async function processApprovedReturn({
+  admin,
+  shop,
+  recordId,
+  orderId,
+  returnId,
+  items,
+  confirmed,
+  dispose,
+}: {
+  admin: AdminGraphql;
+  shop: string;
+  recordId: string;
+  orderId: string;
+  returnId: string;
+  items: RequestedItem[];
+  confirmed: Money;
+  dispose: boolean;
+}) {
+  const returnProcessLineItems = await returnLineItemsFor({
+    admin,
+    shop,
+    returnId,
+    items,
+    dispose,
   });
 
   const noRefund =
@@ -495,6 +543,47 @@ export async function processApprovedReturn({
   return recordRefund(recordId, refund);
 }
 
+// Shopify is rechecked before any money moves. Returns the recorded row when
+// a refund is already linked to the return; throws when the order was
+// refunded outside the return since the request, or the return is not open;
+// returns null when refunding now is safe.
+async function settledOrBlocked(
+  admin: AdminGraphql,
+  record: { id: string; orderId: string; returnId: string; createdAt: Date },
+  approveRequested: boolean,
+) {
+  const refunds = await orderRefunds(admin, record.orderId);
+  const linked = refunds.find((refund) => refund.return?.id === record.returnId);
+  if (linked) return recordRefund(record.id, linked);
+  if (
+    refunds.some(
+      (refund) =>
+        !refund.return &&
+        refund.createdAt &&
+        Date.parse(refund.createdAt) >= record.createdAt.getTime(),
+    )
+  )
+    throw new Error(
+      "This order was refunded in Shopify after the customer's request. Refund issued no further refund; resolve the return in Shopify.",
+    );
+  const current = (
+    await adminData<{
+      return: { status: string; order: { id: string } } | null;
+    }>(admin, RETURN_STATUS_QUERY, { returnId: record.returnId }, "Shopify could not read this return.")
+  ).return;
+  if (!current || current.order.id !== record.orderId)
+    throw new Error(
+      "Shopify no longer shows this return on the original order. No refund was issued.",
+    );
+  if (current.status === "REQUESTED" && approveRequested)
+    await approveReturn(admin, record.returnId, record.orderId);
+  else if (current.status !== "OPEN")
+    throw new Error(
+      `Shopify shows this return as ${current.status.toLowerCase()}. Refund issued no further refund; check the order in Shopify.`,
+    );
+  return null;
+}
+
 export function canRetryReturn(record: {
   status: string;
   returnId: string | null;
@@ -506,6 +595,20 @@ export function canRetryReturn(record: {
     record.status === "NEEDS_ATTENTION" &&
     Boolean(record.returnId && !record.refundId && record.amount && record.currencyCode)
   );
+}
+
+export function canReceiveReturn(record: {
+  status: string;
+  returnId: string | null;
+  refundTiming: string | null;
+  itemReceivedAt: Date | null;
+}) {
+  // Returns submitted before refund timing existed were restocked at refund.
+  if (!record.returnId || record.itemReceivedAt || !record.refundTiming)
+    return false;
+  return record.refundTiming === "ON_RECEIPT"
+    ? record.status === "AWAITING_ITEM"
+    : ["REFUND_SUBMITTED", "REFUND_RECORDED"].includes(record.status);
 }
 
 function storedItems(value: Prisma.JsonValue): RequestedItem[] {
@@ -525,10 +628,9 @@ function storedItems(value: Prisma.JsonValue): RequestedItem[] {
 }
 
 // Merchant-initiated recovery for a return Shopify requested or approved but
-// Refund never refunded. Shopify is rechecked before any money moves: a refund
-// already linked to the return is recorded, and a refund issued on the order
-// outside the return stops the retry, so nothing is refunded twice. The amount
-// must still equal what the customer confirmed.
+// Refund never refunded. Nothing is refunded twice (see settledOrBlocked), the
+// amount must still equal what the customer confirmed, and an on-receipt
+// return goes back to waiting for its item rather than refunding early.
 export async function retryApprovedReturn(
   shop: string,
   agentReturnId: string,
@@ -551,35 +653,13 @@ export async function retryApprovedReturn(
   const returnId = record.returnId!;
   try {
     const client = admin ?? (await adminFor(shop));
-    const refunds = await orderRefunds(client, record.orderId);
-    const linked = refunds.find((refund) => refund.return?.id === returnId);
-    if (linked) return await recordRefund(record.id, linked);
-    if (
-      refunds.some(
-        (refund) =>
-          !refund.return &&
-          refund.createdAt &&
-          Date.parse(refund.createdAt) >= record.createdAt.getTime(),
-      )
-    )
-      throw new Error(
-        "This order was refunded in Shopify after the customer's request. Refund issued no further refund; resolve the return in Shopify.",
-      );
-    const current = (
-      await adminData<{
-        return: { status: string; order: { id: string } } | null;
-      }>(client, RETURN_STATUS_QUERY, { returnId }, "Shopify could not read this return.")
-    ).return;
-    if (!current || current.order.id !== record.orderId)
-      throw new Error(
-        "Shopify no longer shows this return on the original order. No refund was issued.",
-      );
-    if (current.status === "REQUESTED")
-      await approveReturn(client, returnId, record.orderId);
-    else if (current.status !== "OPEN")
-      throw new Error(
-        `Shopify shows this return as ${current.status.toLowerCase()}. Refund issued no further refund; check the order in Shopify.`,
-      );
+    const settled = await settledOrBlocked(client, { ...record, returnId }, true);
+    if (settled) return settled;
+    if (record.refundTiming === "ON_RECEIPT" && !record.itemReceivedAt)
+      return await prisma.agentReturn.update({
+        where: { id: record.id },
+        data: { status: "AWAITING_ITEM", returnStatus: "OPEN", failureReason: null },
+      });
     await prisma.agentReturn.update({
       where: { id: record.id },
       data: { returnStatus: "OPEN" },
@@ -592,16 +672,91 @@ export async function retryApprovedReturn(
       returnId,
       items,
       confirmed: { amount: record.amount!, currencyCode: record.currencyCode! },
+      // Returns from before refund timing existed restocked at refund time.
+      dispose: record.refundTiming !== "IMMEDIATE",
     });
   } catch (error) {
     await prisma.agentReturn.update({
       where: { id: record.id },
       data: {
         status: "NEEDS_ATTENTION",
-        failureReason: (error instanceof Error
-          ? error.message
-          : "The retry failed."
-        ).slice(0, 1_000),
+        failureReason: errorText(error, "The retry failed."),
+      },
+    });
+    throw error;
+  }
+}
+
+// The merchant confirms the item is back. An immediately refunded return is
+// restocked; an on-receipt return is refunded and restocked in one
+// returnProcess call, after the same Shopify rechecks as a retry.
+export async function receiveReturnedItems(
+  shop: string,
+  agentReturnId: string,
+  admin?: AdminGraphql,
+) {
+  const record = await prisma.agentReturn.findFirst({
+    where: { id: agentReturnId, shop },
+  });
+  if (!record || !canReceiveReturn(record))
+    throw new Error(
+      "Only an approved return that hasn't been marked received can be marked received.",
+    );
+  const items = storedItems(record.requestedLineItems);
+  const onReceipt = record.refundTiming === "ON_RECEIPT";
+  // RECEIVING also keeps a returns/process webhook for this very call from
+  // flagging the return as processed outside Refund.
+  const claimed = await prisma.agentReturn.updateMany({
+    where: { id: record.id, shop, status: record.status, itemReceivedAt: null },
+    data: { itemReceivedAt: new Date(), ...(onReceipt ? { status: "RECEIVING" } : {}) },
+  });
+  if (claimed.count !== 1)
+    throw new Error("This return is already being marked received.");
+  const returnId = record.returnId!;
+  try {
+    const client = admin ?? (await adminFor(shop));
+    if (!onReceipt) {
+      const dispositionInputs = (
+        await returnLineItemsFor({ admin: client, shop, returnId, items, dispose: true })
+      ).flatMap((line) => line.dispositions);
+      if (dispositionInputs.length) {
+        const { reverseFulfillmentOrderDispose } = await adminData<{
+          reverseFulfillmentOrderDispose: { userErrors: UserError[] };
+        }>(
+          client,
+          DISPOSE_MUTATION,
+          { dispositionInputs },
+          "Shopify could not record the returned items.",
+        );
+        throwOnUserErrors(
+          reverseFulfillmentOrderDispose.userErrors,
+          "Shopify could not record the returned items",
+        );
+      }
+      return await prisma.agentReturn.update({
+        where: { id: record.id },
+        data: { failureReason: null },
+      });
+    }
+    const settled = await settledOrBlocked(client, { ...record, returnId }, false);
+    if (settled) return settled;
+    return await processApprovedReturn({
+      admin: client,
+      shop,
+      recordId: record.id,
+      orderId: record.orderId,
+      returnId,
+      items,
+      confirmed: { amount: record.amount!, currencyCode: record.currencyCode! },
+      dispose: true,
+    });
+  } catch (error) {
+    await prisma.agentReturn.update({
+      where: { id: record.id },
+      data: {
+        itemReceivedAt: null,
+        ...(onReceipt ? { status: "AWAITING_ITEM" } : {}),
+        failureReason: errorText(error, "Marking the return received failed."),
       },
     });
     throw error;
@@ -646,6 +801,7 @@ export async function executeAutomaticReturn({
   customerNote,
   idempotencyKey,
   expectedRefund,
+  refundTiming,
 }: {
   shop: string;
   customerToken: string;
@@ -654,6 +810,7 @@ export async function executeAutomaticReturn({
   customerNote?: string;
   idempotencyKey: string;
   expectedRefund: Money;
+  refundTiming: RefundTiming;
 }) {
   const policy = await prisma.storePolicy.findUnique({ where: { shop } });
   if (!policy?.automaticRefundsEnabled) {
@@ -681,6 +838,13 @@ export async function executeAutomaticReturn({
     }
     return existing;
   }
+
+  // The customer agreed to when the refund would arrive; a store that changed
+  // its timing since the quote needs a fresh confirmation.
+  if (refundTimingOf(policy.refundTiming) !== refundTiming)
+    throw new Error(
+      "The store changed when refunds are issued after this quote. Nothing was submitted. Request a new quote and confirm it again.",
+    );
 
   const order = orders.find((candidate) => candidate.id === orderId);
   if (!order) {
@@ -747,6 +911,7 @@ export async function executeAutomaticReturn({
         customerSubjectHash: subjectHash,
         amount: quote.amount,
         currencyCode: quote.currencyCode,
+        refundTiming,
       },
     });
   } catch (error) {
@@ -800,11 +965,18 @@ export async function executeAutomaticReturn({
 
     const admin = await adminFor(shop);
     await approveReturn(admin, returnId, orderId);
+    if (refundTiming === "ON_RECEIPT")
+      return await prisma.agentReturn.update({
+        where: { id: record.id },
+        data: { status: "AWAITING_ITEM", returnStatus: "OPEN" },
+      });
     await prisma.agentReturn.update({
       where: { id: record.id },
       data: { status: "RETURN_OPEN", returnStatus: "OPEN" },
     });
 
+    // Refunded before the item ships back, so nothing is restocked yet; the
+    // merchant restocks by marking the item received.
     return await processApprovedReturn({
       admin,
       shop,
@@ -813,17 +985,14 @@ export async function executeAutomaticReturn({
       returnId,
       items,
       confirmed: quote,
+      dispose: false,
     });
   } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown automatic return error.";
     await prisma.agentReturn.update({
       where: { id: record.id },
       data: {
         status: "NEEDS_ATTENTION",
-        failureReason: message.slice(0, 1_000),
+        failureReason: errorText(error, "Unknown automatic return error."),
       },
     });
     throw error;

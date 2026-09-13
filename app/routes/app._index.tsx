@@ -12,7 +12,9 @@ import prisma from "../db.server";
 import { describeRefundProgress } from "../refund-status";
 import { authenticate } from "../shopify.server";
 import {
+  canReceiveReturn,
   canRetryReturn,
+  receiveReturnedItems,
   retryApprovedReturn,
 } from "../services/automatic-return.server";
 import {
@@ -131,6 +133,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     query,
     saved: url.searchParams.get("saved") === "true",
     retried: url.searchParams.get("retried") === "true",
+    received: url.searchParams.get("received") === "true",
     listingSaved: url.searchParams.get("listingSaved") === "true",
     returnPortalUrl: `${appOrigin()}/returns/${session.shop}`,
     listed: merchant.discoveryPublished,
@@ -152,12 +155,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       returnLocationId: null as string | null,
       returnInstructions: null as string | null,
       returnPolicyUrl: null as string | null,
+      refundTiming: "IMMEDIATE",
     },
     instructionsMaxLength: RETURN_INSTRUCTIONS_MAX_LENGTH,
     agentsTemplateSection: merchantAgentsTemplateSection(guidance),
     agentReturns: agentReturns.map((agentReturn) => ({
       ...agentReturn,
       retryable: canRetryReturn(agentReturn),
+      receivable: canReceiveReturn(agentReturn),
     })),
     privacyRequests,
   };
@@ -178,21 +183,28 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return redirect("/app?privacyResolved=true");
   }
 
-  if (formData.get("intent") === "retryReturn") {
+  if (
+    formData.get("intent") === "retryReturn" ||
+    formData.get("intent") === "receiveReturn"
+  ) {
+    const retry = formData.get("intent") === "retryReturn";
     const agentReturnId = formData.get("agentReturnId");
     if (typeof agentReturnId !== "string" || !agentReturnId) {
       throw new Response("Return ID is required.", { status: 400 });
     }
     try {
-      await retryApprovedReturn(session.shop, agentReturnId);
+      if (retry) await retryApprovedReturn(session.shop, agentReturnId);
+      else await receiveReturnedItems(session.shop, agentReturnId);
     } catch (error) {
       return {
-        heading: "Retry did not finish",
+        heading: retry
+          ? "Retry did not finish"
+          : "The return wasn't marked received",
         error:
-          error instanceof Error ? error.message : "The retry did not finish.",
+          error instanceof Error ? error.message : "The action did not finish.",
       };
     }
-    return redirect("/app?retried=true");
+    return redirect(retry ? "/app?retried=true" : "/app?received=true");
   }
 
   if (formData.get("intent") === "setListing") {
@@ -287,6 +299,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     returnLocationId,
     returnInstructions,
     returnPolicyUrl,
+    refundTiming:
+      formData.get("refundTiming") === "ON_RECEIPT" ? "ON_RECEIPT" : "IMMEDIATE",
   };
   await prisma.storePolicy.upsert({
     where: { shop: session.shop },
@@ -347,6 +361,7 @@ export default function RefundDashboard() {
     query,
     saved,
     retried,
+    received,
     listed,
     listingSaved,
     privacyResolved,
@@ -406,6 +421,7 @@ export default function RefundDashboard() {
   const [returnLocationId, setReturnLocationId] = useState(
     policy.returnLocationId ?? "",
   );
+  const [refundTiming, setRefundTiming] = useState(policy.refundTiming);
   const [returnInstructions, setReturnInstructions] = useState(
     policy.returnInstructions ?? "",
   );
@@ -425,6 +441,32 @@ export default function RefundDashboard() {
       setCopyStatus("Select the text above and copy it manually.");
     }
   }
+
+  const returnAction = (
+    intent: "retryReturn" | "receiveReturn",
+    agentReturnId: string,
+    explanation: string,
+    label: string,
+  ) => (
+    <form
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit(event.currentTarget);
+      }}
+    >
+      <input type="hidden" name="intent" value={intent} />
+      <input type="hidden" name="agentReturnId" value={agentReturnId} />
+      <s-stack direction="block" gap="small-200">
+        <s-paragraph color="subdued">{explanation}</s-paragraph>
+        <s-box>
+          <s-button type="submit" variant="secondary">
+            {label}
+          </s-button>
+        </s-box>
+      </s-stack>
+    </form>
+  );
 
   return (
     <s-page heading="Refunds" inlineSize="large">
@@ -487,6 +529,12 @@ export default function RefundDashboard() {
 
       {retried && (
         <s-banner heading="Retry finished" tone="info">
+          Check the return&apos;s status under Recent customer-agent returns.
+        </s-banner>
+      )}
+
+      {received && (
+        <s-banner heading="Return marked received" tone="success">
           Check the return&apos;s status under Recent customer-agent returns.
         </s-banner>
       )}
@@ -604,6 +652,7 @@ export default function RefundDashboard() {
             formData.set("returnWindowDays", returnWindowDays);
             formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
             formData.set("returnLocationId", returnLocationId);
+            formData.set("refundTiming", refundTiming);
             formData.set("returnInstructions", returnInstructions);
             formData.set("returnPolicyUrl", returnPolicyUrl);
             submit(formData, { method: "post" });
@@ -620,14 +669,8 @@ export default function RefundDashboard() {
             <s-paragraph color="subdued">
               Estimates work without enabling this setting. When enabled, the
               customer signs in, selects an eligible item, sees the calculated
-              amount, and confirms it. Shopify then opens the return and sends
-              the refund to the original payment method.
-            </s-paragraph>
-            <s-paragraph>
-              Refunds are submitted before you receive or inspect the returned
-              items. Your store carries the risk if the customer does not return
-              them. Customers must follow your return instructions; bank posting
-              time is outside Refund&apos;s control.
+              amount and refund timing, and confirms it. Shopify then opens the
+              return, and the refund goes to the original payment method.
             </s-paragraph>
             <s-grid
               gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
@@ -655,6 +698,18 @@ export default function RefundDashboard() {
                 required
               ></s-money-field>
               <s-select
+                label="When to refund"
+                value={refundTiming}
+                onChange={(event) => setRefundTiming(event.currentTarget.value)}
+              >
+                <s-option value="IMMEDIATE">
+                  As soon as the customer confirms the return
+                </s-option>
+                <s-option value="ON_RECEIPT">
+                  After I mark the returned item received
+                </s-option>
+              </s-select>
+              <s-select
                 label="Restock returned items to"
                 value={returnLocationId}
                 onChange={(event) =>
@@ -671,11 +726,19 @@ export default function RefundDashboard() {
                 ))}
               </s-select>
             </s-grid>
+            <s-paragraph>
+              Immediate refunds reach customers before you receive or inspect
+              the item, so your store carries the risk if it never comes back.
+              Refunds on receipt approve the return at confirmation, then refund
+              and restock when you mark the item received below. Either way the
+              refund goes only to the original payment method, and items are
+              restocked when you mark them received.
+            </s-paragraph>
             <s-paragraph color="subdued">
-              Leave this on the fulfilling location unless you route returns to
-              a dedicated warehouse. If an order was fulfilled from more than
-              one location and you have not chosen one here, the refund is still
-              issued but nothing is restocked automatically.
+              Leave the restock location on the fulfilling location unless you
+              route returns to a dedicated warehouse. If an order was fulfilled
+              from more than one location and you have not chosen one here,
+              received items are recorded as not restocked.
             </s-paragraph>
             <s-paragraph color="subdued">
               Restocking and return shipping fees come from your Shopify return
@@ -877,38 +940,36 @@ export default function RefundDashboard() {
                     >
                       {describeRefundProgress(agentReturn).title}
                     </s-badge>
+                    {agentReturn.itemReceivedAt && (
+                      <s-paragraph color="subdued">
+                        Item received{" "}
+                        {formatDate(agentReturn.itemReceivedAt.toString())}
+                      </s-paragraph>
+                    )}
                     {agentReturn.failureReason && (
                       <s-paragraph>{agentReturn.failureReason}</s-paragraph>
                     )}
-                    {agentReturn.retryable && (
-                      <form
-                        method="post"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          submit(event.currentTarget);
-                        }}
-                      >
-                        <input type="hidden" name="intent" value="retryReturn" />
-                        <input
-                          type="hidden"
-                          name="agentReturnId"
-                          value={agentReturn.id}
-                        />
-                        <s-stack direction="block" gap="small-200">
-                          <s-paragraph color="subdued">
-                            Retrying checks Shopify first. It refunds the amount
-                            the customer confirmed only if the return is still
-                            requested or open and no refund exists for it or for
-                            the order since the request.
-                          </s-paragraph>
-                          <s-box>
-                            <s-button type="submit" variant="secondary">
-                              Retry refund
-                            </s-button>
-                          </s-box>
-                        </s-stack>
-                      </form>
-                    )}
+                    {agentReturn.retryable &&
+                      returnAction(
+                        "retryReturn",
+                        agentReturn.id,
+                        "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
+                        "Retry refund",
+                      )}
+                    {agentReturn.receivable &&
+                      (agentReturn.refundTiming === "ON_RECEIPT"
+                        ? returnAction(
+                            "receiveReturn",
+                            agentReturn.id,
+                            "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
+                            "Mark received and refund",
+                          )
+                        : returnAction(
+                            "receiveReturn",
+                            agentReturn.id,
+                            "The refund was already issued. Once the item is back, this restocks it in Shopify.",
+                            "Mark received and restock",
+                          ))}
                   </s-table-cell>
                   <s-table-cell>
                     {agentReturn.amount && agentReturn.currencyCode
@@ -929,7 +990,8 @@ export default function RefundDashboard() {
         <s-unordered-list>
           <s-list-item>Customer and order ownership verification</s-list-item>
           <s-list-item>Shopify return eligibility and amount check</s-list-item>
-          <s-list-item>Return approval, restocking and refund submission</s-list-item>
+          <s-list-item>Return approval and refund submission</s-list-item>
+          <s-list-item>Restocking when you mark items received</s-list-item>
         </s-unordered-list>
       </s-section>
     </s-page>

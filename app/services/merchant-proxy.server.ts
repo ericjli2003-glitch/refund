@@ -48,6 +48,7 @@ export function merchantReturnDiscovery(
             source: "merchant",
             policyUrl: guidance.returnPolicyUrl,
             automaticReturnWindowDays: guidance.automaticReturnWindowDays,
+            refundTiming: guidance.refundTiming,
             instructions: guidance.returnInstructions,
             instructionsOverrideSafetyRules: false,
           },

@@ -45,6 +45,9 @@ model StorePolicy {
   // Merchant-authored guidance published in quotes, agents.md and the manifest.
   returnInstructions      String?
   returnPolicyUrl         String?
+  // IMMEDIATE refunds on customer confirmation; ON_RECEIPT waits until the
+  // merchant marks the returned item received.
+  refundTiming            String   @default("IMMEDIATE")
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 }
@@ -215,6 +218,9 @@ model AgentReturn {
   requestedLineItems  Json
   customerSubjectHash String
   failureReason       String?
+  // The store's refund timing when the customer confirmed; null before it existed.
+  refundTiming        String?
+  itemReceivedAt      DateTime?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 

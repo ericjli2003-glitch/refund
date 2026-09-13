@@ -8,10 +8,14 @@ card, bank account, or payout destination.
 ## Merchant setup
 
 In Refund's embedded dashboard, enable automatic refund payments and save the
-return window and maximum amount. New installations default to estimates only.
-Enabling payments authorizes eligible refunds on customer confirmation, before
-the merchant receives or inspects the goods. The merchant bears the risk of
-unreturned items and must provide return-shipping instructions.
+return window, maximum amount and refund timing. New installations default to
+estimates only. With immediate refunds (the default), enabling payments
+authorizes eligible refunds on customer confirmation, before the merchant
+receives or inspects the goods, and the merchant bears the risk of unreturned
+items. With refunds on receipt, the return is approved at confirmation and the
+refund is issued when the merchant marks the item received. Either way, marking
+the item received restocks it, and the merchant should provide return-shipping
+instructions.
 
 ## Customer flow
 

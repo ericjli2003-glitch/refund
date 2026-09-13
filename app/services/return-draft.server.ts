@@ -84,6 +84,7 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
       orderId: bound.orderId, orderName: draft.orderName || "",
       items: draft.selectedItems as Quote["items"], expectedRefund: bound.expectedRefund,
       submissionAvailable: bound.submissionAvailable,
+      refundTiming: bound.refundTiming,
       quoteToken, expiresAt: draft.quoteExpiresAt.toISOString(),
       paymentMethod: snapshot.paymentMethod || "Original payment method.",
       returnFees: snapshot.returnFees || { restocking: null, returnShipping: null },
@@ -96,14 +97,14 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
 }
 
 function sameQuote(a: Quote, b: Quote) {
-  return a.submissionAvailable === b.submissionAvailable && a.orderId === b.orderId && sameSelection(a.items, b.items) &&
+  return a.submissionAvailable === b.submissionAvailable && a.refundTiming === b.refundTiming && a.orderId === b.orderId && sameSelection(a.items, b.items) &&
     a.expectedRefund.currencyCode === b.expectedRefund.currencyCode &&
     moneyAmountsMatch(a.expectedRefund.amount, b.expectedRefund.amount);
 }
 
 export async function saveReturnQuote(context: CustomerContext, quote: Quote) {
   const bound = readBoundQuote(quote.quoteToken, context.shop, context.customerSubjectHash);
-  if (bound.submissionAvailable !== quote.submissionAvailable || bound.orderId !== quote.orderId || !sameSelection(quote.items, bound.items) ||
+  if (bound.submissionAvailable !== quote.submissionAvailable || bound.refundTiming !== quote.refundTiming || bound.orderId !== quote.orderId || !sameSelection(quote.items, bound.items) ||
       !moneyAmountsMatch(bound.expectedRefund.amount, quote.expectedRefund.amount) ||
       bound.expectedRefund.currencyCode !== quote.expectedRefund.currencyCode)
     throw new Error("Quote details do not match their signed authorization.");
