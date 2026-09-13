@@ -246,6 +246,30 @@ disposed afterwards. Shopify's input marks dispositions optional and documents
 no timing constraint on `reverseFulfillmentOrderDispose`, but neither case has
 been exercised.
 
+### 7. Return labels and tracking (decided and implemented)
+
+Refund uses Shopify's own return labels rather than buying labels from a
+carrier, so there is no carrier account, per-label cost or off-platform billing.
+
+- Merchants create or upload a return label on the return in Shopify admin;
+  the dashboard links each open return's order there. Shopify stores it as a
+  reverse delivery and can email it to the customer.
+- The customer portal, `get_return_session`/`check_return_status` (MCP and
+  WebMCP) show each approved, unreceived return's label link and tracking, read
+  server-side from the return's reverse deliveries. Only https links are shown,
+  and a return whose shipping can't be read is omitted rather than failing the
+  status.
+- Customers shipping the item themselves add a tracking number (and optional
+  https carrier link) to their own return through the portal, the WebMCP tool
+  or the MCP `add_return_tracking` tool (`returns:submit`). Refund creates a
+  reverse delivery with `reverseDeliveryCreateWithShipping`, or updates the
+  store's existing label delivery with `reverseDeliveryShippingUpdate`, both
+  with `notifyCustomer: false`. Tracking from a store label is never
+  overwritten.
+
+**Not yet verified against a live store:** reading label fields and adding
+tracking on a return whose refund was already processed.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

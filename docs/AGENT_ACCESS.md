@@ -39,7 +39,7 @@ client IDs/secrets blank. CIMD is deliberately not advertised.
   Account/workspace policy can restrict developer mode.
 
 Do not use the bare `/mcp` or `/apps/refund/mcp` URL for this customer connection:
-those expose anonymous intake only. The full `/mcp/:shop` route exposes the five
+those expose anonymous intake only. The full `/mcp/:shop` route exposes the six
 private return tools after OAuth. The browser flow remains an alternative, not
 a prerequisite for using the connected assistant after authorization.
 

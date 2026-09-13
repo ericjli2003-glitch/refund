@@ -34,6 +34,7 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
       "find_returnable_items",
       "quote_return",
       "confirm_return",
+      "add_return_tracking",
     ],
   );
   assert.equal(
@@ -59,6 +60,11 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
       },
     ],
   );
+  const trackingTool = tools.find((tool) => tool.name === "add_return_tracking");
+  assert.equal(trackingTool?.annotations?.destructiveHint, false);
+  assert.deepEqual(trackingTool?._meta?.securitySchemes, [
+    { type: "oauth2", scopes: ["returns:submit"] },
+  ]);
 
   await client.close();
   await server.close();
@@ -102,6 +108,11 @@ test("every private tool checks its own permission before any Shopify call", asy
       { quoteToken: "unused", customerConfirmed: true },
       "returns:submit",
     ],
+    [
+      "add_return_tracking",
+      { agentReturnId: "agent-return-1", trackingNumber: "1Z999AA1" },
+      "returns:submit",
+    ],
   ] as const) {
     const result = await client.callTool({ name, arguments: args });
     assert.equal(result.isError, true);
@@ -113,6 +124,7 @@ test("every private tool checks its own permission before any Shopify call", asy
     "returns:read",
     "returns:read",
     "returns:quote",
+    "returns:submit",
     "returns:submit",
   ]);
   assert.equal(upstream.mock.callCount(), 0);

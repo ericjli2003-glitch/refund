@@ -15,3 +15,4 @@ import "./services/return-guidance.server.test";
 import "./services/customer-session.server.test";
 import "./services/automatic-return.server.test";
 import "./services/merchant-lookup.server.test";
+import "./services/return-shipping.server.test";

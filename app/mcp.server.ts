@@ -19,6 +19,10 @@ import {
   notePurchaseLookup,
   saveReturnQuote,
 } from "./services/return-draft.server";
+import {
+  addReturnTracking,
+  returnShippingFor,
+} from "./services/return-shipping.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -97,7 +101,7 @@ export function createCustomerReturnsMcpServer({
             ? "Resume a customer return draft"
             : "Check a customer return status",
         description:
-          "Reads only the authenticated customer's latest Refund draft and any known submission status. Use after interruption or an uncertain retry. Never creates a return or refund.",
+          "Reads only the authenticated customer's latest Refund draft, any known submission status, and each approved return's shipping: the store's return label link and tracking, and whether the customer can add their own tracking. Use after interruption or an uncertain retry. Never creates a return or refund.",
         inputSchema: {},
         annotations: {
           readOnlyHint: true,
@@ -112,11 +116,15 @@ export function createCustomerReturnsMcpServer({
           const context = await authorize("returns:read");
           if (!context.customerSubjectHash)
             throw new Error("This customer session cannot resume drafts.");
-          const result = await getReturnSession({
+          const customer = {
             shop: context.shop,
             customerSubjectHash: context.customerSubjectHash,
             draftId: context.draftId,
-          });
+          };
+          const result = {
+            ...(await getReturnSession(customer)),
+            shipping: await returnShippingFor(customer),
+          };
           return {
             content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
             structuredContent: result,
@@ -316,6 +324,52 @@ export function createCustomerReturnsMcpServer({
               ),
             },
           ],
+        };
+      } catch (error) {
+        return toolError(error, resourceMetadataUrl);
+      }
+    },
+  );
+
+  server.registerTool(
+    "add_return_tracking",
+    {
+      title: "Add return tracking",
+      description:
+        "Records the tracking number for a return the authenticated customer is shipping back themselves. Use an agentReturnId from get_return_session or check_return_status shipping entries where canAddTracking is true, and only a tracking number the customer gave you; never invent one. Never overwrites tracking from the store's label and does not change the refund.",
+      inputSchema: {
+        agentReturnId: z.string().min(1).max(64),
+        trackingNumber: z
+          .string()
+          .min(4)
+          .max(40)
+          .describe("The carrier tracking number the customer provided"),
+        trackingUrl: z
+          .string()
+          .max(500)
+          .optional()
+          .describe("Optional https tracking link from the carrier"),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+      _meta: { securitySchemes: securitySchemes("returns:submit") },
+    },
+    async (input) => {
+      try {
+        const { shop, customerSubjectHash } = await authorize("returns:submit");
+        if (!customerSubjectHash)
+          throw new Error("This customer session cannot update returns.");
+        const shipping = await addReturnTracking(
+          { shop, customerSubjectHash },
+          input,
+        );
+        return {
+          content: [{ type: "text", text: JSON.stringify(shipping, null, 2) }],
+          structuredContent: shipping,
         };
       } catch (error) {
         return toolError(error, resourceMetadataUrl);

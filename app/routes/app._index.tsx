@@ -949,6 +949,13 @@ export default function RefundDashboard() {
                     {agentReturn.failureReason && (
                       <s-paragraph>{agentReturn.failureReason}</s-paragraph>
                     )}
+                    {agentReturn.returnId && !agentReturn.itemReceivedAt && (
+                      <s-link
+                        href={`shopify:admin/orders/${agentReturn.orderId.split("/").pop()}`}
+                      >
+                        Add a return label or tracking in Shopify
+                      </s-link>
+                    )}
                     {agentReturn.retryable &&
                       returnAction(
                         "retryReturn",

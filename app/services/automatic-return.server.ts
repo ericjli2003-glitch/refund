@@ -289,7 +289,7 @@ function throwOnUserErrors(errors: UserError[], action: string) {
   );
 }
 
-async function adminData<T>(
+export async function adminData<T>(
   admin: AdminGraphql,
   query: string,
   variables: Record<string, unknown>,
@@ -307,7 +307,7 @@ async function adminData<T>(
   return result.data;
 }
 
-async function adminFor(shop: string): Promise<AdminGraphql> {
+export async function adminFor(shop: string): Promise<AdminGraphql> {
   const { unauthenticated } = await import("../shopify.server");
   return (await unauthenticated.admin(shop)).admin;
 }

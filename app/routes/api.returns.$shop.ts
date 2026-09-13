@@ -25,6 +25,10 @@ import {
   notePurchaseLookup,
   saveReturnQuote,
 } from "../services/return-draft.server";
+import {
+  addReturnTracking,
+  returnShippingFor,
+} from "../services/return-shipping.server";
 
 // A resource route keeps fetch/WebMCP responses JSON, separate from portal HTML.
 export async function action({ request, params }: ActionFunctionArgs) {
@@ -66,9 +70,19 @@ export async function action({ request, params }: ActionFunctionArgs) {
     };
     if (body.operation === "get_session" || body.operation === "status")
       return Response.json(
-        { session: await getReturnSession(customer) },
+        {
+          session: await getReturnSession(customer),
+          shipping: await returnShippingFor(customer),
+        },
         { headers: privateHeaders },
       );
+    if (body.operation === "add_tracking") {
+      await addReturnTracking(customer, body);
+      return Response.json(
+        { shipping: await returnShippingFor(customer) },
+        { headers: privateHeaders },
+      );
+    }
     if (body.operation === "list") {
       const { orders } = await getReturnableOrders(shop, session.customerToken);
       await notePurchaseLookup(customer);
