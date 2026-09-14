@@ -78,18 +78,18 @@ try {
   );
   assert.ok(!connectHtml.includes(`https://refund.test/mcp/${shop}`));
   assert.ok(!connectHtml.includes("private-smoke-token-never-sent"));
-  assert.equal(
-    (await fetch("http://127.0.0.1:3037/connect/not-a-shop")).status,
-    400,
-  );
-  assert.equal(
-    (
-      await fetch(
-        `http://127.0.0.1:3037/connect/missing-${randomUUID()}.myshopify.com`,
-      )
-    ).status,
-    404,
-  );
+  // Any store setup address, even a malformed or uninstalled one, sends the
+  // customer to the connection for every store rather than an error.
+  for (const path of [
+    "/connect/not-a-shop",
+    `/connect/missing-${randomUUID()}.myshopify.com`,
+  ]) {
+    const moved = await fetch(`http://127.0.0.1:3037${path}`, {
+      redirect: "manual",
+    });
+    assert.equal(moved.status, 302, path);
+    assert.equal(new URL(moved.headers.get("Location"), "http://x").pathname, "/connect");
+  }
   assert.equal(await prisma.agentAccessGrant.count({ where: { shop } }), 0);
   assert.equal(await prisma.agentOAuthRequest.count({ where: { shop } }), 0);
 
