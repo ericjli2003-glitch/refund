@@ -2,10 +2,11 @@
 
 ## What is implemented
 
-A merchant-specific remote MCP connection now supports the authorization-code
-flow through Refund: assistant → Shopify customer sign-in → explicit assistant
-consent → code exchange → private return tools in the chat. Public intake and
-the existing browser tools remain separate and available.
+One remote MCP connection reaches every store that uses Refund, through the
+authorization-code flow: assistant → Refund consent (with email confirmation) →
+code exchange → return tools in the chat that find orders, quote, and submit
+returns and refunds after the customer confirms each one. Public intake and the
+existing browser tools remain separate and available.
 
 This is a backend implementation for host acceptance testing, not a claim that
 either host has completed a live test or that an unconnected chat can discover
@@ -21,16 +22,33 @@ Setup page: `/connect`. MCP URL:
 https://refund-ztxz.onrender.com/mcp/stores
 ```
 
-The customer adds this once. Approving it on Refund's consent page needs no
-store sign-in, because the connection alone reaches no purchases. Shopify
-customer accounts are separate for every store, so each store is linked with
-its own sign-in:
+The customer adds this once. Approving it needs no store sign-in. Once Resend is
+configured, the consent page first asks "What email do you use when you shop
+online?", sends a 6-digit code, and keeps Allow disabled until at least one
+email is confirmed. The code is entered on that page, which the authorization
+flow cookie binds to the approving browser. The same email carries a button for
+another device: it asks for the number shown on the consent page, and the page
+picks up the confirmation on its own. Codes last 15 minutes, allow 5 attempts,
+can be resent after 30 seconds, and are capped at 8 per authorization and 5 per
+address an hour. More emails can be added. Without Resend configured the email
+step is skipped.
+
+Confirmed emails are saved on the connection (`ConnectionEmail`), encrypted,
+with a keyed hash for lookups, and used only to find the customer's orders at
+stores that use Refund, never for marketing:
 
 1. The assistant finds the store with `find_store` and calls a return tool with
-   that `shop`. An unlinked or expired store returns `linkRequired` with
-   `nextTool: "link_store"`.
-2. `link_store` with the email the customer used at checkout sends a one-tap
-   confirmation from Refund (through Resend) and returns a two-digit number.
+   that `shop`. If the store has no link, Refund checks the connection's
+   confirmed emails for orders there and links the store to the first match,
+   with nothing for the customer to do. If none match, the tool returns
+   `linkRequired` with reason `email_not_found`, and the assistant asks
+   whether they used a different email. Otherwise an unlinked or expired store
+   returns `linkRequired` with `nextTool: "link_store"`.
+2. `link_store` tries the confirmed emails first. With a different email the
+   customer used at checkout, it sends a one-tap confirmation from Refund
+   (through Resend) and returns a two-digit number; once confirmed, that email
+   is added to the connection, so it works at every store too. This is also
+   how connections made before the consent-page step add their first email.
    The customer taps "Yes, that's me" and picks that number on
    `/verify/email/:token`; a wrong number cancels the request. No Shopify
    sign-in or store account is needed, so guest checkouts work. An address with
@@ -71,24 +89,41 @@ Limits and protections:
   store's return portal lists it under connected assistants and can remove it.
   Customer redaction and uninstall delete it; signing out ends only its live
   Shopify session.
-- All-stores tokens are rejected by `/mcp/:shop`, and single-store tokens by
-  `/mcp/stores`. Submission still needs the signed quote and explicit
-  confirmation, and every tool checks its scope.
+- Customers see and remove confirmed emails with `list_confirmed_emails` and
+  `remove_confirmed_email` in chat, or at `/connect/manage` in the approving
+  browser, which can also disconnect. Disconnecting, a year without use and
+  customer redaction (for that address, on every connection) delete them.
+  Uninstall and shop redaction delete emails confirmed in a chat about that
+  store; emails confirmed at setup belong to the customer and stay. Customer
+  data requests report when an address was confirmed, without naming other
+  stores.
+- Stores that still use Shopify sign-in get the first confirmed email as
+  `login_hint`, so Shopify's sign-in form is pre-filled.
+- Looking up orders by email needs Shopify's Level 2 protected customer data
+  approval for the order email field. Without it, lookups fail and stores fall
+  back to Shopify sign-in.
+- Every Refund MCP address opens this same connection: `/mcp/stores`, and
+  `/mcp/:shop` addresses saved from earlier setup pages, each with its own
+  resource metadata. Single-store grants are retired and open nothing.
+  Submission still needs the signed quote and explicit confirmation, and every
+  tool checks its scope.
 
-## Connect the Testing store
+## Connect and test
 
-Customer-facing setup is available at `/connect/:shop` after deploying this
-version. It is linked from the return portal and provides a copyable,
-merchant-specific MCP URL, sign-in/consent instructions, permission boundaries
-and a quote-only first prompt. Opening it neither creates an OAuth request nor
+Customer-facing setup is at `/connect`, linked from every return portal
+(`/connect/:shop` redirects there). It shows the MCP URL, what the assistant can
+do and how store access works. Opening it neither creates an OAuth request nor
 grants access. The issuer comes from server configuration, never a request header.
-Invalid domains and stores without an active installation are rejected.
 
 Use this exact remote MCP URL (no trailing slash):
 
 ```text
-https://refund-ztxz.onrender.com/mcp/testing-bl7vdfur.myshopify.com
+https://refund-ztxz.onrender.com/mcp/stores
 ```
+
+A connector saved earlier with a store address, such as
+`/mcp/testing-bl7vdfur.myshopify.com`, keeps working and reaches every store
+after it reconnects.
 
 Choose OAuth with dynamic client registration (DCR). Leave manually supplied
 client IDs/secrets blank. CIMD is deliberately not advertised.
@@ -100,18 +135,17 @@ client IDs/secrets blank. CIMD is deliberately not advertised.
   Account/workspace policy can restrict developer mode.
 
 Do not use the bare `/mcp` or `/apps/refund/mcp` URL for this customer connection:
-those expose anonymous intake only. The full `/mcp/:shop` route exposes the six
-private return tools after OAuth. The browser flow remains an alternative, not
+those expose anonymous intake only. The browser flow remains an alternative, not
 a prerequisite for using the connected assistant after authorization.
 
-Complete Shopify sign-in, check the merchant and requested actions on Refund's
-consent page, and choose Allow only if intended. You return to the assistant.
-Connecting is not confirmation of any particular return or refund.
+The consent page names no merchant: it connects every Refund store and says the
+assistant can submit returns and refunds, each after the customer confirms it in
+chat, to the original payment method. For submission to work at a store, its
+merchant must turn on automatic refunds in the Refund dashboard; otherwise the
+assistant quotes and the store reviews the return.
 
-For the first test, ask the assistant to find order #1001 and quote the actual
-item, **without submitting anything**. The development order previously contained
-Refund Test Product, CAD14.00; do not relabel it as a snowboard. Retrieve a fresh
-quote rather than assuming that amount still applies.
+For a first test, ask the assistant to find an order at the Testing store and
+quote it. Submitting refunds the original payment method, so use a test order.
 
 ## Protocol and safety
 

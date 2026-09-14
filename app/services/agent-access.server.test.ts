@@ -4,18 +4,17 @@ import prisma from "../db.server";
 import {
   AgentAccessError,
   StoreLinkRequiredError,
-  agentResource,
   allStoresResource,
-  authorizeAgent,
   authorizeConnection,
   connectionStore,
-  issueApprovedAgentGrant,
+  isConnectionResource,
   issueConnectionGrant,
   revokeAgentGrant,
   storeLinkAccess,
   storeLinkCustomerContext,
   storeLinkEmailContext,
 } from "./agent-access.server";
+import { connectionEmailContext } from "./connection-email.server";
 import {
   customerIdentityHash,
   digest,
@@ -78,55 +77,31 @@ function setup(t: TestContext) {
   mockDelegate(t, prisma.session, "findFirst", async () => ({
     id: "offline_store",
   }));
+  mockDelegate(t, prisma.connectionEmail, "findMany", async () => []);
   return { token, grant, find };
 }
 
-test("Refund grants keep Shopify tokens server-side and enforce store/resource/customer bindings", async (t) => {
-  const { token, grant } = setup(t);
-  assert.equal(agentResource(shop), resource);
-  assert.deepEqual(
-    await authorizeAgent(`Bearer ${token}`, shop, "returns:read", now),
-    {
-      shop,
-      customerToken: "upstream-shopify-secret",
-      clientId: "registered-client-a",
-      sessionId: "session",
-      customerSubjectHash: "customer-a",
-      draftId: undefined,
-    },
-  );
-  const invalid = (error: unknown) =>
-    error instanceof AgentAccessError && error.code === "invalid_token";
-  await assert.rejects(
-    authorizeAgent(`Bearer ${token}`, "other.myshopify.com", undefined, now),
-    invalid,
-  );
-  for (const patch of [
-    { resource: "https://evil.test/mcp/example.myshopify.com" },
-    { resource: `${resource}/` },
-    { customerSubjectHash: "customer-b" },
-    { revokedAt: new Date(now - 1) },
-    { expiresAt: new Date(now) },
-    { scopes: [] },
-    { scopes: ["unknown:scope"] },
-    { clientId: "" },
-    { session: { ...session(), shop: "other.myshopify.com" } },
-    { session: { ...session(), customerSubjectHash: "customer-b" } },
-    { session: { ...session(), accessToken: "tampered" } },
-    { session: { ...session(), expiresAt: new Date(now) } },
-  ]) {
-    const original = { ...grant };
-    Object.assign(grant, patch);
-    await assert.rejects(
-      authorizeAgent(`Bearer ${token}`, shop, undefined, now),
-      invalid,
-    );
-    Object.assign(grant, original);
-  }
+test("every Refund MCP address is the same network-wide connection resource", () => {
+  process.env.SHOPIFY_APP_URL = "https://refund.test";
+  assert.equal(isConnectionResource(allStoresResource()), true);
+  assert.equal(isConnectionResource(resource), true);
+  assert.equal(isConnectionResource(new URL(resource)), true);
+  for (const value of [
+    "https://evil.test/mcp/stores",
+    "https://evil.test/mcp/example.myshopify.com",
+    `${resource}/`,
+    `${resource}?next=evil`,
+    "https://refund.test/mcp/EXAMPLE.myshopify.com",
+    "https://refund.test/mcp/not-a-store.com",
+    "https://refund.test/mcp",
+    "https://refund.test/mcp/",
+    null,
+  ])
+    assert.equal(isConnectionResource(value), false, String(value));
 });
 
-test("browser credentials, Shopify tokens and unknown Refund tokens cannot authorize remote access", async (t) => {
-  const { find } = setup(t);
+test("browser credentials, Shopify tokens, unknown tokens and retired single-store grants open nothing", async (t) => {
+  const { find, token } = setup(t);
   for (const header of [
     null,
     "Bearer shopify-token",
@@ -134,90 +109,16 @@ test("browser credentials, Shopify tokens and unknown Refund tokens cannot autho
     "Bearer cookie",
     "Bearer rfa_short",
   ]) {
-    await assert.rejects(authorizeAgent(header, shop), AgentAccessError);
+    await assert.rejects(authorizeConnection(header), AgentAccessError);
   }
   assert.equal(find.mock.callCount(), 0);
   await assert.rejects(
-    authorizeAgent(`Bearer rfa_${randomToken()}`, shop),
+    authorizeConnection(`Bearer rfa_${randomToken()}`),
     AgentAccessError,
   );
   assert.equal(find.mock.callCount(), 1);
-});
-
-test("read grants cannot quote or submit and an uninstalled store cannot use a grant", async (t) => {
-  const { token } = setup(t);
-  for (const scope of ["returns:quote", "returns:submit"] as const) {
-    await assert.rejects(
-      authorizeAgent(`Bearer ${token}`, shop, scope, now),
-      (error: unknown) =>
-        error instanceof AgentAccessError &&
-        error.code === "insufficient_scope" &&
-        error.requiredScope === scope,
-    );
-  }
-  mockDelegate(t, prisma.session, "findFirst", async () => null);
-  await assert.rejects(
-    authorizeAgent(`Bearer ${token}`, shop, "returns:read", now),
-    AgentAccessError,
-  );
-});
-
-test("grant issuance requires approved exact scopes and stores only an expiring token hash", async (t) => {
-  setup(t);
-  mockDelegate(t, prisma.customerReturnSession, "findUnique", async () =>
-    session(),
-  );
-  const records: Record<string, unknown>[] = [];
-  mockDelegate(
-    t,
-    prisma.agentAccessGrant,
-    "create",
-    async ({ data }: { data: Record<string, unknown> }) => {
-      records.push(data);
-      return data;
-    },
-  );
-  const input = {
-    sessionId: "session",
-    shop,
-    resource,
-    clientId: "client-a",
-    scopes: ["returns:read"],
-    customerApproved: true,
-  };
-  for (const patch of [
-    { customerApproved: false },
-    { customerApproved: undefined },
-    { scopes: [] },
-    { scopes: ["returns:read", "returns:read"] },
-    { scopes: ["customer-account-api:full"] },
-    { clientId: "" },
-    { shop: "other.myshopify.com" },
-    { resource: "https://evil.test/" },
-  ])
-    await assert.rejects(issueApprovedAgentGrant({ ...input, ...patch }, now));
-  assert.equal(records.length, 0);
-  const result = await issueApprovedAgentGrant(input, now);
-  assert.match(result.accessToken, /^rfa_[A-Za-z0-9_-]{43}$/);
-  assert.equal(records[0].tokenHash, digest(result.accessToken));
-  assert.equal(result.expiresAt.getTime(), session().expiresAt.getTime());
-  assert.deepEqual(result.scopes, ["returns:read"]);
-  assert.ok(!JSON.stringify(records).includes(result.accessToken));
-  assert.equal(records[0].refreshTokenHash, null);
-  assert.ok(!JSON.stringify(records).includes("upstream-shopify-secret"));
-  assert.ok(!JSON.stringify(result).includes("upstream-shopify-secret"));
-  const refreshable = await issueApprovedAgentGrant(input, now, prisma, true);
-  assert.match(refreshable.refreshToken!, /^rfr_[A-Za-z0-9_-]{43}$/);
-  assert.equal(records[1].refreshTokenHash, digest(refreshable.refreshToken!));
-  assert.equal(
-    (records[1].refreshExpiresAt as Date).getTime(),
-    session().expiresAt.getTime(),
-  );
-  assert.ok(!JSON.stringify(records).includes(refreshable.refreshToken!));
-  await assert.rejects(
-    issueApprovedAgentGrant(input, now + 120_000),
-    AgentAccessError,
-  );
+  // A grant from a retired single-store connection has no connection.
+  await assert.rejects(authorizeConnection(`Bearer ${token}`, undefined, now), AgentAccessError);
 });
 
 test("revocation is restricted to the authenticated session's own grant or the customer's store link", async (t) => {
@@ -259,7 +160,7 @@ test("revocation is restricted to the authenticated session's own grant or the c
   });
 });
 
-test("an all-stores grant holds no Shopify credential and never opens a single-store endpoint", async (t) => {
+test("a connection grant holds no Shopify credential, and a store's address opens the same connection", async (t) => {
   const { token, grant } = setup(t);
   const connectionId = "0d9b7c1e-5a4f-4e2b-8c3d-1f6a7b8c9d0e";
   const connection = {
@@ -290,13 +191,17 @@ test("an all-stores grant holds no Shopify credential and never opens a single-s
   };
   for (const patch of [
     { clientId: "other-client" },
-    { resource },
+    { resource: `${resource}/` },
+    { resource: "https://evil.test/mcp/stores" },
     { scopes: ["returns:submit"] },
     { connectionId: "not-a-uuid" },
   ])
     await assert.rejects(issueConnectionGrant({ ...input, ...patch }, now));
   const issued = await issueConnectionGrant(input, now, prisma, true);
   assert.equal(records.length, 1);
+  // A store's address saved from an older setup page connects the network too.
+  await issueConnectionGrant({ ...input, resource }, now);
+  assert.equal(records[1].resource, resource);
   assert.equal(records[0].connectionId, connectionId);
   assert.equal(records[0].sessionId, undefined);
   assert.equal(records[0].shop, undefined);
@@ -336,7 +241,6 @@ test("an all-stores grant holds no Shopify credential and never opens a single-s
     authorizeConnection(`Bearer ${token}`, "returns:read", connection.expiresAt.getTime()),
     AgentAccessError,
   );
-  await assert.rejects(authorizeAgent(`Bearer ${token}`, shop, undefined, now), AgentAccessError);
 });
 
 test("a store link uses the live sign-in, then the verified customer only where the store allows it", async (t) => {
@@ -441,6 +345,43 @@ test("a store link uses the live sign-in, then the verified customer only where 
     link = { ...base, session: null, ...patch };
     await assert.rejects(connectionStore(connectionId, shop, now), expired);
   }
+});
+
+test("one confirmed email reaches a store the connection never linked, with nothing for the customer to do", async (t) => {
+  setup(t);
+  const connectionId = "0d9b7c1e-5a4f-4e2b-8c3d-1f6a7b8c9d0e";
+  const email = "pat@example.com";
+  mockDelegate(t, prisma.agentStoreLink, "findUnique", async () => null);
+  mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
+    verifiedStoreLinks: true,
+    returnRulesConfirmedAt: new Date(now),
+    finalSaleCollectionIds: [],
+  }));
+  mockDelegate(t, prisma.connectionEmail, "findMany", async () => [
+    {
+      id: "email-1",
+      connectionId,
+      sealedEmail: seal(email, connectionEmailContext(connectionId)),
+      emailHash: customerIdentityHash(`email:${email}`),
+      source: "ONBOARDING",
+      sourceShop: null,
+      confirmedAt: new Date(now),
+    },
+  ]);
+  const links: Array<Record<string, unknown>> = [];
+  mockDelegate(t, prisma.agentStoreLink, "upsert", async (args: never) => {
+    const { create } = args as unknown as { create: Record<string, unknown> };
+    links.push(create);
+    return { id: "link", ...create, session: null };
+  });
+  const found = await connectionStore(connectionId, shop, now, async (_shop, address) => address === email);
+  assert.deepEqual(found.customerToken, { email });
+  assert.equal(links[0].connectionEmailId, "email-1");
+  await assert.rejects(
+    connectionStore(connectionId, shop, now, async () => false),
+    (error) =>
+      error instanceof StoreLinkRequiredError && error.reason === "email_not_found",
+  );
 });
 
 test("an email-confirmed store link opens only for that email, and only where the store allows it", (t) => {

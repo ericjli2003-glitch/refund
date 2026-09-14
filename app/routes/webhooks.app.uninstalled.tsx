@@ -15,6 +15,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     db.agentStoreLinkRequest.deleteMany({ where: { shop } }),
     db.agentStoreLink.deleteMany({ where: { shop } }),
     db.emailVerification.deleteMany({ where: { shop } }),
+    // Emails confirmed in a chat about this store; setup emails are the
+    // customer's own and stay with their connection.
+    db.connectionEmail.deleteMany({ where: { sourceShop: shop } }),
     db.customerReturnSession.deleteMany({ where: { shop } }),
     db.returnDraft.deleteMany({ where: { shop } }),
     db.agentOAuthRequest.deleteMany({ where: { shop } }),

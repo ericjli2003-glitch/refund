@@ -71,24 +71,25 @@ try {
     /frame-ancestors 'none'/,
   );
   const connectHtml = await connectPage.text();
-  assert.ok(connectHtml.includes(`https://refund.test/mcp/${shop}`));
-  assert.ok(connectHtml.includes("Connect your assistant to Refund."));
+  // Store setup pages lead to the one connection for every store.
+  assert.ok(connectHtml.includes("https://refund.test/mcp/stores"));
   assert.ok(
-    connectHtml.includes("Connecting does not submit a return or refund."),
+    connectHtml.includes("Connect your assistant to Refund for every store."),
   );
+  assert.ok(!connectHtml.includes(`https://refund.test/mcp/${shop}`));
   assert.ok(!connectHtml.includes("private-smoke-token-never-sent"));
-  assert.equal(
-    (await fetch("http://127.0.0.1:3037/connect/not-a-shop")).status,
-    400,
-  );
-  assert.equal(
-    (
-      await fetch(
-        `http://127.0.0.1:3037/connect/missing-${randomUUID()}.myshopify.com`,
-      )
-    ).status,
-    404,
-  );
+  // Any store setup address, even a malformed or uninstalled one, sends the
+  // customer to the connection for every store rather than an error.
+  for (const path of [
+    "/connect/not-a-shop",
+    `/connect/missing-${randomUUID()}.myshopify.com`,
+  ]) {
+    const moved = await fetch(`http://127.0.0.1:3037${path}`, {
+      redirect: "manual",
+    });
+    assert.equal(moved.status, 302, path);
+    assert.equal(new URL(moved.headers.get("Location"), "http://x").pathname, "/connect");
+  }
   assert.equal(await prisma.agentAccessGrant.count({ where: { shop } }), 0);
   assert.equal(await prisma.agentOAuthRequest.count({ where: { shop } }), 0);
 

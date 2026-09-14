@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import prisma from "../db.server";
 import { storeLinkEmailContext } from "./agent-access.server";
+import { connectionEmailContext } from "./connection-email.server";
 import {
   customerIdentityHash,
   digest,
@@ -58,7 +59,28 @@ function environment(t: TestContext, configured = true) {
 
 type SentEmail = { to: string[]; subject: string; text: string; html: string };
 
-function storeReady(t: TestContext, orderEmail: string | null) {
+function storeReady(
+  t: TestContext,
+  orderEmail: string | null,
+  confirmed: string[] = [],
+) {
+  mockDelegate(t, prisma.connectionEmail, "findMany", async () =>
+    confirmed.map((email, index) => ({
+      id: `email-${index + 1}`,
+      connectionId,
+      sealedEmail: seal(email, connectionEmailContext(connectionId)),
+      emailHash: customerIdentityHash(`email:${email}`),
+      source: "ONBOARDING",
+      sourceShop: null,
+      confirmedAt: new Date(),
+    })),
+  );
+  const links: Array<Record<string, unknown>> = [];
+  mockDelegate(t, prisma.agentStoreLink, "upsert", async (args: never) => {
+    const { create } = args as unknown as { create: Record<string, unknown> };
+    links.push(create);
+    return { id: "link", ...create, session: null };
+  });
   mockDelegate(t, prisma.merchantDirectory, "findUnique", async () => ({
     shop,
     name: "Example & Co",
@@ -118,7 +140,7 @@ function storeReady(t: TestContext, orderEmail: string | null) {
       });
     },
   };
-  return { counts, created, sent, admin, lookups };
+  return { counts, created, sent, admin, lookups, links };
 }
 
 test("emails are normalized and masked, and the number to pick is among three choices", () => {
@@ -192,6 +214,25 @@ test("sending stops after a few emails, and nothing is sent without an email add
   assert.equal(sent.length, 0);
 });
 
+test("a store with orders under an already confirmed email connects right away, with nothing sent", async (t) => {
+  environment(t);
+  const { sent, admin, links } = storeReady(t, "pat@example.com", ["pat@example.com"]);
+  const result = await linkStore(connectionId, shop, undefined, Date.now(), admin);
+  assert.equal(result.status, "linked");
+  assert.equal(sent.length, 0);
+  assert.equal(links[0].verifiedBy, "EMAIL");
+  assert.equal(links[0].connectionEmailId, "email-1");
+});
+
+test("when no confirmed email has an order there, the assistant asks about a different email", async (t) => {
+  environment(t);
+  const { sent, admin } = storeReady(t, "someone@example.com", ["pat@example.com"]);
+  const result = await linkStore(connectionId, shop, undefined, Date.now(), admin);
+  assert.equal(result.status, "email_not_found");
+  assert.match((result as { nextStep: string }).nextStep, /different email/);
+  assert.equal(sent.length, 0);
+});
+
 test("without email sending, link_store falls back to the Shopify link", async (t) => {
   environment(t, false);
   const { sent, admin } = storeReady(t, "pat@example.com");
@@ -232,6 +273,11 @@ test("the confirmation page connects the store only when the customer picks the 
     upserts.push(args);
     return {};
   });
+  const confirmedEmails: Array<{ create: Record<string, unknown> }> = [];
+  mockDelegate(t, prisma.connectionEmail, "upsert", async (args: never) => {
+    confirmedEmails.push(args);
+    return { id: "connection-email-1", emailHash: row.emailHash };
+  });
   mockDelegate(t, prisma, "$transaction", async (run: never) =>
     (run as unknown as (tx: typeof prisma) => Promise<unknown>)(prisma),
   );
@@ -265,6 +311,17 @@ test("the confirmation page connects the store only when the customer picks the 
   assert.equal(link.verifiedBy, "EMAIL");
   assert.equal(link.customerSubjectHash, row.emailHash);
   assert.equal(link.sealedCustomerId, null);
+  // The confirmed email joins the connection, so it works at every store.
+  assert.equal(link.connectionEmailId, "connection-email-1");
+  assert.equal(confirmedEmails[0].create.source, "CHAT");
+  assert.equal(confirmedEmails[0].create.sourceShop, shop);
+  assert.equal(
+    unseal(
+      confirmedEmails[0].create.sealedEmail as string,
+      connectionEmailContext(connectionId),
+    ),
+    "pat@example.com",
+  );
   assert.equal(
     unseal(link.sealedEmail as string, storeLinkEmailContext(connectionId, shop)),
     "pat@example.com",

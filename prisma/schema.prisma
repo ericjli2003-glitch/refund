@@ -183,6 +183,7 @@ model AgentOAuthRequest {
   sessionId     String?
   session       CustomerReturnSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   connectionId  String?
+  emailChecks   ConsentEmailCheck[]
   expiresAt     DateTime
   createdAt     DateTime               @default(now())
 
@@ -237,8 +238,47 @@ model AgentConnection {
   stores       AgentStoreLink[]
   linkRequests AgentStoreLinkRequest[]
   emailChecks  EmailVerification[]
+  emails       ConnectionEmail[]
 
   @@index([expiresAt])
+}
+
+// An email the customer confirmed for this connection, on the consent page
+// (ONBOARDING) or in chat for one store (CHAT). Used to find orders at every
+// Refund store; never for marketing.
+model ConnectionEmail {
+  id           String           @id @default(uuid())
+  connectionId String
+  connection   AgentConnection  @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  sealedEmail  String
+  emailHash    String
+  source       String
+  sourceShop   String?
+  confirmedAt  DateTime         @default(now())
+  storeLinks   AgentStoreLink[]
+
+  @@unique([connectionId, emailHash])
+  @@index([emailHash])
+  @@index([sourceShop])
+}
+
+// Email confirmation on the all-stores consent page, bound to the
+// authorization request and so to the approving browser.
+model ConsentEmailCheck {
+  id          String            @id
+  requestId   String
+  request     AgentOAuthRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  sealedEmail String
+  emailHash   String
+  codeHash    String
+  matchNumber Int
+  attempts    Int               @default(0)
+  status      String            @default("PENDING")
+  expiresAt   DateTime
+  createdAt   DateTime          @default(now())
+
+  @@index([requestId])
+  @@index([emailHash, createdAt])
 }
 
 // A one-tap email confirmation that links a store without a Shopify sign-in.
@@ -274,6 +314,9 @@ model AgentStoreLink {
   // The verified Shopify customer ID or order email, encrypted.
   sealedCustomerId    String?
   sealedEmail         String?
+  // For EMAIL links, the connection's confirmed email the store was found by.
+  connectionEmailId   String?
+  connectionEmail     ConnectionEmail?       @relation(fields: [connectionEmailId], references: [id], onDelete: Cascade)
   // That sign-in, while it lasts.
   sessionId           String?
   session             CustomerReturnSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
@@ -284,6 +327,7 @@ model AgentStoreLink {
   @@index([sessionId])
   @@index([shop])
   @@index([shop, customerSubjectHash])
+  @@index([connectionEmailId])
 }
 
 model AgentStoreLinkRequest {

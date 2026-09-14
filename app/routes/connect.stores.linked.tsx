@@ -25,9 +25,8 @@ export default function StoreLinked() {
       <p>
         {cancelled
           ? "Nothing was linked. You can close this page."
-          : `Your assistant can now find your purchases at ${shop ?? "this store"}. Go back to your conversation to continue.`}
+          : `Your assistant can now find your orders at ${shop ?? "this store"} and handle returns and refunds for you, after you confirm each one. Go back to your conversation to continue.`}
       </p>
-      <p>No return or refund has been submitted.</p>
     </main>
   );
 }

@@ -425,7 +425,7 @@ export default function CustomerReturns() {
       </p>
       <p>
         Prefer a connected assistant?{" "}
-        <a href={`/connect/${initial.shop}`}>Connect ChatGPT or Claude to Refund</a>.
+        <a href="/connect">Connect ChatGPT or Claude to Refund</a>.
       </p>
       <p role="status">
         {browserTools === "checking" && "Checking browser return-tool support…"}

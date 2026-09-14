@@ -122,6 +122,67 @@
   font-size: 13px;
   margin: 40px 0;
 }
+.customer-returns .consent-email form {
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 8px;
+}
+.customer-returns .consent-email label {
+  display: block;
+  margin: 12px 0;
+  font-weight: 600;
+}
+.customer-returns .consent-email input[type="email"],
+.customer-returns .consent-email input[name="code"] {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 360px;
+  margin-top: 6px;
+  padding: 12px;
+  font: inherit;
+  font-weight: 400;
+  border: 1px solid #819a91;
+  border-radius: 8px;
+}
+.customer-returns .consent-email input[name="code"] {
+  max-width: 190px;
+  letter-spacing: 0.3em;
+  font-variant-numeric: tabular-nums;
+}
+.customer-returns .consent-email-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 8px;
+}
+.customer-returns .consent-email-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: #effaf5;
+  border-radius: 8px;
+}
+.customer-returns .consent-email-list form {
+  margin: 0;
+}
+.customer-returns .consent-email-pending {
+  padding: 16px;
+  border: 1px dashed #819a91;
+  border-radius: 12px;
+  margin: 12px 0;
+}
+.customer-returns .consent-email-note {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.customer-returns .consent-email-hint {
+  color: #516a62;
+  font-size: 14px;
+}
 .return-intake-form label {
   display: block;
   margin-bottom: 20px;

@@ -60,6 +60,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       prisma.emailVerification.deleteMany({
         where: { shop, emailHash: customerSubjectHash },
       }),
+      // Confirmed emails are shared across every store, so redaction removes
+      // them from every connection that confirmed this address.
+      prisma.connectionEmail.deleteMany({
+        where: { emailHash: customerSubjectHash },
+      }),
       prisma.customerReturnSession.deleteMany({
         where: { shop, customerSubjectHash },
       }),
@@ -141,6 +146,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         connection: { select: { clientId: true, scopes: true } },
       },
     });
+    // Only whether and when the address was confirmed, and whether that
+    // happened in a chat about this store; never other stores' names.
+    const confirmedEmails = await prisma.connectionEmail.findMany({
+      where: { emailHash: customerSubjectHash },
+      select: {
+        source: true,
+        sourceShop: true,
+        confirmedAt: true,
+        connection: { select: { clientId: true } },
+      },
+    });
     const reportData = {
       returns,
       returnDrafts: drafts.map((value) => ({
@@ -166,6 +182,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         createdAt: link.createdAt.toISOString(),
         lastUsedAt: link.lastUsedAt.toISOString(),
       })),
+      assistantConfirmedEmails: confirmedEmails.map((entry) => ({
+        clientId: entry.connection.clientId,
+        confirmedAt: entry.confirmedAt.toISOString(),
+        confirmedIn:
+          entry.source === "ONBOARDING"
+            ? "assistant connection setup"
+            : entry.sourceShop === shop
+              ? "chat about this store"
+              : "chat about another store",
+      })),
     };
     await prisma.privacyRequest.upsert({
       where: { id: webhookId },
@@ -187,6 +213,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       prisma.agentStoreLinkRequest.deleteMany({ where: { shop } }),
       prisma.agentStoreLink.deleteMany({ where: { shop } }),
       prisma.emailVerification.deleteMany({ where: { shop } }),
+      prisma.connectionEmail.deleteMany({ where: { sourceShop: shop } }),
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
       prisma.returnDraft.deleteMany({ where: { shop } }),
       prisma.agentOAuthRequest.deleteMany({ where: { shop } }),

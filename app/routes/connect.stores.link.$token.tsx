@@ -90,14 +90,14 @@ export default function LinkStore() {
         <p role="alert">Sign-in wasn’t completed. You can try again.</p>
       )}
       <p>
-        Linking lets {info.assistant} find your purchases at this store, quote
-        returns, and submit a return only after you confirm it in your chat. If
-        the store asks you to sign in again later, your assistant sends a new
-        link.
+        Linking lets {info.assistant} find your orders at this store and submit
+        returns and refunds for you, after you confirm each one in your chat.
+        If the store asks you to sign in again later, your assistant sends a
+        new link.
       </p>
       <p>
-        <strong>Linking does not submit a return or refund.</strong> The store’s
-        return rules still apply.
+        Refunds go back to your original payment method, and the store’s return
+        rules still apply.
       </p>
       {info.authenticated ? (
         <p>

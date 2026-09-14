@@ -100,6 +100,10 @@ const json = (value: unknown) => ({
 export type StoreDirectoryTools = {
   find: (merchant: string) => Promise<unknown>;
   link: (merchant: string, email?: string) => Promise<unknown>;
+  emails: {
+    list: () => Promise<unknown>;
+    remove: (emailId: string) => Promise<unknown>;
+  };
   list: () => Promise<unknown>;
 };
 
@@ -198,7 +202,7 @@ export function createCustomerReturnsMcpServer({
       {
         title: "Link a store to this connection",
         description:
-          "Connects a store so this connection can see the customer's orders there. With the email they used at checkout, Refund emails them a one-tap confirmation, no Shopify sign-in and no account needed, and returns a number for them to pick on the confirmation page. Without an email, it asks you to get one, or returns a link to connect through Shopify when the store needs that. Says so if the store is already connected. Never ask for passwords or sign-in codes in chat. Connecting doesn't submit a return or refund.",
+          "Connects a store so this connection can see the customer's orders there. If an email the customer already confirmed has orders at the store, it connects right away with nothing for them to do. With a different email they used at checkout, Refund emails them a one-tap confirmation, no Shopify sign-in and no account needed, and returns a number for them to pick on the confirmation page. Without an email, it asks you to get one, or returns a link to connect through Shopify when the store needs that. Says so if the store is already connected. Never ask for passwords or sign-in codes in chat.",
         inputSchema: {
           merchant: z
             .string()
@@ -222,6 +226,54 @@ export function createCustomerReturnsMcpServer({
       async ({ merchant, email }) => {
         try {
           return json(await stores.link(merchant, email));
+        } catch (error) {
+          return toolError(error, resourceMetadataUrl);
+        }
+      },
+    );
+    server.registerTool(
+      "list_confirmed_emails",
+      {
+        title: "List confirmed emails",
+        description:
+          "Shows the emails the customer confirmed for this connection, partly hidden. Refund uses them only to find the customer's orders at stores that use Refund, never for marketing. Use when the customer asks which emails Refund has, or wants to remove one.",
+        inputSchema: {},
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        _meta: { securitySchemes: securitySchemes("returns:read") },
+      },
+      async () => {
+        try {
+          return json({ emails: await stores.emails.list() });
+        } catch (error) {
+          return toolError(error, resourceMetadataUrl);
+        }
+      },
+    );
+    server.registerTool(
+      "remove_confirmed_email",
+      {
+        title: "Remove a confirmed email",
+        description:
+          "Removes one confirmed email from this connection, along with any store it connected. Only when the customer asks to remove it. Use an id from list_confirmed_emails.",
+        inputSchema: {
+          emailId: z.string().min(1).max(64).describe("The id from list_confirmed_emails"),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+        _meta: { securitySchemes: securitySchemes("returns:read") },
+      },
+      async ({ emailId }) => {
+        try {
+          return json(await stores.emails.remove(emailId));
         } catch (error) {
           return toolError(error, resourceMetadataUrl);
         }

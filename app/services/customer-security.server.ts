@@ -39,6 +39,13 @@ export function customerIdentityHashes(customerId: string) {
 export const customerIdentityHash = (customerId: string) =>
   customerIdentityHashes(customerId)[0];
 
+// A keyed digest for short secrets, like a 6-digit code, that a plain hash
+// would expose to brute force if the table ever leaked.
+export const keyedDigest = (purpose: string, value: string) =>
+  createHmac("sha256", key(purpose, refundSecrets()[0]))
+    .update(value)
+    .digest("base64url");
+
 export function safeEqual(left: string, right: string) {
   const a = Buffer.from(left);
   const b = Buffer.from(right);

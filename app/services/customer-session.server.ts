@@ -6,9 +6,9 @@ import {
   verifyCustomerAccess,
 } from "./customer-account.server";
 import { makeContinuation, returnHints } from "./return-intake.server";
-import { getAgentAuthorizationRequest } from "./agent-oauth-flow.server";
 import { claimIntakeDraft } from "./return-draft.server";
 import { getStoreLinkRequest } from "./store-link.server";
+import { listConnectionEmails } from "./connection-email.server";
 import {
   appOrigin,
   customerIdentityHashes,
@@ -121,14 +121,9 @@ export async function discoverCustomerLogin(shop: string): Promise<Discovery> {
   return result;
 }
 
-// Where a completed or abandoned sign-in returns: an assistant's consent page,
-// an all-stores store link, or the customer's return portal.
-function signInReturnPath(pending: {
-  shop: string;
-  agentRequestId: string | null;
-  linkRequestId: string | null;
-}) {
-  if (pending.agentRequestId) return `/agent/authorize/${pending.agentRequestId}`;
+// Where a completed or abandoned sign-in returns: a store link for the
+// assistant connection, or the customer's return portal.
+function signInReturnPath(pending: { linkRequestId: string | null }) {
   if (pending.linkRequestId) return `/connect/stores/link/${pending.linkRequestId}`;
   return null;
 }
@@ -137,16 +132,8 @@ export async function startCustomerLogin(request: Request) {
   const url = new URL(request.url);
   const shop = await requireInstalledShop(url.searchParams.get("shop") || "");
   const hints = returnHints(url, shop);
-  const agentRequestId = url.searchParams.get("agentRequest");
   const linkRequestId = url.searchParams.get("linkRequest");
-  if (agentRequestId) {
-    const flow = await getAgentAuthorizationRequest(request, agentRequestId);
-    if (flow.shop !== shop)
-      throw new Response("Assistant connection belongs to another store.", {
-        status: 400,
-        headers: privateHeaders,
-      });
-  }
+  let loginHint: string | undefined;
   if (linkRequestId) {
     const link = await getStoreLinkRequest(request, linkRequestId);
     if (link.shop !== shop)
@@ -154,14 +141,15 @@ export async function startCustomerLogin(request: Request) {
         status: 400,
         headers: privateHeaders,
       });
+    // Pre-fill Shopify's sign-in with the email the customer confirmed.
+    loginHint = (await listConnectionEmails(link.connectionId))[0]?.email;
   }
   // Shopify issues no refresh token to public PKCE app clients, so an expired
-  // assistant connection or store link needs a new sign-in. prompt=none reuses
-  // the customer's live Shopify session without a login screen; it is limited
-  // to those assistant flows, and a failure falls back to the ordinary choice.
+  // store link needs a new sign-in. prompt=none reuses the customer's live
+  // Shopify session without a login screen; it is limited to store links, and
+  // a failure falls back to the ordinary choice.
   const silent =
-    Boolean(agentRequestId || linkRequestId) &&
-    url.searchParams.get("silent") === "1";
+    Boolean(linkRequestId) && url.searchParams.get("silent") === "1";
   const clientId = process.env.SHOPIFY_API_KEY;
   if (!clientId) throw new Error("Customer sign-in is not configured.");
   const discovery = await discoverCustomerLogin(shop);
@@ -196,7 +184,6 @@ export async function startCustomerLogin(request: Request) {
         orderHint: hints.orderName,
         itemHint: hints.itemName,
         draftId: hints.draftId,
-        agentRequestId,
         linkRequestId,
         expiresAt: new Date(Date.now() + 600_000),
       },
@@ -215,6 +202,7 @@ export async function startCustomerLogin(request: Request) {
     code_challenge: digest(verifier),
     code_challenge_method: "S256",
     ...(silent ? { prompt: "none" } : {}),
+    ...(loginHint ? { login_hint: loginHint } : {}),
   }).toString();
   return redirect(authUrl.toString(), {
     headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },

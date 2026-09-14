@@ -274,7 +274,7 @@ tracking on a return whose refund was already processed.
 
 Customers who connect Refund expect it to work with every store in the Refund
 network, not one store per connector. `/mcp/stores` is that connection
-(`AgentConnection`); `/mcp/:shop` remains for single-store use.
+(`AgentConnection`), and store addresses open it too (decision 12).
 
 - Approving the connection needs no store sign-in and grants no purchase
   access. Each store is linked (`AgentStoreLink`) with that store's own Shopify
@@ -354,6 +354,56 @@ user's email to MCP servers, so the customer provides it.
 **Before it works live:** request Level 2 protected customer data (email) in the
 Partner Dashboard, create a Resend account with a verified sending domain, and
 set `RESEND_API_KEY` and `REFUND_EMAIL_FROM` in Render.
+
+### 11. Confirmed emails on the connection (decided and implemented)
+
+Returns in chat should just work at any Refund store, without a question or a
+tap for every store.
+
+- The all-stores consent page confirms the customer's shopping email before
+  Allow: a 6-digit code entered on the page (bound to the approving browser by
+  the flow cookie), or the email's button on another device with number
+  matching. Codes are keyed-hashed, expire in 15 minutes, allow 5 attempts and
+  are rate limited. Emails are saved on the `AgentConnection`
+  (`ConnectionEmail`), encrypted, with a keyed hash.
+- A tool call for a store with no link looks for orders under those emails and
+  links the store automatically. When none match, the assistant asks whether
+  the customer used a different email. The in-chat tap from decision 10 now
+  adds that email to the connection instead of to one store, and it is how
+  connections created before this change add an email.
+- Stores on Shopify sign-in get the first confirmed email as `login_hint`.
+- Customers view and remove emails in chat or at `/connect/manage`.
+  Disconnecting, a year unused and customer redaction delete them. Uninstall
+  and shop redaction delete only emails confirmed in a chat about that store,
+  since setup emails belong to the customer rather than any merchant.
+- Without Resend configured, the consent page skips the email step, so the
+  connector keeps working before email is set up.
+- Scope is `/mcp/stores` only; WebMCP, `/agents.md`, UCP, public intake and the
+  hosted portal are unchanged.
+
+**Not yet verified live:** Resend delivery, the consent page picking up a tap
+from another device, and order lookup by email, which needs Shopify's Level 2
+protected customer data approval.
+
+### 12. One connector for the whole network (decided and implemented)
+
+A customer who added Refund from a store's setup page got a connection limited
+to that store, and the consent page named the merchant and said connecting
+wouldn't submit returns or refunds. The connector is meant to reach every Refund
+store and to submit returns and refunds.
+
+- Every Refund MCP address opens the same network-wide connection:
+  `/mcp/stores`, and `/mcp/<shop>` addresses saved from earlier setup pages.
+  Each address keeps its own resource metadata, since hosts check that it
+  matches the URL they connected to.
+- Single-store grants (tied to one store's customer sign-in) are retired. Their
+  tokens stop working and the host reconnects through the network consent page.
+  `/connect/:shop` redirects to `/connect`, and the return portal links there.
+- The consent page names no merchant. It says the assistant can submit returns
+  and refunds, each after the customer confirms it in chat, to the original
+  payment method, under each store's return rules.
+- Submitting at a store still needs that store's automatic refunds turned on;
+  otherwise the assistant quotes and the store reviews the return.
 
 ## Review findings
 
