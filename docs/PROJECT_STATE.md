@@ -274,7 +274,7 @@ tracking on a return whose refund was already processed.
 
 Customers who connect Refund expect it to work with every store in the Refund
 network, not one store per connector. `/mcp/stores` is that connection
-(`AgentConnection`); `/mcp/:shop` remains for single-store use.
+(`AgentConnection`), and store addresses open it too (decision 12).
 
 - Approving the connection needs no store sign-in and grants no purchase
   access. Each store is linked (`AgentStoreLink`) with that store's own Shopify
@@ -384,6 +384,26 @@ tap for every store.
 **Not yet verified live:** Resend delivery, the consent page picking up a tap
 from another device, and order lookup by email, which needs Shopify's Level 2
 protected customer data approval.
+
+### 12. One connector for the whole network (decided and implemented)
+
+A customer who added Refund from a store's setup page got a connection limited
+to that store, and the consent page named the merchant and said connecting
+wouldn't submit returns or refunds. The connector is meant to reach every Refund
+store and to submit returns and refunds.
+
+- Every Refund MCP address opens the same network-wide connection:
+  `/mcp/stores`, and `/mcp/<shop>` addresses saved from earlier setup pages.
+  Each address keeps its own resource metadata, since hosts check that it
+  matches the URL they connected to.
+- Single-store grants (tied to one store's customer sign-in) are retired. Their
+  tokens stop working and the host reconnects through the network consent page.
+  `/connect/:shop` redirects to `/connect`, and the return portal links there.
+- The consent page names no merchant. It says the assistant can submit returns
+  and refunds, each after the customer confirms it in chat, to the original
+  payment method, under each store's return rules.
+- Submitting at a store still needs that store's automatic refunds turned on;
+  otherwise the assistant quotes and the store reviews the return.
 
 ## Review findings
 

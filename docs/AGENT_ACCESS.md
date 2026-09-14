@@ -2,10 +2,11 @@
 
 ## What is implemented
 
-A merchant-specific remote MCP connection now supports the authorization-code
-flow through Refund: assistant → Shopify customer sign-in → explicit assistant
-consent → code exchange → private return tools in the chat. Public intake and
-the existing browser tools remain separate and available.
+One remote MCP connection reaches every store that uses Refund, through the
+authorization-code flow: assistant → Refund consent (with email confirmation) →
+code exchange → return tools in the chat that find orders, quote, and submit
+returns and refunds after the customer confirms each one. Public intake and the
+existing browser tools remain separate and available.
 
 This is a backend implementation for host acceptance testing, not a claim that
 either host has completed a live test or that an unconnected chat can discover
@@ -101,24 +102,28 @@ Limits and protections:
 - Looking up orders by email needs Shopify's Level 2 protected customer data
   approval for the order email field. Without it, lookups fail and stores fall
   back to Shopify sign-in.
-- All-stores tokens are rejected by `/mcp/:shop`, and single-store tokens by
-  `/mcp/stores`. Submission still needs the signed quote and explicit
-  confirmation, and every tool checks its scope.
+- Every Refund MCP address opens this same connection: `/mcp/stores`, and
+  `/mcp/:shop` addresses saved from earlier setup pages, each with its own
+  resource metadata. Single-store grants are retired and open nothing.
+  Submission still needs the signed quote and explicit confirmation, and every
+  tool checks its scope.
 
-## Connect the Testing store
+## Connect and test
 
-Customer-facing setup is available at `/connect/:shop` after deploying this
-version. It is linked from the return portal and provides a copyable,
-merchant-specific MCP URL, sign-in/consent instructions, permission boundaries
-and a quote-only first prompt. Opening it neither creates an OAuth request nor
+Customer-facing setup is at `/connect`, linked from every return portal
+(`/connect/:shop` redirects there). It shows the MCP URL, what the assistant can
+do and how store access works. Opening it neither creates an OAuth request nor
 grants access. The issuer comes from server configuration, never a request header.
-Invalid domains and stores without an active installation are rejected.
 
 Use this exact remote MCP URL (no trailing slash):
 
 ```text
-https://refund-ztxz.onrender.com/mcp/testing-bl7vdfur.myshopify.com
+https://refund-ztxz.onrender.com/mcp/stores
 ```
+
+A connector saved earlier with a store address, such as
+`/mcp/testing-bl7vdfur.myshopify.com`, keeps working and reaches every store
+after it reconnects.
 
 Choose OAuth with dynamic client registration (DCR). Leave manually supplied
 client IDs/secrets blank. CIMD is deliberately not advertised.
@@ -130,18 +135,17 @@ client IDs/secrets blank. CIMD is deliberately not advertised.
   Account/workspace policy can restrict developer mode.
 
 Do not use the bare `/mcp` or `/apps/refund/mcp` URL for this customer connection:
-those expose anonymous intake only. The full `/mcp/:shop` route exposes the six
-private return tools after OAuth. The browser flow remains an alternative, not
+those expose anonymous intake only. The browser flow remains an alternative, not
 a prerequisite for using the connected assistant after authorization.
 
-Complete Shopify sign-in, check the merchant and requested actions on Refund's
-consent page, and choose Allow only if intended. You return to the assistant.
-Connecting is not confirmation of any particular return or refund.
+The consent page names no merchant: it connects every Refund store and says the
+assistant can submit returns and refunds, each after the customer confirms it in
+chat, to the original payment method. For submission to work at a store, its
+merchant must turn on automatic refunds in the Refund dashboard; otherwise the
+assistant quotes and the store reviews the return.
 
-For the first test, ask the assistant to find order #1001 and quote the actual
-item, **without submitting anything**. The development order previously contained
-Refund Test Product, CAD14.00; do not relabel it as a snowboard. Retrieve a fresh
-quote rather than assuming that amount still applies.
+For a first test, ask the assistant to find an order at the Testing store and
+quote it. Submitting refunds the original payment method, so use a test order.
 
 ## Protocol and safety
 

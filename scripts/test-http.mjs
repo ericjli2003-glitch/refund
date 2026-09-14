@@ -71,11 +71,12 @@ try {
     /frame-ancestors 'none'/,
   );
   const connectHtml = await connectPage.text();
-  assert.ok(connectHtml.includes(`https://refund.test/mcp/${shop}`));
-  assert.ok(connectHtml.includes("Connect your assistant to Refund."));
+  // Store setup pages lead to the one connection for every store.
+  assert.ok(connectHtml.includes("https://refund.test/mcp/stores"));
   assert.ok(
-    connectHtml.includes("Connecting does not submit a return or refund."),
+    connectHtml.includes("Connect your assistant to Refund for every store."),
   );
+  assert.ok(!connectHtml.includes(`https://refund.test/mcp/${shop}`));
   assert.ok(!connectHtml.includes("private-smoke-token-never-sent"));
   assert.equal(
     (await fetch("http://127.0.0.1:3037/connect/not-a-shop")).status,

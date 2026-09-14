@@ -9,7 +9,6 @@ import { createOAuthRouter } from "../server/oauth";
 import { createAgentOAuthProvider } from "../app/services/agent-oauth-provider.server";
 import {
   StoreLinkRequiredError,
-  authorizeAgent,
   authorizeConnection,
   connectionStore,
   listAgentGrants,
@@ -30,7 +29,6 @@ import { action as mcpStoresAction } from "../app/routes/mcp.stores";
 import { action as storeLinkAction } from "../app/routes/connect.stores.link.$token";
 import { action as connectEmailTapAction } from "../app/routes/verify.connect-email.$token";
 import { consentTapCsrf } from "../app/services/consent-email.server";
-import { startCustomerLogin } from "../app/services/customer-session.server";
 import {
   getStoreLinkRequest,
   startStoreLink,
@@ -88,7 +86,8 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
     );
     await prisma.$transaction([
       prisma.customerReturnSession.deleteMany({ where: { shop } }),
-      prisma.agentOAuthRequest.deleteMany({ where: { shop } }),
+      prisma.agentConnection.deleteMany({ where: { clientId: { in: clientIds } } }),
+      prisma.agentOAuthRequest.deleteMany({ where: { clientId: { in: clientIds } } }),
       prisma.agentOAuthClient.deleteMany({ where: { id: { in: clientIds } } }),
       prisma.session.deleteMany({ where: { shop } }),
     ]);
@@ -340,13 +339,9 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
     },
   );
   await t.test(
-    "consent rejects missing identity, wrong browser, CSRF and origin; denial issues no code",
+    "consent rejects the wrong browser, CSRF and origin; denial issues no code",
     async () => {
       const flow = await start();
-      await assert.rejects(
-        consent(flow, "allow", { noCustomer: true }),
-        responseStatus(401),
-      );
       await assert.rejects(
         consent(flow, "allow", {
           cookie: `__Host-refund_agent_flow=${randomToken()}`,
@@ -370,55 +365,29 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       assert.equal(denied.searchParams.get("iss"), "https://refund.test");
       assert.equal(denied.searchParams.get("state"), "host-state");
       assert.equal(denied.searchParams.get("code"), null);
-      assert.equal(await prisma.agentAccessGrant.count({ where: { shop } }), 0);
-    },
-  );
-  await t.test(
-    "sign-in preserves a browser-bound assistant request and cannot switch stores",
-    async (ctx) => {
-      const flow = await start();
-      ctx.mock.method(globalThis, "fetch", async () =>
-        Response.json({
-          issuer: "https://shopify.com/authentication/1",
-          authorization_endpoint:
-            "https://shopify.com/authentication/1/oauth/authorize",
-          token_endpoint: "https://shopify.com/authentication/1/oauth/token",
-          jwks_uri: "https://shopify.com/authentication/1/jwks.json",
-        }),
-      );
-      const started = await startCustomerLogin(
-        new Request(
-          `https://refund.test/customer/login?shop=${shop}&agentRequest=${flow.rawId}`,
-          { headers: { Cookie: flow.cookie } },
-        ),
-      );
-      assert.equal(started.status, 302);
-      const pending = await prisma.customerReturnSession.findFirstOrThrow({
-        where: { shop, agentRequestId: flow.rawId },
-      });
-      assert.equal(pending.accessToken, null);
-      await assert.rejects(
-        startCustomerLogin(
-          new Request(
-            `https://refund.test/customer/login?shop=${shop}&agentRequest=${flow.rawId}`,
-            { headers: { Cookie: "" } },
-          ),
-        ),
-        responseStatus(400),
+      assert.equal(
+        await prisma.agentAccessGrant.count({ where: { clientId: client.client_id } }),
+        0,
       );
     },
   );
   await t.test(
-    "PKCE, resource and redirect mismatch fail before code consumption; valid consent yields scoped MCP access",
+    "a store's own address connects every store; PKCE, resource and redirect mismatches fail before the code is used",
     async () => {
       const flow = await start("returns:read");
-      const approved = new URL((await consent(flow)).headers.get("Location")!);
+      // Addresses saved from store-specific setup pages open the same
+      // connection to every Refund store, with no merchant sign-in.
+      assert.equal(flow.flow.shop, null);
+      const approved = new URL(
+        (await consent(flow, "allow", { noCustomer: true })).headers.get("Location")!,
+      );
       const code = approved.searchParams.get("code")!;
       assert.equal(approved.searchParams.get("iss"), "https://refund.test");
       assert.equal(approved.searchParams.get("state"), "host-state");
       const invalidExchanges: Record<string, string>[] = [
         { code_verifier: randomToken() },
         { resource: "https://evil.test/mcp" },
+        { resource: "https://refund.test/mcp/stores" },
         { redirect_uri: "https://evil.test/callback" },
         { client_id: clientIds[1] },
       ];
@@ -431,39 +400,40 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       assert.equal(tokens.scope, "returns:read");
       assert.ok(tokens.expires_in > 0 && tokens.expires_in <= 3600);
       assert.match(tokens.refresh_token, /^rfr_[A-Za-z0-9_-]{43}$/);
-      assert.ok(!JSON.stringify(tokens).includes("upstream-private-token"));
-      assert.equal(
-        (
-          await authorizeAgent(
-            `Bearer ${tokens.access_token}`,
-            shop,
-            "returns:read",
-          )
-        ).customerToken,
-        "upstream-private-token",
+      assert.ok(
+        (await authorizeConnection(`Bearer ${tokens.access_token}`, "returns:read"))
+          .connectionId,
       );
-      const request = new Request(resource, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${tokens.access_token}`,
+      const call = (body: Record<string, unknown>) =>
+        mcpAction({
+          request: new Request(resource, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json, text/event-stream",
+              Authorization: `Bearer ${tokens.access_token}`,
+            },
+            body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...body }),
+          }),
+          params: { shop },
+          context: {},
+          url: new URL(resource),
+          pattern: "/mcp/:shop",
+        });
+      // The store's address serves the network tools, including submitting.
+      const listed = await call({ method: "tools/list" });
+      assert.equal(listed.status, 200);
+      const names = ((await listed.json()).result.tools as Array<{ name: string }>).map(
+        (tool) => tool.name,
+      );
+      for (const name of ["find_store", "link_store", "quote_return", "confirm_return"])
+        assert.ok(names.includes(name), name);
+      const forbidden = await call({
+        method: "tools/call",
+        params: {
+          name: "confirm_return",
+          arguments: { shop, customerConfirmed: true, quoteToken: "unused" },
         },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: "confirm_return",
-            arguments: { customerConfirmed: true, quoteToken: "unused" },
-          },
-        }),
-      });
-      const forbidden = await mcpAction({
-        request,
-        params: { shop },
-        context: {},
-        url: new URL(resource),
-        pattern: "/mcp/:shop",
       });
       assert.equal(forbidden.status, 403);
       assert.match(
@@ -471,9 +441,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         /returns:submit/,
       );
       assert.equal((await exchange(flow, code)).status, 400);
-      await assert.rejects(
-        authorizeAgent(`Bearer ${tokens.access_token}`, shop),
-      );
+      await assert.rejects(authorizeConnection(`Bearer ${tokens.access_token}`));
     },
   );
   await t.test("concurrent exchanges cannot mint two grants", async () => {
@@ -528,30 +496,18 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       assert.notEqual(rotated.access_token, first.access_token);
       assert.notEqual(rotated.refresh_token, first.refresh_token);
       assert.equal(rotated.scope, "returns:read returns:quote");
+      await assert.rejects(authorizeConnection(`Bearer ${first.access_token}`));
+      await authorizeConnection(`Bearer ${rotated.access_token}`, "returns:quote");
       await assert.rejects(
-        authorizeAgent(`Bearer ${first.access_token}`, shop),
-      );
-      await authorizeAgent(
-        `Bearer ${rotated.access_token}`,
-        shop,
-        "returns:quote",
-      );
-      await assert.rejects(
-        authorizeAgent(
-          `Bearer ${rotated.access_token}`,
-          shop,
-          "returns:submit",
-        ),
+        authorizeConnection(`Bearer ${rotated.access_token}`, "returns:submit"),
       );
       assert.equal((await refresh(first.refresh_token)).status, 400);
-      await assert.rejects(
-        authorizeAgent(`Bearer ${rotated.access_token}`, shop),
-      );
+      await assert.rejects(authorizeConnection(`Bearer ${rotated.access_token}`));
       assert.equal((await refresh(rotated.refresh_token)).status, 400);
     },
   );
   await t.test(
-    "expired requests/codes, revocation, and logout all fail closed",
+    "expired requests and codes, and revocation, fail closed",
     async () => {
       const expired = await start();
       await prisma.agentOAuthRequest.update({
@@ -588,18 +544,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         ).status,
         200,
       );
-      await assert.rejects(
-        authorizeAgent(`Bearer ${tokens.access_token}`, shop),
-      );
-      await prisma.customerReturnSession.delete({ where: { id: sessionId } });
-      assert.equal(
-        await prisma.agentAccessGrant.count({ where: { sessionId } }),
-        0,
-      );
-      assert.equal(
-        await prisma.agentOAuthRequest.count({ where: { sessionId } }),
-        0,
-      );
+      await assert.rejects(authorizeConnection(`Bearer ${tokens.access_token}`));
       assert.equal(
         (
           await post("/token", {
@@ -813,10 +758,10 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       );
       // Reusing this browser's connection cookie binds both connections to it.
       const connections = await prisma.agentConnection.findMany({
-        where: { clientId: client.client_id },
+        where: { id: { in: [firstConnection, connectionId] } },
       });
+      assert.equal(connections.length, 2);
       assert.equal(new Set(connections.map((value) => value.browserHash)).size, 1);
-      await assert.rejects(authorizeAgent(`Bearer ${tokens.access_token}`, shop));
 
       const callTool = (
         authorization: string,

@@ -1,11 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createCookie, redirect } from "react-router";
 import prisma from "../db.server";
-import {
-  CONNECTION_IDLE_MS,
-  agentResource,
-  agentScopes,
-} from "./agent-access.server";
+import { CONNECTION_IDLE_MS, agentScopes } from "./agent-access.server";
 import {
   appOrigin,
   digest,
@@ -14,7 +10,6 @@ import {
   safeEqual,
   unseal,
 } from "./customer-security.server";
-import { normalizeShopDomain } from "./customer-account.server";
 import { moveConfirmedEmails } from "./consent-email.server";
 import { emailConfigured } from "./email.server";
 import {
@@ -29,24 +24,6 @@ export const agentFlowCookie = createCookie("__Host-refund_agent_flow", {
   path: "/",
   maxAge: 1200,
 });
-
-export function shopFromAgentResource(value: URL | undefined) {
-  if (
-    !value ||
-    value.origin !== appOrigin() ||
-    value.search ||
-    value.hash ||
-    value.username ||
-    value.password
-  )
-    throw new Error(
-      "Use this merchant's exact Refund MCP URL as the resource.",
-    );
-  const shop = normalizeShopDomain(value.pathname.replace(/^\/mcp\//, ""));
-  if (agentResource(shop) !== value.href)
-    throw new Error("Invalid Refund resource.");
-  return shop;
-}
 
 // First rollout: hosted ChatGPT and Claude only, not arbitrary sites or loopback.
 // Names supplied in registration are never treated as proof of client identity.
@@ -87,6 +64,12 @@ export function checkedScopes(scopes?: string[]) {
   return result;
 }
 
+const outOfDate = () =>
+  new Response(
+    "This connection link is out of date. Start again from your assistant.",
+    { status: 400, headers: privateHeaders },
+  );
+
 export async function getAgentAuthorizationRequest(
   request: Request,
   rawId: string,
@@ -116,14 +99,16 @@ export async function getAgentAuthorizationRequest(
       "This assistant connection expired or was already used. Start again from your assistant.",
       { status: 400, headers: privateHeaders },
     );
+  // Requests started for a single store before connections covered every
+  // store; they last 20 minutes, so a fresh start is all that's needed.
+  if (flow.shop !== null) throw outOfDate();
   return flow;
 }
 
-export async function finishAgentConsent(
-  request: Request,
-  rawId: string,
-  session: { id: string; shop: string } | null,
-) {
+// Approving needs no store sign-in, because the connection reaches a store's
+// orders only through a confirmed email or a store link. The approving
+// browser is recorded so store links complete only in this browser.
+export async function finishAgentConsent(request: Request, rawId: string) {
   const flow = await getAgentAuthorizationRequest(request, rawId);
   if (
     request.method !== "POST" ||
@@ -153,32 +138,10 @@ export async function finishAgentConsent(
       status: 403,
       headers: privateHeaders,
     });
-  const allStores = flow.shop === null;
-  if (
-    decision === "allow" &&
-    !allStores &&
-    (!session || session.shop !== flow.shop)
-  )
-    throw new Response("Sign in to this merchant before allowing access.", {
-      status: 401,
-      headers: privateHeaders,
-    });
-  // Revalidate installation and the registered callback even on a saved flow.
+  // Revalidate the registered callback even on a saved flow.
   assistantForRedirect(flow.redirectUri);
-  if (!allStores) {
-    const installed = await prisma.session.findFirst({
-      where: { shop: flow.shop!, isOnline: false },
-      select: { id: true },
-    });
-    if (!installed)
-      throw new Response("This merchant disconnected Refund.", {
-        status: 404,
-        headers: privateHeaders,
-      });
-  }
   // Returns in chat start from a confirmed shopping email, once email is set up.
   if (
-    allStores &&
     decision === "allow" &&
     emailConfigured() &&
     !(await prisma.consentEmailCheck.count({
@@ -190,11 +153,8 @@ export async function finishAgentConsent(
       headers: privateHeaders,
     });
   const code = randomToken();
-  // An all-stores connection needs no store sign-in to approve because it
-  // grants no purchase access by itself. The approving browser is recorded so
-  // store links, which do grant access, complete only in this browser.
   const browser =
-    allStores && decision === "allow"
+    decision === "allow"
       ? ((await readConnectionBrowser(request)) ?? randomToken())
       : null;
   const connectionId = browser ? randomUUID() : null;
@@ -207,10 +167,10 @@ export async function finishAgentConsent(
         browserHash: flow.browserHash,
       },
       data:
-        decision === "allow"
+        connectionId
           ? {
               status: "APPROVED",
-              ...(connectionId ? { connectionId } : { sessionId: session!.id }),
+              connectionId,
               codeHash: digest(code),
               codeExpiresAt: new Date(Date.now() + 120_000),
             }

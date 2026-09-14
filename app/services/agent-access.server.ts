@@ -69,8 +69,22 @@ export function agentResource(shop: string) {
 // purchases only after the customer links that store with its own Shopify
 // sign-in, because Shopify customer accounts are separate for every store.
 export const allStoresResource = () => new URL("/mcp/stores", appOrigin()).href;
-export const isAllStoresResource = (value: URL | string | null | undefined) =>
-  (typeof value === "string" ? value : value?.href) === allStoresResource();
+
+// Every Refund MCP address opens the same connection to the whole network:
+// /mcp/stores, and store addresses (/mcp/<shop>) saved from earlier setup
+// pages, which reach every store too.
+export function isConnectionResource(value: URL | string | null | undefined) {
+  const href = typeof value === "string" ? value : value?.href;
+  if (!href) return false;
+  if (href === allStoresResource()) return true;
+  const prefix = `${appOrigin()}/mcp/`;
+  const shop = href.startsWith(prefix) ? href.slice(prefix.length) : "";
+  try {
+    return Boolean(shop) && agentResource(shop) === href;
+  } catch {
+    return false;
+  }
+}
 
 // A connection, and each of its store links, lasts while it's used and ends
 // after a year without use.
@@ -89,79 +103,6 @@ const scopeListSchema = z
   .max(agentScopes.length)
   .refine((values) => new Set(values).size === values.length);
 
-const approvedGrantSchema = z
-  .object({
-    sessionId: z.string().min(1),
-    shop: z.string(),
-    clientId: z.string().trim().min(1).max(2048),
-    resource: z.string().url(),
-    scopes: scopeListSchema,
-    customerApproved: z.literal(true),
-  })
-  .strict();
-
-// Internal broker primitive, deliberately NOT exposed by an HTTP/tool route.
-// The OAuth broker must validate the registered client, exact redirect,
-// PKCE and resource, and obtain CSRF-protected consent for this client + scope
-// set before calling this. Never pass a tool's "customerApproved" claim here.
-export async function issueApprovedAgentGrant(
-  input: unknown,
-  now = Date.now(),
-  db: Pick<
-    Prisma.TransactionClient,
-    "customerReturnSession" | "session" | "agentAccessGrant"
-  > = prisma,
-  issueRefreshToken = false,
-) {
-  const approved = approvedGrantSchema.parse(input);
-  const shop = normalizeShopDomain(approved.shop);
-  if (approved.resource !== agentResource(shop))
-    throw new AgentAccessError("invalid_token");
-  const session = await db.customerReturnSession.findUnique({
-    where: { id: approved.sessionId },
-  });
-  const installed = await db.session.findFirst({
-    where: { shop, isOnline: false },
-    select: { id: true },
-  });
-  if (
-    !installed ||
-    !session ||
-    session.shop !== shop ||
-    !session.accessToken ||
-    !session.customerSubjectHash ||
-    session.expiresAt.getTime() <= now
-  ) {
-    throw new AgentAccessError("invalid_token");
-  }
-  const accessToken = `rfa_${randomToken()}`;
-  const refreshToken = issueRefreshToken ? `rfr_${randomToken()}` : undefined;
-  const expiresAt = new Date(
-    Math.min(now + 60 * 60_000, session.expiresAt.getTime()),
-  );
-  await db.agentAccessGrant.create({
-    data: {
-      tokenHash: digest(accessToken),
-      sessionId: session.id,
-      shop,
-      customerSubjectHash: session.customerSubjectHash,
-      clientId: approved.clientId,
-      resource: approved.resource,
-      scopes: approved.scopes,
-      expiresAt,
-      refreshTokenHash: refreshToken ? digest(refreshToken) : null,
-      refreshExpiresAt: refreshToken ? session.expiresAt : null,
-    },
-  });
-  return {
-    accessToken,
-    refreshToken,
-    expiresAt,
-    refreshExpiresAt: refreshToken ? session.expiresAt : undefined,
-    scopes: approved.scopes,
-  };
-}
-
 const connectionGrantSchema = z
   .object({
     connectionId: z.string().uuid(),
@@ -171,9 +112,11 @@ const connectionGrantSchema = z
   })
   .strict();
 
-// Same broker contract as issueApprovedAgentGrant, for an approved all-stores
-// connection. The grant carries no Shopify credential; store links do. Each
-// grant, including every refresh, keeps the connection for another year.
+// Internal broker primitive, deliberately not exposed by an HTTP or tool
+// route. The OAuth broker validates the registered client, exact redirect,
+// PKCE, resource and CSRF-protected consent before calling this. The grant
+// carries no Shopify credential; store links do. Each grant, including every
+// refresh, keeps the connection for another year.
 export async function issueConnectionGrant(
   input: unknown,
   now = Date.now(),
@@ -181,7 +124,7 @@ export async function issueConnectionGrant(
   issueRefreshToken = false,
 ) {
   const approved = connectionGrantSchema.parse(input);
-  if (!isAllStoresResource(approved.resource))
+  if (!isConnectionResource(approved.resource))
     throw new AgentAccessError("invalid_token");
   const connection = await db.agentConnection.findUnique({
     where: { id: approved.connectionId },
@@ -223,68 +166,10 @@ export async function issueConnectionGrant(
   };
 }
 
-export async function authorizeAgent(
-  authorization: string | null,
-  shop: string,
-  requiredScope?: AgentScope,
-  now = Date.now(),
-) {
-  // Only Refund's opaque tokens are accepted, never Shopify access tokens,
-  // browser cookies, intake links, ID tokens or signed return quotes.
-  const token = authorization?.match(REFUND_ACCESS_TOKEN)?.[1];
-  if (!token) throw new AgentAccessError("invalid_token");
-  const grant = await prisma.agentAccessGrant.findUnique({
-    where: { tokenHash: digest(token) },
-    include: { session: true },
-  });
-  if (
-    !grant ||
-    // An all-stores grant never authorizes a single-store endpoint.
-    grant.connectionId ||
-    grant.revokedAt ||
-    grant.expiresAt.getTime() <= now ||
-    grant.shop !== shop ||
-    grant.resource !== agentResource(shop) ||
-    !grant.clientId ||
-    !grant.scopes.length ||
-    grant.scopes.some((scope) => !agentScopes.includes(scope as AgentScope)) ||
-    !grant.session ||
-    grant.session.shop !== shop ||
-    grant.customerSubjectHash !== grant.session.customerSubjectHash ||
-    !grant.session.customerSubjectHash ||
-    !grant.session.accessToken ||
-    grant.session.expiresAt.getTime() <= now
-  ) {
-    throw new AgentAccessError("invalid_token");
-  }
-  const installed = await prisma.session.findFirst({
-    where: { shop, isOnline: false },
-    select: { id: true },
-  });
-  if (!installed) throw new AgentAccessError("invalid_token");
-  if (requiredScope && !grant.scopes.includes(requiredScope)) {
-    throw new AgentAccessError("insufficient_scope", requiredScope);
-  }
-  let customerToken: string;
-  try {
-    customerToken = unseal(
-      grant.session.accessToken,
-      `${grant.session.id}:${shop}`,
-    );
-  } catch {
-    throw new AgentAccessError("invalid_token");
-  }
-  return {
-    shop,
-    customerToken,
-    clientId: grant.clientId,
-    sessionId: grant.session.id,
-    customerSubjectHash: grant.session.customerSubjectHash,
-    draftId: grant.session.draftId,
-  };
-}
-
-// Authorizes an all-stores connection itself. Store access is a separate check
+// Authorizes a connection itself. Only Refund's opaque tokens are accepted,
+// never Shopify access tokens, browser cookies, intake links, ID tokens or
+// signed return quotes; grants from retired single-store connections have no
+// connection and open nothing. Store access is a separate check
 // (connectionStore), made for the specific store each tool call names.
 export async function authorizeConnection(
   authorization: string | null,
@@ -305,7 +190,7 @@ export async function authorizeConnection(
     grant.connection.revokedAt ||
     grant.connection.expiresAt.getTime() <= now ||
     grant.connection.clientId !== grant.clientId ||
-    !isAllStoresResource(grant.resource) ||
+    !isConnectionResource(grant.resource) ||
     !grant.scopes.length ||
     grant.scopes.some((scope) => !agentScopes.includes(scope as AgentScope))
   )

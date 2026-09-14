@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   Form,
   data,
-  redirect,
   useFetcher,
   useLoaderData,
   useNavigation,
@@ -23,10 +22,6 @@ import {
   verifyConsentCode,
 } from "../services/consent-email.server";
 import {
-  getCustomerSession,
-  requireInstalledShop,
-} from "../services/customer-session.server";
-import {
   appOrigin,
   privateHeaders,
   safeEqual,
@@ -43,56 +38,20 @@ export const headers = () => ({
 type EmailEntry = Awaited<ReturnType<typeof consentEmailState>>[number];
 type StepResult = { ok: boolean; message: string };
 
+// One connection for every store in the Refund network. It needs no store
+// sign-in; once email is set up, the customer confirms the email they shop
+// with before allowing it.
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  const rawId = params.requestId || "";
-  const flow = await getAgentAuthorizationRequest(request, rawId);
-  const url = new URL(request.url);
-  const common = {
-    assistant: assistantForRedirect(flow.redirectUri),
-    callbackHost: new URL(flow.redirectUri).hostname,
-    scopes: flow.scopes,
-    csrf: flow.csrfToken,
-    loginError: url.searchParams.has("loginError"),
-  };
-  // The all-stores connection needs no store sign-in. Once email is set up,
-  // the customer confirms the email they shop with before allowing it.
-  if (flow.shop === null) {
-    const emailStep = emailConfigured();
-    return data(
-      {
-        ...common,
-        allStores: true,
-        shop: null,
-        authenticated: false,
-        loginUrl: "",
-        emailStep,
-        emails: emailStep ? await consentEmailState(flow.id) : ([] as EmailEntry[]),
-      },
-      { headers: headers() },
-    );
-  }
-  const shop = await requireInstalledShop(flow.shop);
-  const session = await getCustomerSession(request, shop);
-  const loginQuery = new URLSearchParams({ shop, agentRequest: rawId });
-  // Try the customer's live Shopify session once, silently, so reconnecting an
-  // expired assistant usually needs no code. The consent click still follows.
-  if (
-    !session &&
-    !url.searchParams.has("silentTried") &&
-    !url.searchParams.has("loginError")
-  )
-    throw redirect(`/customer/login?${loginQuery}&silent=1`, {
-      headers: headers(),
-    });
+  const flow = await getAgentAuthorizationRequest(request, params.requestId || "");
+  const emailStep = emailConfigured();
   return data(
     {
-      ...common,
-      allStores: false,
-      shop,
-      authenticated: Boolean(session),
-      loginUrl: `/customer/login?${loginQuery}`,
-      emailStep: false,
-      emails: [] as EmailEntry[],
+      assistant: assistantForRedirect(flow.redirectUri),
+      callbackHost: new URL(flow.redirectUri).hostname,
+      scopes: flow.scopes,
+      csrf: flow.csrfToken,
+      emailStep,
+      emails: emailStep ? await consentEmailState(flow.id) : ([] as EmailEntry[]),
     },
     { headers: headers() },
   );
@@ -106,7 +65,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     throw new Response("Request too large.", { status: 413, headers: privateHeaders });
   const form = new URLSearchParams(text);
   // Email-step actions stay on this page; Allow and Cancel finish consent.
-  if (flow.shop === null && form.has("intent")) {
+  if (form.has("intent")) {
     if (
       request.headers.get("Origin") !== appOrigin() ||
       request.headers.get("Content-Type")?.split(";")[0] !==
@@ -129,15 +88,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
     throw new Response("Unknown request.", { status: 400, headers: privateHeaders });
   }
-  const session = flow.shop ? await getCustomerSession(request, flow.shop) : null;
-  return finishAgentConsent(request, rawId, session);
+  return finishAgentConsent(request, rawId);
 }
 
 const descriptions: Record<string, string> = {
-  "returns:read": "Find your purchased items and whether they can be returned.",
-  "returns:quote": "Calculate the exact refund amount for items you select.",
+  "returns:read": "Find your orders at stores that use Refund, and what can be returned.",
+  "returns:quote": "Work out the exact refund for the items you choose, including any fees.",
   "returns:submit":
-    "Submit a return and refund only after you explicitly confirm the exact items and amount in your chat.",
+    "Submit returns and refunds to your original payment method, each one after you confirm it in your chat.",
 };
 
 function Note({ result }: { result?: StepResult }) {
@@ -266,84 +224,49 @@ function EmailStep({ emails, csrf }: { emails: EmailEntry[]; csrf: string }) {
 export default function AgentConsent() {
   const info = useLoaderData<typeof loader>();
   const busy = useNavigation().state !== "idle";
-  const needsEmail =
-    info.allStores && info.emailStep && !info.emails.some((entry) => entry.confirmed);
+  const needsEmail = info.emailStep && !info.emails.some((entry) => entry.confirmed);
   return (
     <main className="customer-returns">
-      <h1>
-        {info.allStores
-          ? `Connect ${info.assistant} to Refund for every store`
-          : `Connect ${info.assistant} to your returns`}
-      </h1>
-      {info.allStores ? (
-        <p>This connection works with every store that uses Refund.</p>
-      ) : (
-        <p>
-          Merchant: <strong>{info.shop}</strong>
-        </p>
-      )}
+      <h1>Connect {info.assistant} to Refund</h1>
+      <p>
+        One connection works with every store that uses Refund, so you can start
+        a return with any of them right in your chat.
+      </p>
       <p>
         Refund will send the connection back to{" "}
         <strong>{info.callbackHost}</strong>.
       </p>
-      {info.loginError && (
-        <p role="alert">
-          Sign-in wasn’t completed. You can try again or cancel this connection.
-        </p>
-      )}
-      {info.allStores && info.emailStep && (
-        <EmailStep emails={info.emails} csrf={info.csrf} />
-      )}
-      <h2>What this assistant is requesting</h2>
+      {info.emailStep && <EmailStep emails={info.emails} csrf={info.csrf} />}
+      <h2>What {info.assistant} can do</h2>
       <ul>
         {info.scopes.map((scope) => (
           <li key={scope}>{descriptions[scope]}</li>
         ))}
       </ul>
-      {info.allStores ? (
-        <>
-          <p>
-            {info.emailStep
-              ? "When you ask about a return, Refund looks for your order at that store using the emails you confirm here, so there’s usually nothing else to do. If you used a different email, your assistant asks and sends a quick confirmation. A few stores ask you to sign in with Shopify instead; open those links in this browser."
-              : "When you ask about a return, your assistant helps you connect that store. A few stores ask you to sign in with Shopify; open those links in this browser."}
-          </p>
-          <p>
-            Stores stay connected while you keep using them. The connection ends
-            after a year without use. You can see and remove your confirmed
-            emails and stores at <a href="/connect/manage">your connection page</a>{" "}
-            in this browser, or remove Refund from your assistant at any time.
-          </p>
-        </>
-      ) : (
-        <p>
-          The assistant receives short-lived access that may refresh only while
-          your verified customer session remains active, for up to four hours.
-          Your Shopify sign-in credentials stay private. You can disconnect this
-          assistant from the return portal at any time.
-        </p>
-      )}
       <p>
-        <strong>Connecting does not submit a return or refund.</strong> The
-        merchant’s return rules still apply.
+        <strong>
+          {info.assistant} can submit returns and refunds for you.
+        </strong>{" "}
+        It always shows you the exact items, any fees and your refund first, and
+        only goes ahead when you say yes. Refunds go back to your original
+        payment method, and each store’s return rules still apply.
       </p>
-      {!info.allStores && !info.authenticated && (
-        <p>
-          <a href={info.loginUrl}>Sign in with the email used for this purchase</a>
-        </p>
-      )}
-      {!info.allStores && info.authenticated && (
-        <p>
-          Using your verified customer session for this merchant.{" "}
-          <a href={info.loginUrl}>Sign in as a different customer</a>
-        </p>
-      )}
+      <p>
+        {info.emailStep
+          ? "When you ask about a return, Refund finds your order at that store using the emails you confirm here, so there’s usually nothing else to do. If you used a different email, your assistant asks and sends a quick confirmation. A few stores ask you to sign in with Shopify instead; open those links in this browser."
+          : "When you ask about a return, your assistant helps you connect that store. A few stores ask you to sign in with Shopify; open those links in this browser."}
+      </p>
+      <p>
+        Stores stay connected while you keep using them, and the connection ends
+        after a year without use. See and remove your confirmed emails and stores
+        at <a href="/connect/manage">your connection page</a> in this browser, or
+        remove Refund from your assistant at any time.
+      </p>
       <Form method="post">
         <input type="hidden" name="csrf" value={info.csrf} />
-        {(info.allStores || info.authenticated) && (
-          <button name="decision" value="allow" disabled={busy || needsEmail}>
-            Allow {info.assistant} access
-          </button>
-        )}
+        <button name="decision" value="allow" disabled={busy || needsEmail}>
+          Allow {info.assistant} access
+        </button>
         <button name="decision" value="deny" disabled={busy}>
           Cancel connection
         </button>
