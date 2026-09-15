@@ -2,7 +2,7 @@
 
 client_id = "24193de3d7837cab554bb1ff8b53d388"
 name = "Gooper.io"
-application_url = "https://refund-ztxz.onrender.com"
+application_url = "https://gooper.io"
 embedded = true
 
 [access_scopes]
@@ -38,11 +38,17 @@ api_version = "2026-07"
   topics = [ "app/scopes_update" ]
 
 [auth]
-redirect_urls = [ "https://refund-ztxz.onrender.com/auth/callback" ]
+redirect_urls = [
+  "https://gooper.io/auth/callback",
+  "https://refund-ztxz.onrender.com/auth/callback"
+]
 
 [customer_authentication]
-redirect_uris = [ "https://refund-ztxz.onrender.com/customer/callback" ]
-javascript_origins = [ "https://refund-ztxz.onrender.com" ]
+redirect_uris = [
+  "https://gooper.io/customer/callback",
+  "https://refund-ztxz.onrender.com/customer/callback"
+]
+javascript_origins = [ "https://gooper.io", "https://refund-ztxz.onrender.com" ]
 
 [build]
 automatically_update_urls_on_dev = true
