@@ -42,7 +42,7 @@ export function loader({ request }: LoaderFunctionArgs) {
 export default function EmailConfirmed() {
   const { heading, body } = useLoaderData<typeof loader>();
   return (
-    <main className="customer-returns">
+    <main className="customer-returns connection-page">
       <h1>{heading}</h1>
       <p>{body}</p>
     </main>

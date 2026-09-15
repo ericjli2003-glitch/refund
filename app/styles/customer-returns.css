@@ -210,3 +210,94 @@
   border: 1px solid #b0703f;
   border-radius: 8px;
 }
+
+/* Assistant connection pages: bright orange with white Proxima Nova text. */
+body:has(.connection-page) {
+  background: #ff6b00;
+}
+.customer-returns.connection-page {
+  color: #ffffff;
+  font-family:
+    "proxima-nova",
+    "Proxima Nova",
+    Montserrat,
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  font-weight: 400;
+}
+.connection-page h1,
+.connection-page strong,
+.connection-page b {
+  font-weight: 800;
+}
+.connection-page h2,
+.connection-page h3,
+.connection-page h4,
+.connection-page label {
+  font-weight: 600;
+}
+.connection-page a,
+.connection-page header a {
+  color: #ffffff;
+  text-decoration: underline;
+}
+.customer-returns.connection-page header {
+  background: rgb(255 255 255 / 16%);
+  color: #ffffff;
+  font-weight: 800;
+}
+.connection-page section {
+  background: rgb(255 255 255 / 12%);
+  border-color: rgb(255 255 255 / 45%);
+}
+.connection-page form {
+  border-top-color: rgb(255 255 255 / 35%);
+}
+.connection-page button,
+.connection-page .return-button {
+  background: #c24a00;
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  font-weight: 800;
+}
+.connection-page button:hover:not(:disabled) {
+  background: #9e3c00;
+}
+.connection-page .return-link {
+  background: none;
+  border: 0;
+  color: #ffffff;
+  font-weight: 600;
+}
+.connection-page input,
+.connection-page .return-connection-url,
+.connection-page .consent-email input[type="email"],
+.connection-page .consent-email input[name="code"] {
+  background: #ffffff;
+  color: #3b1d0a;
+  border-color: #ffffff;
+}
+.connection-page .consent-email-list li {
+  background: rgb(255 255 255 / 16%);
+}
+.connection-page .consent-email-pending {
+  border-color: #ffffff;
+}
+.connection-page .consent-email-hint,
+.connection-page footer {
+  color: #ffffff;
+}
+.connection-page .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+.connection-page .button-row > * {
+  margin: 0;
+}
+.connection-page .choice-row button {
+  min-width: 96px;
+}

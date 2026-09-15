@@ -226,7 +226,7 @@ export default function AgentConsent() {
   const busy = useNavigation().state !== "idle";
   const needsEmail = info.emailStep && !info.emails.some((entry) => entry.confirmed);
   return (
-    <main className="customer-returns">
+    <main className="customer-returns connection-page">
       <h1>Connect {info.assistant} to Gooper.io</h1>
       <p>
         One connection works with every store that uses Gooper.io, so you can start
@@ -265,12 +265,14 @@ export default function AgentConsent() {
       </p>
       <Form method="post">
         <input type="hidden" name="csrf" value={info.csrf} />
-        <button name="decision" value="allow" disabled={busy || needsEmail}>
-          Allow {info.assistant} access
-        </button>
-        <button name="decision" value="deny" disabled={busy}>
-          Cancel connection
-        </button>
+        <div className="button-row">
+          <button name="decision" value="allow" disabled={busy || needsEmail}>
+            Allow {info.assistant} access
+          </button>
+          <button name="decision" value="deny" disabled={busy}>
+            Cancel connection
+          </button>
+        </div>
         {needsEmail && (
           <p className="consent-email-hint">Confirm an email above to continue.</p>
         )}

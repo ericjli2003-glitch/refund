@@ -26,7 +26,7 @@ export default function ConnectAllStores() {
     }
   }
   return (
-    <main className="customer-returns">
+    <main className="customer-returns connection-page">
       <header>
         <a href="/stores">← Find a store</a>
         <span>GOOPER.IO · ASSISTANT CONNECTION</span>

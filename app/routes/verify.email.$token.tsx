@@ -60,7 +60,7 @@ export default function ConfirmEmail() {
   const info = useLoaderData<typeof loader>();
   const busy = useNavigation().state !== "idle";
   return (
-    <main className="customer-returns">
+    <main className="customer-returns connection-page">
       <h1>One quick check</h1>
       <p>
         You asked {info.assistant} to help with a return from{" "}
@@ -69,18 +69,18 @@ export default function ConfirmEmail() {
       <p>Which number is {info.assistant} showing you?</p>
       <Form method="post">
         <input type="hidden" name="csrf" value={info.csrf} />
-        <div role="group" aria-label="Number shown in your chat">
+        <div className="button-row choice-row" role="group" aria-label="Number shown in your chat">
           {info.choices.map((choice) => (
             <button key={choice} name="choice" value={choice} disabled={busy}>
               {choice}
             </button>
           ))}
         </div>
-        <p>
+        <div className="button-row">
           <button name="choice" value="deny" disabled={busy}>
             I didn’t ask for this
           </button>
-        </p>
+        </div>
       </Form>
       <p>
         This lets {info.assistant} find your orders at {info.storeName} and

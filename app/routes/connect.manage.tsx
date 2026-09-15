@@ -113,7 +113,7 @@ export default function ManageConnection() {
   const { csrf, connections } = useLoaderData<typeof loader>();
   const busy = useNavigation().state !== "idle";
   return (
-    <main className="customer-returns">
+    <main className="customer-returns connection-page">
       <header>
         <a href="/connect">← Gooper.io for every store</a>
         <span>GOOPER.IO · YOUR CONNECTION</span>
