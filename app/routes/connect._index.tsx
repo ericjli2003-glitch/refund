@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { data, useLoaderData } from "react-router";
-import { allStoresResource } from "../services/agent-access.server";
+import { connectorResource } from "../services/agent-access.server";
 import { privateHeaders } from "../services/customer-security.server";
 import "../styles/customer-returns.css";
 
@@ -11,7 +11,7 @@ export const headers = () => ({
 
 // Never derive OAuth/MCP endpoints from a caller-controlled Host header.
 export function loader() {
-  return data({ endpoint: allStoresResource() }, { headers: headers() });
+  return data({ endpoint: connectorResource() }, { headers: headers() });
 }
 
 export default function ConnectAllStores() {

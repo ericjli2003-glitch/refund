@@ -42,7 +42,7 @@ export function publicRatePolicy(path: string): RatePolicy | null {
   // The consent page refreshes itself while waiting for an email tap.
   if (normalized.startsWith("/agent/authorize/"))
     return { bucket: "consent", limit: 240, seconds: 60 };
-  if (["/mcp", "/api/return-intake", "/start-return"].includes(normalized))
+  if (["/mcp/public", "/api/return-intake", "/start-return"].includes(normalized))
     return { bucket: "intake", limit: 120, seconds: 60 };
   if (
     [

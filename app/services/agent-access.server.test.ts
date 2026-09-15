@@ -5,6 +5,7 @@ import {
   AgentAccessError,
   StoreLinkRequiredError,
   allStoresResource,
+  connectorResource,
   authorizeConnection,
   connectionStore,
   isConnectionResource,
@@ -84,6 +85,8 @@ function setup(t: TestContext) {
 test("every Gooper.io MCP address is the same network-wide connection resource", () => {
   process.env.SHOPIFY_APP_URL = "https://refund.test";
   assert.equal(isConnectionResource(allStoresResource()), true);
+  assert.equal(isConnectionResource(connectorResource()), true);
+  assert.equal(connectorResource(), "https://refund.test/mcp");
   assert.equal(isConnectionResource(resource), true);
   assert.equal(isConnectionResource(new URL(resource)), true);
   for (const value of [
@@ -93,7 +96,6 @@ test("every Gooper.io MCP address is the same network-wide connection resource",
     `${resource}?next=evil`,
     "https://refund.test/mcp/EXAMPLE.myshopify.com",
     "https://refund.test/mcp/not-a-store.com",
-    "https://refund.test/mcp",
     "https://refund.test/mcp/",
     null,
   ])

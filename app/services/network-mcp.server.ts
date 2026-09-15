@@ -24,7 +24,7 @@ const scopesByTool: Record<string, AgentScope> = {
   remove_confirmed_email: "returns:read",
 };
 
-// The one connection to every Gooper.io store, served at /mcp/stores and at every
+// The one connection to every Gooper.io store, served at /mcp, /mcp/stores and every
 // store's /mcp/<shop> address. Each address advertises its own resource
 // metadata, because hosts check that it matches the URL they connected to.
 export const handleNetworkMcp = (request: Request, resourceMetadataPath: string) =>

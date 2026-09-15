@@ -3,7 +3,7 @@
 ## Customer MCP connection
 
 Customers connect Gooper.io to hosted ChatGPT or Claude once, at `/connect` with the
-MCP URL `/mcp/stores`, and the connection works with every store that uses
+MCP URL `/mcp` (earlier `/mcp/stores` links still work), and the connection works with every store that uses
 Gooper.io. Store addresses (`/mcp/:shop`) saved from earlier setup pages open the
 same connection. The assistant can find orders, quote, and submit returns and
 refunds to the original payment method, each one after the customer confirms it
@@ -209,7 +209,7 @@ return shipping labels.
 
 ### Public merchant intake
 
-`/mcp` now exposes a single anonymous `start_return` tool. It accepts a merchant
+`/mcp/public` exposes a single anonymous `start_return` tool. It accepts a merchant
 website plus optional `orderName` and `itemName` hints and returns a secure
 `continueUrl`. The same operation is available as JSON POST `/api/return-intake`.
 `/start-return` provides a human-readable entry page and accepts the same three

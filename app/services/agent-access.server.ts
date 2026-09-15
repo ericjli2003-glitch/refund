@@ -76,13 +76,17 @@ export function agentResource(shop: string) {
 // purchases through the emails the customer confirmed.
 export const allStoresResource = () => new URL("/mcp/stores", appOrigin()).href;
 
+// The short connector address customers paste into their assistant. It opens
+// the same connection as /mcp/stores.
+export const connectorResource = () => new URL("/mcp", appOrigin()).href;
+
 // Every Gooper.io MCP address opens the same connection to the whole network:
 // /mcp/stores, and store addresses (/mcp/<shop>) saved from earlier setup
 // pages, which reach every store too.
 export function isConnectionResource(value: URL | string | null | undefined) {
   const href = typeof value === "string" ? value : value?.href;
   if (!href) return false;
-  if (href === allStoresResource()) return true;
+  if (href === connectorResource() || href === allStoresResource()) return true;
   const prefix = `${appOrigin()}/mcp/`;
   const shop = href.startsWith(prefix) ? href.slice(prefix.length) : "";
   try {

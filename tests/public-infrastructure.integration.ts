@@ -86,7 +86,7 @@ test("public infrastructure enforces shared limits and maintains installed merch
     "HTTP preserves preflight, returns retry guidance, and ignores forged proxy prefixes",
     async () => {
       assert.equal(
-        publicRatePolicy("/mcp")?.bucket,
+        publicRatePolicy("/mcp/public")?.bucket,
         publicRatePolicy("/api/return-intake/")?.bucket,
       );
       assert.equal(publicRatePolicy("/REGISTER/")?.bucket, "register");
@@ -101,6 +101,7 @@ test("public infrastructure enforces shared limits and maintains installed merch
       ])
         assert.equal(publicRatePolicy(path)?.bucket, "sign-in");
       assert.equal(publicRatePolicy("/mcp/stores"), null);
+      assert.equal(publicRatePolicy("/mcp"), null);
       assert.equal(publicRatePolicy("/agent/authorize/request")?.bucket, "consent");
       assert.equal(trustedProxyHops("0"), 0);
       assert.throws(() => trustedProxyHops("true"));

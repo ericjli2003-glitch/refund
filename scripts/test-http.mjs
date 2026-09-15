@@ -72,7 +72,7 @@ try {
   );
   const connectHtml = await connectPage.text();
   // Store setup pages lead to the one connection for every store.
-  assert.ok(connectHtml.includes("https://refund.test/mcp/stores"));
+  assert.ok(connectHtml.includes('"https://refund.test/mcp"'));
   assert.ok(
     connectHtml.includes("Connect your assistant to Gooper.io for every store."),
   );
@@ -254,7 +254,7 @@ try {
   assert.equal((await metadata.json()).issuer, "https://refund.test");
   for (const path of [
     "/api/return-intake",
-    "/mcp",
+    "/mcp/public",
     "/api/merchant-discovery-failure",
   ]) {
     const preflight = await fetch(`http://127.0.0.1:3037${path}`, {
@@ -306,7 +306,7 @@ try {
   assert.ok(Number(limited.headers.get("Retry-After")) > 0);
   assert.equal(
     (
-      await fetch("http://127.0.0.1:3037/mcp", {
+      await fetch("http://127.0.0.1:3037/mcp/public", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",

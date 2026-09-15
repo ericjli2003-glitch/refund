@@ -10,7 +10,7 @@
   data-account-url="{{ routes.account_url | escape }}"
   data-portal-url="{{ refund_start_url | escape }}"
   data-intake-api-url="{{ refund_app_origin | escape }}/api/return-intake"
-  data-intake-mcp-url="{{ refund_app_origin | escape }}/mcp"
+  data-intake-mcp-url="{{ refund_app_origin | escape }}/mcp/public"
   data-customer-authenticated="{% if customer %}true{% else %}false{% endif %}"
   data-intent-prefix="{{ 'refund_site_tools.intent_prefix' | t | escape }}"
   {{ block.shopify_attributes }}
