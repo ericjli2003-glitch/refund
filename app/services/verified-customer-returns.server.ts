@@ -471,10 +471,16 @@ export async function calculateVerifiedReturn(
       const value = units(bag[key].amount);
       return value < 0n ? -value : value;
     };
+    // Shopify reports a returned line's subtotal and tax as negative credits;
+    // either sign is money back to the customer.
+    const credited = (amount: string) => {
+      const value = units(amount);
+      return value < 0n ? -value : value;
+    };
     let credit = 0n;
     let restocking = 0n;
     for (const line of returnCalculate.returnLineItems) {
-      credit += units(line.subtotalSet[key].amount) + units(line.totalTaxSet[key].amount);
+      credit += credited(line.subtotalSet[key].amount) + credited(line.totalTaxSet[key].amount);
       restocking += fee(line.restockingFee?.amountSet);
     }
     const shipping = fee(returnCalculate.returnShippingFee?.amountSet);

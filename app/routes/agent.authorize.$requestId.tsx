@@ -95,7 +95,7 @@ const descriptions: Record<string, string> = {
   "returns:read": "Find your orders at stores that use Gooper.io, and what can be returned.",
   "returns:quote": "Work out the exact refund for the items you choose, including any fees.",
   "returns:submit":
-    "Submit returns and refunds to your original payment method, each one after you confirm it in your chat.",
+    "Submit returns and refunds to your original payment method when you ask for them, checking with you first if a fee applies.",
 };
 
 function Note({ result }: { result?: StepResult }) {
@@ -247,9 +247,10 @@ export default function AgentConsent() {
         <strong>
           {info.assistant} can submit returns and refunds for you.
         </strong>{" "}
-        It always shows you the exact items, any fees and your refund first, and
-        only goes ahead when you say yes. Refunds go back to your original
-        payment method, and each store’s return rules still apply.
+        When you ask to return something, it takes care of it, and checks with
+        you first only if a fee would come out of your refund. Refunds go back
+        to your original payment method, and each store’s return rules still
+        apply.
       </p>
       <p>
         {info.emailStep

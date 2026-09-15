@@ -12,7 +12,7 @@ export const meta: MetaFunction = () => [
   {
     name: "description",
     content:
-      "Let customers complete eligible Shopify returns inside compatible AI assistants, with explicit confirmation and merchant-controlled limits.",
+      "Let customers complete eligible Shopify returns inside compatible AI assistants, in one request and within merchant-controlled limits.",
   },
 ];
 
@@ -39,12 +39,12 @@ export default function Index() {
             </p>
             <h1>Customer-confirmed Shopify returns, inside AI assistants.</h1>
             <p className={styles.lede}>
-              Gooper.io lets an authenticated customer find eligible items, review
-              Shopify&apos;s calculated amount, and confirm the return. You set
-              the return window and refund limit.
+              Gooper.io lets a verified customer return eligible items in one
+              request, using Shopify&apos;s calculated amount. You set the return
+              window and refund limit.
             </p>
             <div className={styles.trustLine}>
-              <span>Explicit confirmation</span>
+              <span>Returns in one request</span>
               <span>Original payment method</span>
               <span>Idempotent execution</span>
             </div>
@@ -105,10 +105,11 @@ export default function Index() {
             </article>
             <article className={styles.featureCard}>
               <span className={styles.step}>03</span>
-              <h3>Require confirmation</h3>
+              <h3>Ask only when it matters</h3>
               <p>
-                Nothing is submitted until the customer explicitly confirms the
-                exact return. Duplicate requests do not refund twice.
+                A return goes ahead when the customer asks for it. If a fee would
+                come out of the refund, the customer agrees to it first. Duplicate
+                requests do not refund twice.
               </p>
             </article>
           </div>

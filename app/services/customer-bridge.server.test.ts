@@ -511,3 +511,24 @@ test("quotes use Shopify shop money for policy limits without changing customer 
   );
   assert.equal(writes.mock.callCount(), 0);
 });
+
+test("in chat, a return with nothing deducted goes ahead without another question", async () => {
+  const { chatQuoteNextStep } = await import("./return-quote.server");
+  const none = { restocking: null, returnShipping: null };
+  const fee = { amount: "1.40", currencyCode: "CAD" };
+  assert.equal(
+    chatQuoteNextStep({ submissionAvailable: true, returnFees: none }).goAheadWithoutAsking,
+    true,
+  );
+  for (const quote of [
+    { submissionAvailable: true, returnFees: { ...none, restocking: fee } },
+    { submissionAvailable: true, returnFees: { ...none, returnShipping: fee } },
+    { submissionAvailable: true },
+    { submissionAvailable: false, returnFees: none },
+  ])
+    assert.equal(chatQuoteNextStep(quote).goAheadWithoutAsking, false);
+  assert.match(
+    chatQuoteNextStep({ submissionAvailable: true, returnFees: { ...none, restocking: fee } }).nextStep,
+    /check once/,
+  );
+});
