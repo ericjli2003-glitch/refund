@@ -43,7 +43,11 @@ stores that use Refund, never for marketing:
    with nothing for the customer to do. If none match, the tool returns
    `linkRequired` with reason `email_not_found`, and the assistant asks
    whether they used a different email. Otherwise an unlinked or expired store
-   returns `linkRequired` with `nextTool: "link_store"`.
+   returns `linkRequired` with `nextTool: "link_store"`. A store that hasn't
+   saved its return rules, has turned assistant returns off, or can't read
+   order emails returns reason `store_not_ready` with no next tool, and the
+   assistant points the customer to the store's own returns page. Customers
+   are never sent to a Shopify sign-in.
 2. `link_store` tries the confirmed emails first. With a different email the
    customer used at checkout, it sends a one-tap confirmation from Refund
    (through Resend) and returns a two-digit number; once confirmed, that email
@@ -53,27 +57,23 @@ stores that use Refund, never for marketing:
    `/verify/email/:token`; a wrong number cancels the request. No Shopify
    sign-in or store account is needed, so guest checkouts work. An address with
    no order at the store gets a short note instead, and the chat hears the same
-   thing either way. Without an email, `link_store` asks for one and offers a
-   Shopify link that finishes instantly when the customer is already signed in.
-   Stores that can't use email confirmation (email not configured, return rules
-   not saved, or no access to order emails) get that Shopify link:
-   `/connect/stores/link/:token`, opened in the browser that approved Refund.
+   thing either way. Without an email, `link_store` asks for one. Email is the
+   only check: when sending isn't configured `link_store` returns
+   `email_unavailable`, and stores that can't use email return
+   `store_not_ready`.
 3. Return tools for that store then work. `list_linked_stores` shows each link
    and whether it is still active.
 
 Limits and protections:
 
-- **Links that last while used.** Linking verifies the customer with Shopify
-  once and stores their Shopify customer ID encrypted. While that Shopify
-  session lasts (at most four hours, with no refresh token for apps like
-  Refund), tools use it and Shopify's own return rules apply. After it ends,
-  tools reach the same customer's orders through the store's Admin API, which
-  doesn't apply Shopify's return rules, so Refund applies the restocking fee,
-  return shipping fee and final-sale collections the merchant confirmed in
-  Refund. This is on by default and takes effect once the merchant saves those
-  rules. A merchant can turn it off; links then need a new sign-in after four
-  hours, which is one click with a live Shopify session. A link ends after a
-  year without use.
+- **Links that last while used.** Email links reach the customer's orders
+  through the store's Admin API, which doesn't apply Shopify's return rules, so
+  Refund applies the restocking fee, return shipping fee and final-sale
+  collections the merchant confirmed in Refund. Assistant returns are on by
+  default and start once the merchant saves those rules; a merchant can turn
+  them off. Stores linked by Shopify sign-in before linking went email-only use
+  that sign-in while it lasts, then the verified customer ID under the same
+  rules. A link ends after a year without use.
 - **Rule drift pauses links.** When a signed-in quote shows Shopify charging a
   restocking fee Refund's rules lack, a higher return shipping fee, or final-sale
   items with no final-sale collections set, verified links pause and the
@@ -82,9 +82,8 @@ Limits and protections:
   against the connection, not a store, and each refresh keeps it for another
   year. Access tokens still last one hour and rotate.
 - **Same browser.** Approving the connection sets an HttpOnly
-  `__Host-refund_connection` cookie, and a store link completes only in that
-  browser. Someone who sends a customer their own link can't attach the
-  customer's store sign-in to the sender's assistant.
+  `__Host-refund_connection` cookie, and `/connect/manage` opens only in that
+  browser.
 - A store link belongs to the customer at that store. Any sign-in to that
   store's return portal lists it under connected assistants and can remove it.
   Customer redaction and uninstall delete it; signing out ends only its live
@@ -97,11 +96,9 @@ Limits and protections:
   store; emails confirmed at setup belong to the customer and stay. Customer
   data requests report when an address was confirmed, without naming other
   stores.
-- Stores that still use Shopify sign-in get the first confirmed email as
-  `login_hint`, so Shopify's sign-in form is pre-filled.
 - Looking up orders by email needs Shopify's Level 2 protected customer data
-  approval for the order email field. Without it, lookups fail and stores fall
-  back to Shopify sign-in.
+  approval for the order email field. Without it, lookups fail and the store
+  returns `store_not_ready`.
 - Every Refund MCP address opens this same connection: `/mcp/stores`, and
   `/mcp/:shop` addresses saved from earlier setup pages, each with its own
   resource metadata. Single-store grants are retired and open nothing.

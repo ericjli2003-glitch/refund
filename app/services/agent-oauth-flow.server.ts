@@ -15,7 +15,7 @@ import { emailConfigured } from "./email.server";
 import {
   connectionBrowserCookie,
   readConnectionBrowser,
-} from "./store-link.server";
+} from "./connection-browser.server";
 
 export const agentFlowCookie = createCookie("__Host-refund_agent_flow", {
   httpOnly: true,

@@ -64,7 +64,7 @@ function toolError(error: unknown, resourceMetadataUrl: string) {
       linkRequired: true,
       shop: error.shop,
       reason: error.reason,
-      nextTool: "link_store",
+      nextTool: error.reason === "store_not_ready" ? null : "link_store",
       returnSubmitted: false,
       refundSubmitted: false,
     };
@@ -179,7 +179,7 @@ export function createCustomerReturnsMcpServer({
       {
         title: "List linked stores",
         description:
-          "Lists the stores this connection is linked to, whether each link is active, and whether the store keeps links without the customer signing in again. Renew an inactive link with link_store.",
+          "Lists the stores this connection is linked to and whether each link is still active. Reconnect an inactive link with link_store.",
         inputSchema: {},
         annotations: {
           readOnlyHint: true,
@@ -202,7 +202,7 @@ export function createCustomerReturnsMcpServer({
       {
         title: "Link a store to this connection",
         description:
-          "Connects a store so this connection can see the customer's orders there. If an email the customer already confirmed has orders at the store, it connects right away with nothing for them to do. With a different email they used at checkout, Refund emails them a one-tap confirmation, no Shopify sign-in and no account needed, and returns a number for them to pick on the confirmation page. Without an email, it asks you to get one, or returns a link to connect through Shopify when the store needs that. Says so if the store is already connected. Never ask for passwords or sign-in codes in chat.",
+          "Connects a store so this connection can see the customer's orders there. If an email the customer already confirmed has orders at the store, it connects right away with nothing for them to do. With a different email they used at checkout, Refund emails them a one-tap confirmation, no Shopify sign-in and no account needed, and returns a number for them to pick on the confirmation page. Without an email, it asks you to get one. Says so if the store is already connected, or if the store hasn't set up returns through assistants yet; there's no Shopify sign-in to offer instead. Never ask for passwords or sign-in codes in chat.",
         inputSchema: {
           merchant: z
             .string()

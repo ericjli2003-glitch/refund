@@ -152,7 +152,7 @@ test("the all-stores server names the store on every private tool and asks to li
       find: async (merchant) => ({ status: "found", merchant }),
       link: async (merchant) => {
         linked.push(merchant);
-        return { status: "sign_in_required", linkUrl: "https://refund.test/x" };
+        return { status: "email_needed" };
       },
       list: async () => [],
       emails: {

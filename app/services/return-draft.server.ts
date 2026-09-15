@@ -146,9 +146,11 @@ export async function getReturnSession(context: CustomerContext) {
     createdAt: record.createdAt.toISOString(),
   }));
   const active = Boolean(draft && draft.expiresAt.getTime() > Date.now());
-  const currentSubmission = records.find(record => record.idempotencyKey === draft?.quoteId)
+  // A request Shopify turned down submitted nothing, so it doesn't block trying again.
+  const attempts = records.filter(record => record.status !== "NOT_SUBMITTED");
+  const currentSubmission = attempts.find(record => record.idempotencyKey === draft?.quoteId)
     || (draft?.quoteId ? (await prisma.agentReturn.findMany({
-      where: { ...owner(context), idempotencyKey: draft.quoteId }, take: 1,
+      where: { ...owner(context), idempotencyKey: draft.quoteId, status: { not: "NOT_SUBMITTED" } }, take: 1,
     }))[0] : undefined);
   const quote = active && draft && !currentSubmission ? restoreDraftQuote(draft, context) : null;
   return {
@@ -163,12 +165,12 @@ export async function getReturnSession(context: CustomerContext) {
     quoteToken: quote?.quoteToken,
     quoteValid: Boolean(quote),
     // Means an attempt exists, not that Shopify completed a refund.
-    submitted: records.length > 0 || Boolean(currentSubmission),
+    submitted: attempts.length > 0 || Boolean(currentSubmission),
     currentDraftSubmitted: Boolean(currentSubmission),
     submissions,
     returnId: currentSubmission?.returnId || null,
     refundId: currentSubmission?.refundId || null,
-    recovery: currentSubmission || (!active && records.length)
+    recovery: currentSubmission || (!active && attempts.length)
       ? "A prior submission attempt exists. Review submissions; do not repeat a return or refund. Contact the merchant if it needs attention."
       : quote
         ? "Review the restored quote and stop before submission. Earlier attempts, if any, are listed separately in submissions."

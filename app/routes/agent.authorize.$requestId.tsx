@@ -253,8 +253,8 @@ export default function AgentConsent() {
       </p>
       <p>
         {info.emailStep
-          ? "When you ask about a return, Refund finds your order at that store using the emails you confirm here, so there’s usually nothing else to do. If you used a different email, your assistant asks and sends a quick confirmation. A few stores ask you to sign in with Shopify instead; open those links in this browser."
-          : "When you ask about a return, your assistant helps you connect that store. A few stores ask you to sign in with Shopify; open those links in this browser."}
+          ? "When you ask about a return, Refund finds your order at that store using the emails you confirm here, so there’s usually nothing else to do. If you used a different email, your assistant asks and sends a quick confirmation."
+          : "When you ask about a return, your assistant asks for the email you used at that store and sends a quick confirmation."}
       </p>
       <p>
         Stores stay connected while you keep using them, and the connection ends

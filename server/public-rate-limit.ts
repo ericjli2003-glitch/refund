@@ -34,7 +34,6 @@ export function publicRatePolicy(path: string): RatePolicy | null {
   if (
     normalized === "/customer/login" ||
     normalized === "/customer/callback" ||
-    normalized.startsWith("/connect/stores/link/") ||
     normalized.startsWith("/verify/email/") ||
     normalized.startsWith("/verify/connect-email/") ||
     normalized === "/connect/manage"

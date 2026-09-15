@@ -262,13 +262,16 @@ test("a store link uses the live sign-in, then the verified customer only where 
   }));
   const expired = (error: unknown) =>
     error instanceof StoreLinkRequiredError && error.reason === "expired";
+  // With no Shopify sign-in to fall back on, such a store isn't available.
+  const notReady = (error: unknown) =>
+    error instanceof StoreLinkRequiredError && error.reason === "store_not_ready";
 
   await assert.rejects(
     connectionStore(connectionId, shop, now),
     (error) =>
       error instanceof StoreLinkRequiredError &&
       error.shop === shop &&
-      error.reason === "not_linked",
+      error.reason === "store_not_ready",
   );
   assert.deepEqual(find.mock.calls[0].arguments[0], {
     where: { connectionId_shop: { connectionId, shop } },
@@ -298,7 +301,7 @@ test("a store link uses the live sign-in, then the verified customer only where 
   // The Shopify session ended: only a store that confirmed its return rules
   // keeps the link.
   link = { ...base, session: null };
-  await assert.rejects(connectionStore(connectionId, shop, now), expired);
+  await assert.rejects(connectionStore(connectionId, shop, now), notReady);
   policy = {
     verifiedStoreLinks: true,
     returnRulesConfirmedAt: new Date(now),
@@ -322,7 +325,7 @@ test("a store link uses the live sign-in, then the verified customer only where 
       finalSaleCollectionIds: [],
       ...patch,
     };
-    await assert.rejects(connectionStore(connectionId, shop, now), expired);
+    await assert.rejects(connectionStore(connectionId, shop, now), notReady);
   }
   scope = "read_orders,read_products,read_returns";
   assert.deepEqual(

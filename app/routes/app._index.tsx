@@ -13,8 +13,10 @@ import { describeRefundProgress } from "../refund-status";
 import { authenticate } from "../shopify.server";
 import {
   canReceiveReturn,
+  canRemoveReturn,
   canRetryReturn,
   receiveReturnedItems,
+  removeUnsubmittedReturn,
   retryApprovedReturn,
 } from "../services/automatic-return.server";
 import {
@@ -156,6 +158,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     saved: url.searchParams.get("saved") === "true",
     retried: url.searchParams.get("retried") === "true",
     received: url.searchParams.get("received") === "true",
+    removed: url.searchParams.get("removed") === "true",
     listingSaved: url.searchParams.get("listingSaved") === "true",
     returnPortalUrl: `${appOrigin()}/returns/${session.shop}`,
     listed: merchant.discoveryPublished,
@@ -191,6 +194,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       ...agentReturn,
       retryable: canRetryReturn(agentReturn),
       receivable: canReceiveReturn(agentReturn),
+      removable: canRemoveReturn(agentReturn),
     })),
     privacyRequests,
   };
@@ -233,6 +237,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       };
     }
     return redirect(retry ? "/app?retried=true" : "/app?received=true");
+  }
+
+  if (formData.get("intent") === "removeReturn") {
+    const agentReturnId = formData.get("agentReturnId");
+    if (typeof agentReturnId !== "string" || !agentReturnId) {
+      throw new Response("Return ID is required.", { status: 400 });
+    }
+    try {
+      await removeUnsubmittedReturn(session.shop, agentReturnId);
+    } catch (error) {
+      return {
+        heading: "The request wasn't removed",
+        error:
+          error instanceof Error ? error.message : "The action did not finish.",
+      };
+    }
+    return redirect("/app?removed=true");
   }
 
   if (formData.get("intent") === "setListing") {
@@ -445,6 +466,7 @@ export default function RefundDashboard() {
     saved,
     retried,
     received,
+    removed,
     listed,
     listingSaved,
     privacyResolved,
@@ -538,7 +560,7 @@ export default function RefundDashboard() {
   }
 
   const returnAction = (
-    intent: "retryReturn" | "receiveReturn",
+    intent: "retryReturn" | "receiveReturn" | "removeReturn",
     agentReturnId: string,
     explanation: string,
     label: string,
@@ -617,8 +639,7 @@ export default function RefundDashboard() {
 
       {saved && (
         <s-banner heading="Automatic return policy saved" tone="success">
-          Customers can use the policy immediately after authenticating with
-          their Shopify customer account.
+          The policy applies to the next return a customer confirms.
         </s-banner>
       )}
 
@@ -631,6 +652,12 @@ export default function RefundDashboard() {
       {received && (
         <s-banner heading="Return marked received" tone="success">
           Check the return&apos;s status under Recent customer-agent returns.
+        </s-banner>
+      )}
+
+      {removed && (
+        <s-banner heading="Return request removed" tone="success">
+          The customer can try that return again.
         </s-banner>
       )}
 
@@ -661,8 +688,8 @@ export default function RefundDashboard() {
             <s-paragraph color="subdued">
               Listing publishes only your store name, website and Refund return
               page, at /stores, in /llms.txt and to assistants searching the
-              directory. Customers still verify every purchase with your
-              store&apos;s Shopify sign-in. Hiding the store doesn&apos;t affect
+              directory. Customers still verify every purchase, by confirming
+              their email or with your store&apos;s Shopify sign-in. Hiding the store doesn&apos;t affect
               your return portal, your app proxy guide, or returns started from
               your own website.
             </s-paragraph>
@@ -849,9 +876,16 @@ export default function RefundDashboard() {
               Policies). Customers see them in their quote, and Refund deducts
               them from the refund it submits.
             </s-paragraph>
+            {!policy.returnRulesConfirmedAt && (
+              <s-banner heading="Save to turn on assistant returns" tone="info">
+                Customers can&apos;t start returns at your store from ChatGPT or
+                Claude until you review the fees and final-sale collections
+                below and save.
+              </s-banner>
+            )}
             {policy.returnRulesMismatch && (
               <s-banner
-                heading="Linked customers need to sign in again"
+                heading="Assistant returns are paused"
                 tone="warning"
               >
                 {policy.returnRulesMismatch} Check the fees and final-sale
@@ -859,20 +893,20 @@ export default function RefundDashboard() {
               </s-banner>
             )}
             <s-switch
-              label="Keep customers linked without signing in again"
+              label="Let customers return through their AI assistant"
               checked={verifiedStoreLinks}
               onChange={(event) =>
                 setVerifiedStoreLinks(event.currentTarget.checked)
               }
             ></s-switch>
             <s-paragraph color="subdued">
-              Customers link your store to their assistant with a Shopify
-              sign-in, which Shopify ends after at most four hours. With this
-              on, the link keeps working while they use it and ends after a year
-              unused. Shopify doesn’t apply your return rules to those returns,
-              so Refund applies the fees and final-sale collections below.
-              Saving confirms they match your Shopify return rules. Turn this
-              off to have customers sign in again.
+              Customers who add Refund to ChatGPT or Claude confirm their email
+              once, and Refund finds their orders at your store by that email,
+              with no store sign-in. Shopify doesn’t apply your return rules to
+              those returns, so Refund applies the fees and final-sale
+              collections below. Saving confirms they match your Shopify return
+              rules. Turn this off to stop returns through assistants; your
+              return portal keeps working.
             </s-paragraph>
             <s-grid
               gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
@@ -1131,7 +1165,9 @@ export default function RefundDashboard() {
                           ? "success"
                           : agentReturn.status === "NEEDS_ATTENTION"
                             ? "critical"
-                            : "info"
+                            : agentReturn.status === "NOT_SUBMITTED"
+                              ? "warning"
+                              : "info"
                       }
                     >
                       {describeRefundProgress(agentReturn).title}
@@ -1152,6 +1188,15 @@ export default function RefundDashboard() {
                         Add a return label or tracking in Shopify
                       </s-link>
                     )}
+                    {agentReturn.removable &&
+                      returnAction(
+                        "removeReturn",
+                        agentReturn.id,
+                        agentReturn.status === "NOT_SUBMITTED"
+                          ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
+                          : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Refund so the customer can try again.",
+                        "Remove",
+                      )}
                     {agentReturn.retryable &&
                       returnAction(
                         "retryReturn",

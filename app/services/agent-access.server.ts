@@ -45,18 +45,25 @@ export class AgentAccessError extends Error {
 }
 
 // An all-stores connection asked for a store it hasn't linked, or whose link
-// now needs the customer to sign in again. Linking the store again fixes both.
+// stopped working. Linking the store again fixes both, unless the store isn't
+// set up for returns through assistants.
 export class StoreLinkRequiredError extends Error {
   constructor(
     public readonly shop: string,
-    public readonly reason: "not_linked" | "expired" | "email_not_found",
+    public readonly reason:
+      | "not_linked"
+      | "expired"
+      | "email_not_found"
+      | "store_not_ready",
   ) {
     super(
-      reason === "email_not_found"
-        ? `None of the emails the customer confirmed has an order at ${shop}. Ask warmly, something like "Did you use a different email for that one?", and call link_store with it.`
-        : reason === "expired"
-          ? `The customer needs a quick re-check for ${shop}. Use link_store to send them a fresh one, and let them know it only takes a moment.`
-          : `This connection isn't linked to ${shop} yet. Use link_store to connect it; it only takes the customer a moment.`,
+      reason === "store_not_ready"
+        ? `${shop} hasn't set up returns through assistants yet, so this one can't be done in chat. Let the customer know kindly, and suggest the store's own returns page or reaching out to the store. Nothing was submitted.`
+        : reason === "email_not_found"
+          ? `None of the emails the customer confirmed has an order at ${shop}. Ask warmly, something like "Did you use a different email for that one?", and call link_store with it.`
+          : reason === "expired"
+            ? `The link to ${shop} stopped working. Use link_store to connect it again; it usually needs nothing from the customer.`
+            : `This connection isn't linked to ${shop} yet. Use link_store to connect it; it only takes the customer a moment.`,
     );
   }
 }
@@ -66,8 +73,7 @@ export function agentResource(shop: string) {
 }
 
 // One assistant connection covering every Refund store. It reaches a store's
-// purchases only after the customer links that store with its own Shopify
-// sign-in, because Shopify customer accounts are separate for every store.
+// purchases through the emails the customer confirmed.
 export const allStoresResource = () => new URL("/mcp/stores", appOrigin()).href;
 
 // Every Refund MCP address opens the same connection to the whole network:
@@ -224,7 +230,7 @@ type StoreLinkState = {
 // How a store link reaches the customer's purchases right now: their live
 // Shopify session while it lasts, which applies Shopify's own return rules;
 // after that, the customer verified at link time, only where the store allows
-// it; otherwise not at all, and the customer needs to sign in again.
+// it; otherwise not at all.
 export function storeLinkAccess(
   link: StoreLinkState,
   policy: Parameters<typeof verifiedLinksAllowed>[0],
@@ -295,7 +301,11 @@ export async function connectionStore(
   if (!installed) throw new Error(`${shop} no longer uses Refund.`);
   let link = existing;
   let access = link ? storeLinkAccess(link, policy, installed.scope, now) : null;
-  if (!access && verifiedLinksAllowed(policy, installed.scope)) {
+  if (!access) {
+    // Customers connect stores only by email, which needs the store's
+    // confirmed return rules; there's no Shopify sign-in to fall back on.
+    if (!verifiedLinksAllowed(policy, installed.scope))
+      throw new StoreLinkRequiredError(shop, "store_not_ready");
     // One confirmation works at every store: look for orders under the emails
     // this connection confirmed, with nothing for the customer to do.
     const found = await linkStoreByConnectionEmail(connectionId, shop, lookup, now);
