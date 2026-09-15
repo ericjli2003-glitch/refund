@@ -413,3 +413,6 @@ body:has(.connection-page) {
     top: 0;
   }
 }
+.connection-page .setting-preview-row + .setting-preview-row {
+  margin-top: 10px;
+}
