@@ -422,7 +422,7 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       assert.match(response.headers.get("Content-Type")!, /text\/markdown/);
       const markdown = await response.text();
       assert.ok(markdown.includes(`https://${shop}${proxyPath}/mcp`));
-      assert.ok(markdown.includes("No Refund plugin or connector required"));
+      assert.ok(markdown.includes("No Gooper.io plugin or connector required"));
       const manifest = await (
         await fetch(`${base}${proxyPath}/manifest.json`)
       ).json();
@@ -811,7 +811,7 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       assert.equal(
         await prisma.agentAccessGrant.count({ where: { shop } }),
         0,
-        "No Refund connector/agent grant was needed",
+        "No Gooper.io connector/agent grant was needed",
       );
     },
   );

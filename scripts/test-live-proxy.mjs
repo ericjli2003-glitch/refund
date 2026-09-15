@@ -58,13 +58,13 @@ assert.equal(
 const guide = await root.text();
 assert.ok(
   guide.includes(`${prefix}/manifest.json`),
-  "Root guide must link to Refund's merchant proxy manifest",
+  "Root guide must link to Gooper.io's merchant proxy manifest",
 );
 const manifestResponse = await request(`${storefront}${prefix}/manifest.json`);
 assert.equal(
   manifestResponse.status,
   200,
-  "Deploy the Refund backend and Shopify app proxy; approve write_app_proxy",
+  "Deploy the Gooper.io backend and Shopify app proxy; approve write_app_proxy",
 );
 assert.match(
   manifestResponse.headers.get("Content-Type") || "",
@@ -113,7 +113,7 @@ assert.deepEqual(
 );
 assert.equal(tools[0].inputSchema.properties.merchant, undefined);
 console.log(
-  "PASS: merchant /agents.md → real Shopify App Proxy → Refund manifest, browser handoff and shop-bound MCP discovery.",
+  "PASS: merchant /agents.md → real Shopify App Proxy → Gooper.io manifest, browser handoff and shop-bound MCP discovery.",
 );
 console.log(
   "No intake tool, login, return or refund was executed. This verifies deployment, not automatic ChatGPT/Claude discovery or customer-authorized execution.",

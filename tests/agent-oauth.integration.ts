@@ -373,7 +373,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
     async () => {
       const flow = await start("returns:read");
       // Addresses saved from store-specific setup pages open the same
-      // connection to every Refund store, with no merchant sign-in.
+      // connection to every Gooper.io store, with no merchant sign-in.
       assert.equal(flow.flow.shop, null);
       const approved = new URL(
         (await consent(flow, "allow", { noCustomer: true })).headers.get("Location")!,
@@ -890,7 +890,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         StoreLinkRequiredError,
       );
 
-      // Removing Refund from the assistant revokes its token, which ends the
+      // Removing Gooper.io from the assistant revokes its token, which ends the
       // whole connection and deletes everything it still held.
       assert.equal(
         (
