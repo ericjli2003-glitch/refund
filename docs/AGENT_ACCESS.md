@@ -19,7 +19,7 @@ and the public MCP `find_store` tool.
 Setup page: `/connect`. MCP URL:
 
 ```text
-https://refund-ztxz.onrender.com/mcp
+https://gooper.io/mcp
 ```
 
 The customer adds this once. Approving it needs no store sign-in. Once Resend is
@@ -120,7 +120,7 @@ grants access. The issuer comes from server configuration, never a request heade
 Use this exact remote MCP URL (no trailing slash):
 
 ```text
-https://refund-ztxz.onrender.com/mcp
+https://gooper.io/mcp
 ```
 
 A connector saved earlier with a store address, such as
