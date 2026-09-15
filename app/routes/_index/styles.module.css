@@ -50,7 +50,8 @@
   box-shadow: 0 1.75rem 5rem rgb(80 30 5 / 30%);
 }
 
-.installCard [class*="eyebrow"] {
+.installCard [class*="eyebrow"],
+.controlPanel [class*="eyebrow"] {
   color: #b84a0e;
 }
 
