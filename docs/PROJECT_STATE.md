@@ -451,6 +451,11 @@ email-link path.
   A restocking or return shipping fee gets one short question first. The
   assistant picks the store, order and item itself when only one fits, and
   never asks for an order number, a reason or to confirm the store.
+- **Return reason.** Shopify rejects a return request without a reason, and
+  the old `returnReason` enum is deprecated. Customers aren't asked why, so
+  every return is filed under Shopify's "Other" reason
+  (`returnReasonDefinitions`, handle `other-reason`, or a reason named Other),
+  looked up once per store before the request is sent.
 - **Consent wording.** The consent page, `/connect`, the email confirmation
   page, llms.txt, the home page and the App Store listing now say returns go
   ahead when the customer asks, with a check only when a fee applies.

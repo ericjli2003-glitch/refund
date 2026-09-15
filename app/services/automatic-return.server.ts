@@ -29,6 +29,7 @@ import {
   type ReturnLineItemNode,
   type ReverseFulfillmentLineItemNode,
 } from "./return-processing.server";
+import { otherReturnReasonId } from "./return-reasons.server";
 import {
   buildReturnApprovalVariables,
   buildReturnProcessTransactions,
@@ -814,7 +815,8 @@ async function requestCustomerReturn(
   customerToken: string,
   orderId: string,
   items: RequestedItem[],
-  customerNote?: string,
+  customerNote: string | undefined,
+  returnReasonDefinitionId: string,
 ) {
   const requestResult = await customerAccountGraphql<{
     orderRequestReturn: {
@@ -825,6 +827,7 @@ async function requestCustomerReturn(
     orderId,
     requestedLineItems: items.map((item) => ({
       ...item,
+      returnReasonDefinitionId,
       customerNote: customerNote?.slice(0, 300),
     })),
   }).catch((error: unknown) => {
@@ -853,6 +856,7 @@ export async function executeAutomaticReturn({
   idempotencyKey,
   expectedRefund,
   refundTiming,
+  lookupReturnReason = (store) => otherReturnReasonId(store),
 }: {
   shop: string;
   customerToken: CustomerAccess;
@@ -862,6 +866,7 @@ export async function executeAutomaticReturn({
   idempotencyKey: string;
   expectedRefund: Money;
   refundTiming: RefundTiming;
+  lookupReturnReason?: (shop: string) => Promise<string>;
 }) {
   const policy = await prisma.storePolicy.findUnique({ where: { shop } });
   if (!policy?.automaticRefundsEnabled) {
@@ -1010,7 +1015,19 @@ export async function executeAutomaticReturn({
   try {
     returnId =
       typeof customerToken === "string"
-        ? await requestCustomerReturn(shop, customerToken, orderId, items, customerNote)
+        ? await requestCustomerReturn(
+            shop,
+            customerToken,
+            orderId,
+            items,
+            customerNote,
+            // Looked up before Shopify is asked, so a failure submits nothing.
+            await lookupReturnReason(shop).catch((error: unknown) => {
+              throw new ReturnNotCreatedError(
+                errorText(error, "Shopify could not list return reasons."),
+              );
+            }),
+          )
         : await requestVerifiedReturn(shop, order, items, customerNote);
   } catch (error) {
     // Only a clear refusal from Shopify is safe to try again. Anything else
