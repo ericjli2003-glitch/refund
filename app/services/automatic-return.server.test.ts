@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import prisma from "../db.server";
 import {
+  canRemoveReturn,
+  executeAutomaticReturn,
   processApprovedReturn,
   receiveReturnedItems,
+  removeUnsubmittedReturn,
   retryApprovedReturn,
   type AdminGraphql,
 } from "./automatic-return.server";
+import { customerIdentityHash } from "./customer-security.server";
 
 const SHOP = "retry.myshopify.com";
 const ORDER = "gid://shopify/Order/1";
@@ -407,4 +411,188 @@ test("only approved returns not yet received can be marked received, once at a t
     /already being marked received/,
   );
   assert.deepEqual(shopify.names(), []);
+});
+
+test("a request Shopify refuses outright is not submitted, and the same confirmation can try again", async (t) => {
+  process.env.SHOPIFY_API_SECRET ||= "test-secret";
+  const shop = "refused.myshopify.com";
+  const customerId = "gid://shopify/Customer/1";
+  const items = [{ lineItemId: LINE_ITEM, quantity: 1 }];
+  mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
+    automaticRefundsEnabled: true,
+    returnWindowDays: 30,
+    currencyCode: "CAD",
+    maxAutoRefundAmount: "100.00",
+    refundTiming: "IMMEDIATE",
+  }));
+  let existing: Record<string, unknown> | null = null;
+  mockDelegate(t, prisma.agentReturn, "findUnique", async () => existing);
+  const created: Array<Record<string, unknown>> = [];
+  mockDelegate(
+    t,
+    prisma.agentReturn,
+    "create",
+    async ({ data }: { data: Record<string, unknown> }) => {
+      created.push(data);
+      return { id: "agent-return-1", ...data };
+    },
+  );
+  const claims: Array<{ where: Record<string, unknown> }> = [];
+  mockDelegate(t, prisma.agentReturn, "updateMany", async (args: never) => {
+    claims.push(args);
+    return { count: 1 };
+  });
+  const updates: Array<Record<string, unknown>> = [];
+  mockDelegate(
+    t,
+    prisma.agentReturn,
+    "update",
+    async ({ data }: { data: Record<string, unknown> }) => {
+      updates.push(data);
+      return data;
+    },
+  );
+  let request = () =>
+    Response.json({
+      data: null,
+      errors: [
+        {
+          message:
+            "Access denied for orderRequestReturn field. Required access: `customer_write_customers` access scope.",
+          extensions: { code: "ACCESS_DENIED" },
+        },
+      ],
+    });
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
+    if (!init?.body)
+      return Response.json({
+        graphql_api: "https://shopify.com/1/customer/api/2026-07/graphql",
+      });
+    const { query } = JSON.parse(String(init.body));
+    if (query.includes("CustomerReturnableOrders"))
+      return Response.json({
+        data: {
+          customer: {
+            id: customerId,
+            orders: {
+              nodes: [
+                {
+                  id: ORDER,
+                  name: "#1001",
+                  processedAt: new Date().toISOString(),
+                  returnInformation: {
+                    nonReturnableSummary: null,
+                    returnableLineItems: {
+                      nodes: [{ lineItem: { id: LINE_ITEM }, quantity: 1 }],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+    if (query.includes("CalculateCustomerReturn"))
+      return Response.json({
+        data: {
+          returnCalculate: {
+            financialSummary: {
+              returnTotalSet: {
+                presentmentMoney: { amount: "-14.00", currencyCode: "CAD" },
+                shopMoney: { amount: "-14.00", currencyCode: "CAD" },
+              },
+            },
+            returnLineItems: { nodes: [] },
+          },
+        },
+      });
+    if (query.includes("RequestCustomerReturn")) return request();
+    throw new Error(`Unexpected request: ${query}`);
+  });
+  const submit = () =>
+    executeAutomaticReturn({
+      shop,
+      customerToken: "customer-token",
+      orderId: ORDER,
+      items,
+      idempotencyKey: "quote-1",
+      expectedRefund: { amount: "14.00", currencyCode: "CAD" },
+      refundTiming: "IMMEDIATE",
+    });
+
+  await assert.rejects(submit(), /Nothing was submitted.*customer_write_customers/);
+  assert.equal(created.length, 1);
+  assert.equal(updates.at(-1)?.status, "NOT_SUBMITTED");
+  assert.match(String(updates.at(-1)?.failureReason), /customer_write_customers/);
+
+  // The same confirmation tries again on that record instead of a new one.
+  existing = {
+    id: "agent-return-1",
+    shop,
+    orderId: ORDER,
+    requestedLineItems: items,
+    customerSubjectHash: customerIdentityHash(customerId),
+    status: "NOT_SUBMITTED",
+  };
+  request = () =>
+    Response.json({
+      data: {
+        orderRequestReturn: {
+          return: null,
+          userErrors: [{ message: "Item was already returned" }],
+        },
+      },
+    });
+  await assert.rejects(submit(), /Nothing was submitted.*already returned/);
+  assert.equal(created.length, 1);
+  assert.deepEqual(claims.at(-1)?.where, {
+    id: "agent-return-1",
+    shop,
+    status: "NOT_SUBMITTED",
+  });
+  assert.equal(updates.at(-1)?.status, "NOT_SUBMITTED");
+
+  // A request that fails without a clear answer may have created a return.
+  request = () => {
+    throw new TypeError("fetch failed");
+  };
+  await assert.rejects(submit(), /fetch failed/);
+  assert.equal(updates.at(-1)?.status, "NEEDS_ATTENTION");
+
+  // Any other earlier attempt stands as it is and is never sent again.
+  existing = { ...existing, status: "NEEDS_ATTENTION" };
+  let sent = false;
+  request = () => {
+    sent = true;
+    return Response.json({});
+  };
+  assert.equal((await submit()).status, "NEEDS_ATTENTION");
+  assert.equal(sent, false);
+});
+
+test("only a request Shopify never created a return for can be removed", async (t) => {
+  const none = { returnId: null, refundId: null };
+  assert.equal(canRemoveReturn({ status: "NOT_SUBMITTED", ...none }), true);
+  assert.equal(canRemoveReturn({ status: "NEEDS_ATTENTION", ...none }), true);
+  assert.equal(canRemoveReturn({ status: "NEEDS_ATTENTION", ...none, returnId: RETURN }), false);
+  assert.equal(canRemoveReturn({ status: "NEEDS_ATTENTION", ...none, refundId: REFUND }), false);
+  assert.equal(canRemoveReturn({ status: "IN_PROGRESS", ...none }), false);
+  const deletes: unknown[] = [];
+  let count = 1;
+  mockDelegate(t, prisma.agentReturn, "deleteMany", async (args: never) => {
+    deletes.push(args);
+    return { count };
+  });
+  await removeUnsubmittedReturn(SHOP, "agent-return-1");
+  assert.deepEqual(deletes[0], {
+    where: {
+      id: "agent-return-1",
+      shop: SHOP,
+      status: { in: ["NOT_SUBMITTED", "NEEDS_ATTENTION"] },
+      returnId: null,
+      refundId: null,
+    },
+  });
+  count = 0;
+  await assert.rejects(removeUnsubmittedReturn(SHOP, "agent-return-1"), /never created a return/);
 });

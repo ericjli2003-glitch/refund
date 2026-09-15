@@ -5,6 +5,15 @@ export type RequestedItem = {
   quantity: number;
 };
 
+// Shopify turned a return request down before creating a return, so nothing
+// was submitted and the customer can try again.
+export class ReturnNotCreatedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReturnNotCreatedError";
+  }
+}
+
 function normalizedItems(items: RequestedItem[]) {
   // JSONB does not preserve object-key order. Canonicalize fields as well as
   // array order before comparing a stored request with its signed quote.

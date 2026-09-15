@@ -21,7 +21,7 @@ import {
   safeEqual,
 } from "../services/customer-security.server";
 import { maskEmail } from "../services/email-address.server";
-import { readConnectionBrowser } from "../services/store-link.server";
+import { readConnectionBrowser } from "../services/connection-browser.server";
 import "../styles/customer-returns.css";
 
 export const headers = () => ({

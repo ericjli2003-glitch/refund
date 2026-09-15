@@ -25,7 +25,6 @@ import { maskEmail, normalizeEmail } from "./email-address.server";
 import { emailConfigured, escapeHtml, sendEmail } from "./email.server";
 import { resolveMerchant } from "./merchant-directory.server";
 import type { AdminGraphql } from "./shopify-admin.server";
-import { startStoreLink } from "./store-link.server";
 import {
   emailSubject,
   verifiedLinksAllowed,
@@ -51,6 +50,21 @@ function emailLayout(paragraphs: string[], action?: string) {
 }
 
 type Store = { shop: string; name: string };
+
+// A store that can't find orders by email isn't available in chat. Customers
+// are never sent to a Shopify sign-in instead.
+const storeNotReady = (store: Store) => ({
+  status: "store_not_ready" as const,
+  merchant: store,
+  nextStep: `${store.name} hasn't set up returns through assistants yet, so this one can't be done in chat. Let the customer know kindly, and suggest ${store.name}'s own returns page or reaching out to the store. Nothing was submitted.`,
+});
+
+const emailUnavailable = (store: Store) => ({
+  status: "email_unavailable" as const,
+  merchant: store,
+  nextStep:
+    "Refund couldn't send the confirmation email just now. Apologize briefly and suggest trying again in a few minutes.",
+});
 
 // Sends the one-tap confirmation for an email the connection hasn't confirmed.
 // An address with no order at the store gets a short "we couldn't find an
@@ -84,7 +98,6 @@ export async function startEmailVerification(
     return {
       status: "try_again_later" as const,
       merchant: store,
-      linkUrl: null,
       nextStep:
         "Refund has sent a few confirmation emails already. Let the customer know kindly that the most recent email still works for 20 minutes, or that they can try again in about an hour.",
     };
@@ -92,8 +105,7 @@ export async function startEmailVerification(
   try {
     hasOrders = await hasOrdersForEmail(store.shop, email, admin);
   } catch {
-    // This store can't look orders up by email yet; use Shopify sign-in.
-    return null;
+    return storeNotReady(store);
   }
   const raw = randomToken();
   const id = digest(raw);
@@ -146,12 +158,11 @@ export async function startEmailVerification(
     );
   } catch {
     await prisma.emailVerification.deleteMany({ where: { id } });
-    return null;
+    return emailUnavailable(store);
   }
   return {
     status: "email_sent" as const,
     merchant: store,
-    linkUrl: null,
     sentTo: maskEmail(email),
     matchNumber,
     expiresInSeconds: VERIFICATION_LIFETIME_MS / 1000,
@@ -159,9 +170,8 @@ export async function startEmailVerification(
   };
 }
 
-// link_store: already linked; found through an email the connection already
-// confirmed; an in-chat confirmation for a new email; or a Shopify link when
-// the store can't use email.
+// link_store, by email only: already linked; found through an email the
+// connection already confirmed; or a one-tap confirmation for a new email.
 export async function linkStore(
   connectionId: string,
   merchant: string,
@@ -170,7 +180,12 @@ export async function linkStore(
   admin?: AdminGraphql,
 ) {
   const store = await resolveMerchant(merchant);
-  if (!store) return startStoreLink(connectionId, merchant, now);
+  if (!store)
+    return {
+      status: "merchant_not_resolved" as const,
+      nextStep:
+        "The store couldn't be uniquely identified. Use find_store with the store's name or website and ask the customer which store they bought from. Never pick one for them.",
+    };
   const [existing, policy, installed] = await Promise.all([
     prisma.agentStoreLink.findUnique({
       where: { connectionId_shop: { connectionId, shop: store.shop } },
@@ -183,7 +198,13 @@ export async function linkStore(
     }),
   ]);
   if (existing && storeLinkAccess(existing, policy, installed?.scope, now))
-    return startStoreLink(connectionId, store.shop, now);
+    return {
+      status: "already_linked" as const,
+      merchant: store,
+      nextStep: `Good news: ${store.name} is already connected, so carry on with shop "${store.shop}" without asking the customer to do anything.`,
+    };
+  // Email links always use the store's confirmed Refund return rules.
+  if (!verifiedLinksAllowed(policy, installed?.scope)) return storeNotReady(store);
   let address: string | undefined;
   if (email) {
     try {
@@ -192,56 +213,42 @@ export async function linkStore(
       return {
         status: "invalid_email" as const,
         merchant: store,
-        linkUrl: null,
         nextStep:
           "That email doesn't look quite right. Ask the customer, kindly, to double-check it.",
       };
     }
   }
-  // Email links always use the store's confirmed Refund return rules.
-  const verifiedReady = verifiedLinksAllowed(policy, installed?.scope);
   const lookup: OrderEmailLookup = (shop, value) => hasOrdersForEmail(shop, value, admin);
   // Emails the customer already confirmed come first: no question, no tap.
-  let confirmedEmailsMissed = false;
-  if (verifiedReady) {
-    const found = await linkStoreByConnectionEmail(
-      connectionId,
-      store.shop,
-      lookup,
-      now,
-      address,
-    );
-    if (found.status === "linked")
-      return {
-        status: "linked" as const,
+  const found = await linkStoreByConnectionEmail(
+    connectionId,
+    store.shop,
+    lookup,
+    now,
+    address,
+  );
+  if (found.status === "linked")
+    return {
+      status: "linked" as const,
+      merchant: store,
+      nextStep: `${store.name} is connected with an email the customer already confirmed. Carry on with shop "${store.shop}" without asking them anything.`,
+    };
+  if (found.status === "lookup_unavailable") return storeNotReady(store);
+  if (address)
+    return emailConfigured()
+      ? startEmailVerification(connectionId, store, address, now, admin)
+      : emailUnavailable(store);
+  return found.status === "no_match"
+    ? {
+        status: "email_not_found" as const,
         merchant: store,
-        linkUrl: null,
-        nextStep: `${store.name} is connected with an email the customer already confirmed. Carry on with shop "${store.shop}" without asking them anything.`,
+        nextStep: `None of the emails the customer confirmed has an order at ${store.name}. Ask warmly, something like "Did you use a different email for that one?" If they share one, call link_store again with it and Refund will send a one-tap confirmation.`,
+      }
+    : {
+        status: "email_needed" as const,
+        merchant: store,
+        nextStep: `Ask the customer, in one short friendly question, which email they used for their ${store.name} order. Then call link_store again with that email, and Refund will send a one-tap confirmation, no sign-in needed.`,
       };
-    confirmedEmailsMissed = found.status === "no_match";
-  }
-  if (emailConfigured() && verifiedReady && address) {
-    const sent = await startEmailVerification(connectionId, store, address, now, admin);
-    if (sent) return sent;
-  }
-  const link = await startStoreLink(connectionId, store.shop, now);
-  if (emailConfigured() && verifiedReady && !address && link.status === "sign_in_required")
-    return confirmedEmailsMissed
-      ? {
-          status: "email_not_found" as const,
-          merchant: store,
-          linkUrl: null,
-          signedInShortcutUrl: link.linkUrl,
-          nextStep: `None of the emails the customer confirmed has an order at ${store.name}. Ask warmly, something like "Did you use a different email for that one?" If they share one, call link_store again with it and Refund will send a one-tap confirmation. They can also use signedInShortcutUrl, which finishes instantly if they're already signed in to ${store.name}.`,
-        }
-      : {
-          status: "email_needed" as const,
-          merchant: store,
-          linkUrl: null,
-          signedInShortcutUrl: link.linkUrl,
-          nextStep: `Ask the customer, in one short friendly question, which email they used for their ${store.name} order. Then call link_store again with that email, and Refund will send a one-tap confirmation, no sign-in needed. If they'd rather not share it, offer signedInShortcutUrl instead, which finishes instantly if they're already signed in to ${store.name}.`,
-        };
-  return link;
 }
 
 export async function getEmailVerification(raw: string, now = Date.now()) {

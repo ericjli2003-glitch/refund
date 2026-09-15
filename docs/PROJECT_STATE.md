@@ -338,9 +338,9 @@ shoppers don't think of themselves as having an account to sign in to.
 - Email-confirmed links use the Admin API path from decision 9: only orders
   whose email matches, with the merchant's confirmed return rules. They are
   keyed by a hash of the email, which customer redaction also matches.
-- Stores that can't use it (email not configured, return rules not saved, or
-  order email access missing) fall back to the Shopify link, which is instant
-  when the customer is already signed in to the store.
+- Stores that can't use it (return rules not saved, assistant returns turned
+  off, or order email access missing) aren't available in chat; see decision
+  13, which removed the Shopify link fallback.
 - A single store match is used without asking; several matches go back to the
   customer. Both MCP servers send hosts a shared style guide
   (`returnsChatStyle`) for a warm, brief, plain-language conversation.
@@ -371,7 +371,6 @@ tap for every store.
   the customer used a different email. The in-chat tap from decision 10 now
   adds that email to the connection instead of to one store, and it is how
   connections created before this change add an email.
-- Stores on Shopify sign-in get the first confirmed email as `login_hint`.
 - Customers view and remove emails in chat or at `/connect/manage`.
   Disconnecting, a year unused and customer redaction delete them. Uninstall
   and shop redaction delete only emails confirmed in a chat about that store,
@@ -404,6 +403,38 @@ store and to submit returns and refunds.
   payment method, under each store's return rules.
 - Submitting at a store still needs that store's automatic refunds turned on;
   otherwise the assistant quotes and the store reviews the return.
+
+### 13. Email is the only customer check in chat (decided and implemented)
+
+A test return in Claude asked a customer who had confirmed their email to sign
+in with Shopify for the store, then failed: the Customer Account API's
+`orderRequestReturn` needs `customer_write_customers`, which Refund didn't
+request. The request never reached Shopify, yet it was marked "Merchant review
+needed", which tells customers not to try again.
+
+- The all-stores connector links stores only by confirmed email. `link_store`
+  no longer creates Shopify sign-in links, and `/connect/stores/link` is
+  removed. A store that hasn't saved its return rules, has assistant returns
+  off, or can't read order emails returns `store_not_ready`, and the assistant
+  points the customer to the store's own returns page. Stores linked by Shopify
+  sign-in earlier keep working.
+- The dashboard switch reads "Let customers return through their AI
+  assistant", with a prompt to save return rules until they're confirmed.
+- `customer_write_customers` is added to the app's scopes for signed-in returns
+  (the portal and earlier links). Merchants approve it on their next visit to
+  the app.
+- A return request Shopify turns down before creating a return (a refused
+  permission, an ended session, user errors, or Refund's own checks on the
+  verified path) is `NOT_SUBMITTED`. The customer hears that nothing was
+  submitted, the same confirmation can be tried again, and it doesn't block
+  later attempts. A request that fails without a clear answer from Shopify is
+  still "Merchant review needed". Merchants can remove either kind from the
+  dashboard when Shopify has no return for it, and a migration marks earlier
+  requests refused for access as not submitted.
+
+**Tradeoff:** Built for Shopify 5.12.4 (Customer Account API as the primary
+authentication for returns) is further away in chat; the hosted portal still
+uses Shopify sign-in.
 
 ## Review findings
 

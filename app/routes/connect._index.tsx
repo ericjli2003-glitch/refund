@@ -33,8 +33,8 @@ export default function ConnectAllStores() {
       </header>
       <h1>Connect your assistant to Refund for every store.</h1>
       <p>
-        One connection works with every store that uses Refund. You sign in to
-        each store you bought from the first time your assistant needs it.
+        One connection works with every store that uses Refund. Confirm your
+        email once, and Refund finds your orders at the stores you bought from.
       </p>
       <section>
         <h2>1. Add Refund to your assistant</h2>
@@ -70,15 +70,12 @@ export default function ConnectAllStores() {
           Try: “I’d like to return something from [store].” Refund looks for
           your order there using the email you confirmed, so your assistant can
           usually help right away. If you used a different email at that store,
-          it asks, and you tap a quick confirmation. No store account needed. A
-          few stores ask you to sign in with Shopify instead; open those links
-          in this browser.
+          it asks, and you tap a quick confirmation. No store account or sign-in
+          needed.
         </p>
         <p>
-          Most stores stay linked while you keep using them. If a store asks you
-          to sign in again, your assistant sends a new link, and if you’re still
-          signed in to that store it’s one click. The connection ends after a
-          year without use.
+          Stores stay linked while you keep using them, and the connection ends
+          after a year without use.
         </p>
       </section>
       <section>

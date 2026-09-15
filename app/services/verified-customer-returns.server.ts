@@ -3,7 +3,7 @@ import type {
   ReturnCalculation,
   ReturnableOrder,
 } from "./automatic-return.server";
-import type { RequestedItem } from "./return-guards.server";
+import { ReturnNotCreatedError, type RequestedItem } from "./return-guards.server";
 import {
   adminData,
   adminFor,
@@ -68,7 +68,7 @@ async function confirmedRules(shop: string) {
   ]);
   if (!policy || !verifiedLinksAllowed(policy, installed?.scope))
     throw new Error(
-      "This store needs the customer to sign in again. Use link_store to renew the link. Nothing was submitted.",
+      "This store hasn't set up returns through assistants, so this one can't be done in chat. The customer can use the store's own returns page. Nothing was submitted.",
     );
   return policy;
 }
@@ -385,7 +385,7 @@ async function verifiedReturnInput(
   // the shop's; it never converts between them.
   if (shippingFee > 0n && orderCurrency !== rules.currencyCode)
     throw new Error(
-      `This order was paid in ${orderCurrency ?? "another currency"}, but the store's return shipping fee is set in ${rules.currencyCode}. The customer needs to sign in to the store again for a quote. Nothing was submitted.`,
+      `This order was paid in ${orderCurrency ?? "another currency"}, but the store's return shipping fee is set in ${rules.currencyCode}. Refund can't quote this return in chat, so the customer can use the store's own returns page or contact the store. Nothing was submitted.`,
     );
   return {
     client,
@@ -531,7 +531,15 @@ export async function requestVerifiedReturn(
   customerNote?: string,
   admin?: AdminGraphql,
 ) {
-  const input = await verifiedReturnInput(shop, order, items, admin);
+  // Refund's own checks run before Shopify is asked, so a failure here means
+  // no return exists.
+  const input = await verifiedReturnInput(shop, order, items, admin).catch(
+    (error: unknown) => {
+      throw new ReturnNotCreatedError(
+        error instanceof Error ? error.message : "Refund couldn't prepare the return.",
+      );
+    },
+  );
   const note = customerNote?.slice(0, 300);
   const { returnRequest } = await adminData<{
     returnRequest: {
@@ -556,12 +564,13 @@ export async function requestVerifiedReturn(
     "Shopify could not request the return.",
   );
   if (returnRequest.userErrors.length)
-    throw new Error(
+    throw new ReturnNotCreatedError(
       `Shopify could not request the return: ${returnRequest.userErrors
         .map((error) => error.message)
         .join("; ")}`,
     );
-  if (!returnRequest.return?.id) throw new Error("Shopify did not create a return.");
+  if (!returnRequest.return?.id)
+    throw new ReturnNotCreatedError("Shopify did not create a return.");
   return returnRequest.return.id;
 }
 

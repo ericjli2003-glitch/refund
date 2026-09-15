@@ -7,8 +7,6 @@ import {
 } from "./customer-account.server";
 import { makeContinuation, returnHints } from "./return-intake.server";
 import { claimIntakeDraft } from "./return-draft.server";
-import { getStoreLinkRequest } from "./store-link.server";
-import { listConnectionEmails } from "./connection-email.server";
 import {
   appOrigin,
   customerIdentityHashes,
@@ -38,7 +36,6 @@ type PendingLogin = {
   verifier: string;
   nonce: string;
   discovery: Discovery;
-  silent?: boolean;
 };
 
 export async function requireInstalledShop(value: string) {
@@ -121,35 +118,10 @@ export async function discoverCustomerLogin(shop: string): Promise<Discovery> {
   return result;
 }
 
-// Where a completed or abandoned sign-in returns: a store link for the
-// assistant connection, or the customer's return portal.
-function signInReturnPath(pending: { linkRequestId: string | null }) {
-  if (pending.linkRequestId) return `/connect/stores/link/${pending.linkRequestId}`;
-  return null;
-}
-
 export async function startCustomerLogin(request: Request) {
   const url = new URL(request.url);
   const shop = await requireInstalledShop(url.searchParams.get("shop") || "");
   const hints = returnHints(url, shop);
-  const linkRequestId = url.searchParams.get("linkRequest");
-  let loginHint: string | undefined;
-  if (linkRequestId) {
-    const link = await getStoreLinkRequest(request, linkRequestId);
-    if (link.shop !== shop)
-      throw new Response("This store link belongs to another store.", {
-        status: 400,
-        headers: privateHeaders,
-      });
-    // Pre-fill Shopify's sign-in with the email the customer confirmed.
-    loginHint = (await listConnectionEmails(link.connectionId))[0]?.email;
-  }
-  // Shopify issues no refresh token to public PKCE app clients, so an expired
-  // store link needs a new sign-in. prompt=none reuses the customer's live
-  // Shopify session without a login screen; it is limited to store links, and
-  // a failure falls back to the ordinary choice.
-  const silent =
-    Boolean(linkRequestId) && url.searchParams.get("silent") === "1";
   const clientId = process.env.SHOPIFY_API_KEY;
   if (!clientId) throw new Error("Customer sign-in is not configured.");
   const discovery = await discoverCustomerLogin(shop);
@@ -178,13 +150,12 @@ export async function startCustomerLogin(request: Request) {
         csrfToken: randomToken(),
         stateHash: digest(state),
         sealedState: seal(
-          JSON.stringify({ verifier, nonce, discovery, silent }),
+          JSON.stringify({ verifier, nonce, discovery }),
           `${id}:${shop}`,
         ),
         orderHint: hints.orderName,
         itemHint: hints.itemName,
         draftId: hints.draftId,
-        linkRequestId,
         expiresAt: new Date(Date.now() + 600_000),
       },
     }),
@@ -201,8 +172,6 @@ export async function startCustomerLogin(request: Request) {
     nonce,
     code_challenge: digest(verifier),
     code_challenge_method: "S256",
-    ...(silent ? { prompt: "none" } : {}),
-    ...(loginHint ? { login_hint: loginHint } : {}),
   }).toString();
   return redirect(authUrl.toString(), {
     headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
@@ -224,7 +193,7 @@ export async function finishCustomerLogin(request: Request) {
     );
   }
   await requireInstalledShop(pending.shop);
-  const { verifier, nonce, discovery, silent } = JSON.parse(
+  const { verifier, nonce, discovery } = JSON.parse(
     unseal(pending.sealedState, `${pending.id}:${pending.shop}`),
   ) as PendingLogin;
   // Claim the callback exactly once, including errors and concurrent requests.
@@ -237,15 +206,7 @@ export async function finishCustomerLogin(request: Request) {
       status: 400,
       headers: privateHeaders,
     });
-  const returnPath = signInReturnPath(pending);
   if (url.searchParams.has("error") || !url.searchParams.get("code")) {
-    // A silent attempt without a live Shopify session is expected, not a
-    // failure: return to the ordinary sign-in choice without an error.
-    if (returnPath)
-      return redirect(
-        `${returnPath}?${silent ? "silentTried=1" : "loginError=1"}`,
-        { headers: privateHeaders },
-      );
     const retry = new URLSearchParams({
       loginError: "1",
       continuation: makeContinuation(pending.shop, {
@@ -359,7 +320,7 @@ export async function finishCustomerLogin(request: Request) {
       },
     });
   });
-  return redirect(returnPath ?? `/returns/${pending.shop}`, {
+  return redirect(`/returns/${pending.shop}`, {
     headers: { ...privateHeaders, "Set-Cookie": await cookie.serialize(raw) },
   });
 }

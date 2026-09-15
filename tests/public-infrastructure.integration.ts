@@ -95,7 +95,6 @@ test("public infrastructure enforces shared limits and maintains installed merch
       for (const path of [
         "/customer/login",
         "/customer/callback.data",
-        "/connect/stores/link/token",
         "/verify/email/token",
         "/verify/connect-email/token",
         "/connect/manage",

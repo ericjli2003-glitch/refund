@@ -59,10 +59,17 @@ function environment(t: TestContext, configured = true) {
 
 type SentEmail = { to: string[]; subject: string; text: string; html: string };
 
+const READY_POLICY = {
+  verifiedStoreLinks: true,
+  returnRulesConfirmedAt: new Date(),
+  finalSaleCollectionIds: [],
+};
+
 function storeReady(
   t: TestContext,
   orderEmail: string | null,
   confirmed: string[] = [],
+  policy: Record<string, unknown> | null = READY_POLICY,
 ) {
   mockDelegate(t, prisma.connectionEmail, "findMany", async () =>
     confirmed.map((email, index) => ({
@@ -90,11 +97,7 @@ function storeReady(
     scope: "read_orders",
   }));
   mockDelegate(t, prisma.agentStoreLink, "findUnique", async () => null);
-  mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
-    verifiedStoreLinks: true,
-    returnRulesConfirmedAt: new Date(),
-    finalSaleCollectionIds: [],
-  }));
+  mockDelegate(t, prisma.storePolicy, "findUnique", async () => policy);
   mockDelegate(t, prisma.agentConnection, "findUnique", async () => ({
     clientId: "client",
   }));
@@ -111,11 +114,6 @@ function storeReady(
       return data;
     },
   );
-  mockDelegate(t, prisma.agentStoreLinkRequest, "count", async () => 0);
-  mockDelegate(t, prisma.agentStoreLinkRequest, "deleteMany", async () => ({
-    count: 0,
-  }));
-  mockDelegate(t, prisma.agentStoreLinkRequest, "create", async () => ({}));
   const sent: SentEmail[] = [];
   t.mock.method(
     globalThis,
@@ -207,10 +205,7 @@ test("sending stops after a few emails, and nothing is sent without an email add
   counts.value = 0;
   const asked = await linkStore(connectionId, shop, undefined, Date.now(), admin);
   assert.equal(asked.status, "email_needed");
-  assert.match(
-    (asked as { signedInShortcutUrl: string }).signedInShortcutUrl,
-    /^https:\/\/refund\.test\/connect\/stores\/link\/[\w-]{43}$/,
-  );
+  assert.doesNotMatch(JSON.stringify(asked), /https:|sign in with Shopify/i);
   assert.equal(sent.length, 0);
 });
 
@@ -233,11 +228,43 @@ test("when no confirmed email has an order there, the assistant asks about a dif
   assert.equal(sent.length, 0);
 });
 
-test("without email sending, link_store falls back to the Shopify link", async (t) => {
+test("without email sending, link_store says so and offers no Shopify sign-in", async (t) => {
   environment(t, false);
   const { sent, admin } = storeReady(t, "pat@example.com");
   const result = await linkStore(connectionId, shop, "pat@example.com", Date.now(), admin);
-  assert.equal(result.status, "sign_in_required");
+  assert.equal(result.status, "email_unavailable");
+  assert.doesNotMatch(JSON.stringify(result), /https:/);
+  assert.equal(sent.length, 0);
+});
+
+test("a store without confirmed return rules isn't offered in chat", async (t) => {
+  environment(t);
+  const { sent, created, admin, lookups } = storeReady(
+    t,
+    "pat@example.com",
+    ["pat@example.com"],
+    { ...READY_POLICY, returnRulesConfirmedAt: null },
+  );
+  const result = await linkStore(connectionId, shop, "pat@example.com", Date.now(), admin);
+  assert.equal(result.status, "store_not_ready");
+  assert.match((result as { nextStep: string }).nextStep, /own returns page/);
+  assert.doesNotMatch(JSON.stringify(result), /https:/);
+  assert.equal(lookups.length, 0);
+  assert.equal(created.length, 0);
+  assert.equal(sent.length, 0);
+});
+
+test("a store that can't look orders up by email isn't offered in chat", async (t) => {
+  environment(t);
+  const { sent } = storeReady(t, null, ["pat@example.com"]);
+  const refused: AdminGraphql = {
+    graphql: async () =>
+      Response.json({ errors: [{ message: "Access denied for email field." }] }),
+  };
+  for (const email of [undefined, "other@example.com"]) {
+    const result = await linkStore(connectionId, shop, email, Date.now(), refused);
+    assert.equal(result.status, "store_not_ready");
+  }
   assert.equal(sent.length, 0);
 });
 

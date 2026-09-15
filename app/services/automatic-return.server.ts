@@ -2,7 +2,10 @@ import { Prisma } from "@prisma/client";
 
 import prisma from "../db.server";
 import { refundPaymentStatus } from "../refund-status";
-import { customerAccountGraphql } from "./customer-account.server";
+import {
+  CustomerAccountApiError,
+  customerAccountGraphql,
+} from "./customer-account.server";
 import { customerIdentityHashes } from "./customer-security.server";
 import { adminData, adminFor, type AdminGraphql } from "./shopify-admin.server";
 import {
@@ -16,6 +19,7 @@ import {
   moneyAmountsMatch,
   moneyIsAbove,
   refundFromReturnTotal,
+  ReturnNotCreatedError,
   sameReturnItems,
   type RequestedItem,
 } from "./return-guards.server";
@@ -586,6 +590,34 @@ export function canReceiveReturn(record: {
     : ["REFUND_SUBMITTED", "REFUND_RECORDED"].includes(record.status);
 }
 
+// A request Shopify never created a return for: turned down (NOT_SUBMITTED),
+// or stopped before Shopify answered. Removing it changes nothing in Shopify.
+export function canRemoveReturn(record: {
+  status: string;
+  returnId: string | null;
+  refundId: string | null;
+}) {
+  return (
+    ["NOT_SUBMITTED", "NEEDS_ATTENTION"].includes(record.status) &&
+    !record.returnId &&
+    !record.refundId
+  );
+}
+
+export async function removeUnsubmittedReturn(shop: string, agentReturnId: string) {
+  const removed = await prisma.agentReturn.deleteMany({
+    where: {
+      id: agentReturnId,
+      shop,
+      status: { in: ["NOT_SUBMITTED", "NEEDS_ATTENTION"] },
+      returnId: null,
+      refundId: null,
+    },
+  });
+  if (removed.count !== 1)
+    throw new Error("Only a request Shopify never created a return for can be removed.");
+}
+
 function storedItems(value: Prisma.JsonValue): RequestedItem[] {
   const invalid = new Error("This return's stored items are unreadable. Resolve it in Shopify.");
   if (!Array.isArray(value) || !value.length) throw invalid;
@@ -795,13 +827,20 @@ async function requestCustomerReturn(
       ...item,
       customerNote: customerNote?.slice(0, 300),
     })),
+  }).catch((error: unknown) => {
+    // Shopify refused without running the request, for example for a missing
+    // permission or an ended session, so no return exists.
+    if (error instanceof CustomerAccountApiError && error.rejected)
+      throw new ReturnNotCreatedError(error.message);
+    throw error;
   });
-  throwOnUserErrors(
-    requestResult.orderRequestReturn.userErrors,
-    "Shopify could not request the return",
-  );
+  const { userErrors } = requestResult.orderRequestReturn;
+  if (userErrors.length)
+    throw new ReturnNotCreatedError(
+      `Shopify could not request the return: ${userErrors.map((error) => error.message).join("; ")}`,
+    );
   const returnId = requestResult.orderRequestReturn.return?.id;
-  if (!returnId) throw new Error("Shopify did not create a return.");
+  if (!returnId) throw new ReturnNotCreatedError("Shopify did not create a return.");
   return returnId;
 }
 
@@ -848,7 +887,9 @@ export async function executeAutomaticReturn({
         "This idempotency key belongs to a different customer return request.",
       );
     }
-    return existing;
+    // Shopify turned the earlier attempt down before creating a return, so
+    // this confirmation can be tried again.
+    if (existing.status !== "NOT_SUBMITTED") return existing;
   }
 
   // The customer agreed to when the refund would arrive; a store that changed
@@ -912,46 +953,84 @@ export async function executeAutomaticReturn({
   }
 
   let record;
-  try {
-    record = await prisma.agentReturn.create({
+  if (existing) {
+    const claimed = await prisma.agentReturn.updateMany({
+      where: { id: existing.id, shop, status: "NOT_SUBMITTED" },
       data: {
-        shop,
-        orderId,
+        status: "IN_PROGRESS",
+        failureReason: null,
         orderName: order.name,
-        idempotencyKey,
-        requestedLineItems: items,
         customerSubjectHash: subjectHash,
         amount: quote.amount,
         currencyCode: quote.currencyCode,
         refundTiming,
       },
     });
-  } catch (error) {
-    if (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    ) {
-      const concurrent = await prisma.agentReturn.findUnique({
-        where: { shop_idempotencyKey: { shop, idempotencyKey } },
+    // Another request is already trying it again.
+    if (claimed.count !== 1)
+      return prisma.agentReturn.findUniqueOrThrow({ where: { id: existing.id } });
+    record = existing;
+  } else {
+    try {
+      record = await prisma.agentReturn.create({
+        data: {
+          shop,
+          orderId,
+          orderName: order.name,
+          idempotencyKey,
+          requestedLineItems: items,
+          customerSubjectHash: subjectHash,
+          amount: quote.amount,
+          currencyCode: quote.currencyCode,
+          refundTiming,
+        },
       });
+    } catch (error) {
       if (
-        concurrent &&
-        subjectHashes.includes(concurrent.customerSubjectHash) &&
-        concurrent.orderId === orderId &&
-        sameReturnItems(concurrent.requestedLineItems, items)
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
       ) {
-        return concurrent;
+        const concurrent = await prisma.agentReturn.findUnique({
+          where: { shop_idempotencyKey: { shop, idempotencyKey } },
+        });
+        if (
+          concurrent &&
+          subjectHashes.includes(concurrent.customerSubjectHash) &&
+          concurrent.orderId === orderId &&
+          sameReturnItems(concurrent.requestedLineItems, items)
+        ) {
+          return concurrent;
+        }
       }
+      throw error;
     }
+  }
+
+  let returnId: string;
+  try {
+    returnId =
+      typeof customerToken === "string"
+        ? await requestCustomerReturn(shop, customerToken, orderId, items, customerNote)
+        : await requestVerifiedReturn(shop, order, items, customerNote);
+  } catch (error) {
+    // Only a clear refusal from Shopify is safe to try again. Anything else
+    // may have created a return, so the merchant checks first.
+    const refused = error instanceof ReturnNotCreatedError;
+    await prisma.agentReturn.update({
+      where: { id: record.id },
+      data: {
+        status: refused ? "NOT_SUBMITTED" : "NEEDS_ATTENTION",
+        failureReason: errorText(error, "Unknown automatic return error."),
+      },
+    });
+    if (refused)
+      throw new Error(
+        `Nothing was submitted and no refund was issued: Shopify didn't accept the return request (${errorText(error, "no reason given")}). It's safe to confirm again once that's sorted out, or the customer can contact the store.`,
+      );
     throw error;
   }
 
   try {
-    const returnId =
-      typeof customerToken === "string"
-        ? await requestCustomerReturn(shop, customerToken, orderId, items, customerNote)
-        : await requestVerifiedReturn(shop, order, items, customerNote);
-
     await prisma.agentReturn.update({
       where: { id: record.id },
       data: {

@@ -13,6 +13,12 @@ export function refundPaymentStatus(
 }
 
 export function describeRefundProgress(record: { status: string; refundStatus?: string | null }) {
+  if (record.status === "NOT_SUBMITTED") {
+    return {
+      title: "Not submitted",
+      message: "Shopify didn't accept this return request, so nothing was submitted and no refund was issued. It's safe to try again, or contact the store.",
+    };
+  }
   if (record.status === "NEEDS_ATTENTION" || record.refundStatus === "FAILED") {
     return {
       title: "Merchant review needed",

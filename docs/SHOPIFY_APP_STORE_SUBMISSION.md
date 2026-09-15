@@ -45,9 +45,10 @@ use Shopify Billing and update the listing, terms, and reviewer instructions.
 | `write_orders`  | Submit the refund against the original order transaction after explicit confirmation.  |
 | `read_returns`  | Read returnable fulfillments, calculate suggestions, and reconcile return status.      |
 | `write_returns` | Request, approve, open, and manage the confirmed Shopify return.                       |
-| `read_products` | Check whether an item is in a collection the merchant marked final sale, for customers who stay linked without signing in again. |
+| `read_products` | Check whether an item is in a collection the merchant marked final sale, for returns customers make through their assistant. |
 | `customer_read_customers` | Verify the signed-in customer's identity in their own account. |
 | `customer_read_orders` | Read that customer's purchases and calculate return quotes. |
+| `customer_write_customers` | Shopify requires it to request a return in the signed-in customer's account (`orderRequestReturn`). |
 | `customer_write_orders` | Request the customer-confirmed return in their own account. |
 
 Request protected customer data access for order and customer fields used in the

@@ -15,6 +15,7 @@ import {
   listConnectionStores,
   pruneExpiredCustomerAccess,
   revokeAgentGrant,
+  storeLinkCustomerContext,
 } from "../app/services/agent-access.server";
 import {
   customerIdentityHash,
@@ -26,13 +27,9 @@ import { getAgentAuthorizationRequest } from "../app/services/agent-oauth-flow.s
 import { action as consentAction } from "../app/routes/agent.authorize.$requestId";
 import { action as mcpAction } from "../app/routes/mcp.$shop";
 import { action as mcpStoresAction } from "../app/routes/mcp.stores";
-import { action as storeLinkAction } from "../app/routes/connect.stores.link.$token";
 import { action as connectEmailTapAction } from "../app/routes/verify.connect-email.$token";
 import { consentTapCsrf } from "../app/services/consent-email.server";
-import {
-  getStoreLinkRequest,
-  startStoreLink,
-} from "../app/services/store-link.server";
+import { linkStore } from "../app/services/email-verification.server";
 
 const dbUrl = new URL(process.env.DATABASE_URL || "");
 assert.ok(
@@ -581,9 +578,6 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
           expiresAt: new Date(Date.now() + 4 * 3600_000),
         },
       });
-      const linkCustomerCookie = (
-        await createCookie("__Host-refund_customer").serialize(linkRaw)
-      ).split(";")[0];
       ctx.after(async () => {
         await prisma.$transaction([
           prisma.agentConnection.deleteMany({
@@ -811,64 +805,25 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       assert.equal(unlinked.status, 200);
       const unlinkedBody = await unlinked.json();
       assert.equal(unlinkedBody.result.structuredContent.linkRequired, true);
-      assert.equal(unlinkedBody.result.structuredContent.reason, "not_linked");
+      // Stores link only by email, and this store hasn't saved return rules yet.
+      assert.equal(unlinkedBody.result.structuredContent.reason, "store_not_ready");
+      assert.equal(unlinkedBody.result.structuredContent.nextTool, null);
 
-      const started = await startStoreLink(connectionId, shop);
-      assert.equal(started.status, "sign_in_required");
-      const linkUrl = started.linkUrl!;
-      const rawLink = new URL(linkUrl).pathname.split("/").at(-1)!;
-      const pending = await prisma.agentStoreLinkRequest.findUniqueOrThrow({
-        where: { id: digest(rawLink) },
+      // A store linked by Shopify sign-in before linking went email-only keeps
+      // working while that sign-in lasts.
+      await prisma.agentStoreLink.create({
+        data: {
+          connectionId,
+          shop,
+          customerSubjectHash: customerIdentityHash(linkedCustomerId),
+          sealedCustomerId: seal(
+            linkedCustomerId,
+            storeLinkCustomerContext(connectionId, shop),
+          ),
+          sessionId: linkSessionId,
+        },
       });
-      // A link opened in any other browser is refused, signed in or not.
-      await assert.rejects(
-        getStoreLinkRequest(
-          new Request(linkUrl, { headers: { Cookie: linkCustomerCookie } }),
-          rawLink,
-        ),
-        responseStatus(400),
-      );
-      const linkAction = (cookie: string) =>
-        storeLinkAction({
-          request: new Request(linkUrl, {
-            method: "POST",
-            headers: {
-              Cookie: cookie,
-              Origin: "https://refund.test",
-              "Content-Type": "application/x-www-form-urlencoded",
-            },
-            body: new URLSearchParams({
-              decision: "allow",
-              csrf: pending.csrfToken,
-            }),
-          }),
-          params: { token: rawLink },
-          context: {},
-          url: new URL(linkUrl),
-          pattern: "/connect/stores/link/:token",
-        });
       resend.mock.restore();
-      await assert.rejects(linkAction(connectionCookie), responseStatus(401));
-      // Linking verifies the signed-in customer with Shopify once.
-      const upstream = ctx.mock.method(
-        globalThis,
-        "fetch",
-        async (input: string | URL | Request) =>
-          String(input).includes("/.well-known/customer-account-api")
-            ? Response.json({
-                graphql_api:
-                  "https://shopify.com/1/account/customer/api/2026-07/graphql",
-              })
-            : Response.json({ data: { customer: { id: linkedCustomerId } } }),
-      );
-      const linked = await linkAction(`${connectionCookie}; ${linkCustomerCookie}`);
-      assert.equal(linked.status, 302);
-      assert.match(linked.headers.get("Location")!, /\/connect\/stores\/linked\?shop=/);
-      await assert.rejects(
-        linkAction(`${connectionCookie}; ${linkCustomerCookie}`),
-        responseStatus(400),
-      );
-      upstream.mock.restore();
 
       assert.equal(
         (await connectionStore(connectionId, shop)).customerToken,
@@ -882,7 +837,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         ]),
         [[shop, "OAuth CI Store", true]],
       );
-      assert.equal((await startStoreLink(connectionId, shop)).status, "already_linked");
+      assert.equal((await linkStore(connectionId, shop)).status, "already_linked");
 
       const refreshed = await post("/token", {
         client_id: client.client_id,
@@ -938,10 +893,6 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       // Removing Refund from the assistant revokes its token, which ends the
       // whole connection and deletes everything it still held.
       assert.equal(
-        await prisma.agentStoreLinkRequest.count({ where: { connectionId } }),
-        1,
-      );
-      assert.equal(
         (
           await post("/revoke", {
             client_id: client.client_id,
@@ -957,10 +908,6 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
             where: { id: connectionId },
           })
         ).revokedAt,
-      );
-      assert.equal(
-        await prisma.agentStoreLinkRequest.count({ where: { connectionId } }),
-        0,
       );
       assert.equal(await prisma.connectionEmail.count({ where: { connectionId } }), 0);
 

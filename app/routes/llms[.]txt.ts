@@ -23,7 +23,7 @@ export async function loader() {
   return new Response(
     `# Refund
 
-> Refund handles customer-confirmed returns for Shopify stores. Find the store a purchase came from; the customer then verifies the purchase with that store's own Shopify sign-in and confirms an exact quote before any return or refund is submitted.
+> Refund handles customer-confirmed returns for Shopify stores. Find the store a purchase came from; the customer verifies the purchase and confirms an exact quote before any return or refund is submitted.
 
 ## Find a store
 
@@ -37,7 +37,7 @@ export async function loader() {
 - Search with only a business name or store website. Never send customer, order, item, payment or sign-in details.
 - If several stores match, show them and ask the customer which website they bought from. Never choose for them or substitute another store.
 - If no store matches, stop. Do not start a return with a different store.
-- On the all-stores connection, pass the store's shop to every return tool. If a store isn't linked, ask for the email the customer used at checkout and call link_store with it. Refund emails them a one-tap confirmation; tell them the number to pick. Some stores return a Shopify link instead.
+- On the all-stores connection, pass the store's shop to every return tool. If a store isn't linked, ask for the email the customer used at checkout and call link_store with it. Refund emails them a one-tap confirmation; tell them the number to pick. If a store isn't set up for returns through assistants yet, say so kindly and suggest the store's own returns page.
 - If exactly one store matches, go ahead with it and mention its name. If several match, ask which one.
 - Keep the conversation warm, brief and in plain words: no IDs, tokens or tool names.
 - start_return only prepares a verification link. Shopify customer accounts are separate for each store, so the customer signs in with the store they bought from, personally, on Shopify's page.

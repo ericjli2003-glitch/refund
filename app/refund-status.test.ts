@@ -25,6 +25,11 @@ test("customer messages distinguish processor success, pending funds, and mercha
   const failed = describeRefundProgress({ status: "NEEDS_ATTENTION", refundStatus: "SUCCESS" });
   assert.equal(failed.title, "Merchant review needed");
   assert.match(failed.message, /do not submit another/);
+  // Shopify turned the request down, so nothing is pending and trying again is safe.
+  const refused = describeRefundProgress({ status: "NOT_SUBMITTED", refundStatus: null });
+  assert.equal(refused.title, "Not submitted");
+  assert.match(refused.message, /nothing was submitted/);
+  assert.match(refused.message, /safe to try again/);
   const waiting = describeRefundProgress({ status: "AWAITING_ITEM", refundStatus: null });
   assert.match(waiting.title, /refund when the store receives it/);
   assert.match(waiting.message, /after it receives the item/);

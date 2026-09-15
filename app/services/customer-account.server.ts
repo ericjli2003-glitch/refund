@@ -2,14 +2,16 @@ const CUSTOMER_API_VERSION = "2026-07";
 const endpointCache = new Map<string, string>();
 
 type GraphqlEnvelope<T> = {
-  data?: T;
-  errors?: Array<{ message: string }>;
+  data?: T | null;
+  errors?: Array<{ message: string; extensions?: { code?: string } }>;
 };
 
 export class CustomerAccountApiError extends Error {
   constructor(
     message: string,
     public readonly status = 502,
+    // Shopify answered without running the operation, so nothing changed.
+    public readonly rejected = false,
   ) {
     super(message);
     this.name = "CustomerAccountApiError";
@@ -94,6 +96,7 @@ export async function customerAccountGraphql<T>(
     throw new CustomerAccountApiError(
       "The customer session has expired. Sign in to the store again.",
       401,
+      true,
     );
   }
 
@@ -109,6 +112,13 @@ export async function customerAccountGraphql<T>(
     throw new CustomerAccountApiError(
       result.errors?.map((error) => error.message).join("; ") ||
         "Shopify did not return customer data.",
+      502,
+      // No result at all, and not an internal error that may have stopped part
+      // way, means the operation didn't run (a refused permission, say).
+      Object.values(result.data ?? {}).every((value) => value == null) &&
+        !result.errors?.some(
+          (error) => error.extensions?.code === "INTERNAL_SERVER_ERROR",
+        ),
     );
   }
 
