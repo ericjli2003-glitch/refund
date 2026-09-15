@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   Form,
   data,
+  useActionData,
   useFetcher,
   useLoaderData,
   useNavigation,
@@ -88,7 +89,93 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
     throw new Response("Unknown request.", { status: 400, headers: privateHeaders });
   }
-  return finishAgentConsent(request, rawId);
+  const finished = await finishAgentConsent(request, rawId);
+  const location = finished.headers.get("Location");
+  const callback = location ? new URL(location) : null;
+  // Cancelling goes straight back. Allowing shows one last step first: setting
+  // Gooper.io to Always allow, while the assistant's settings are a tap away.
+  if (!callback?.searchParams.has("code")) return finished;
+  const assistant = assistantForRedirect(flow.redirectUri);
+  const setCookie = finished.headers.get("Set-Cookie");
+  return data(
+    {
+      connected: {
+        assistant,
+        continueUrl: callback.href,
+        settingsUrl: connectorSettingsUrl(assistant),
+      },
+    },
+    { headers: { ...headers(), ...(setCookie ? { "Set-Cookie": setCookie } : {}) } },
+  );
+}
+
+const connectorSettingsUrl = (assistant: string) =>
+  assistant === "ChatGPT"
+    ? "https://chatgpt.com/#settings/Connectors"
+    : "https://claude.ai/settings/connectors";
+
+const AUTO_CONTINUE_SECONDS = 10;
+
+function ConnectedStep({
+  assistant,
+  continueUrl,
+  settingsUrl,
+}: {
+  assistant: string;
+  continueUrl: string;
+  settingsUrl: string;
+}) {
+  const [seconds, setSeconds] = useState(AUTO_CONTINUE_SECONDS);
+  useEffect(() => {
+    if (seconds <= 0) {
+      window.location.assign(continueUrl);
+      return;
+    }
+    const timer = window.setTimeout(() => setSeconds((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [seconds, continueUrl]);
+  return (
+    <main className="customer-returns connection-page">
+      <h1>You’re connected — one last step</h1>
+      <p>
+        Set Gooper.io to <strong>Always allow</strong> in {assistant}’s connector
+        settings, so {assistant} can finish your returns without stopping to ask
+        before each step.
+      </p>
+      <div className="button-row">
+        <a
+          className="return-button"
+          href={settingsUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          // Finish connecting here, so Gooper.io is listed in the new tab.
+          onClick={() => window.setTimeout(() => window.location.assign(continueUrl), 300)}
+        >
+          Open {assistant} connector settings ↗
+        </a>
+        <a className="return-button secondary" href={continueUrl}>
+          Back to {assistant}
+        </a>
+      </div>
+      <p className="consent-email-hint" role="status" aria-live="polite">
+        {seconds > 0
+          ? `Taking you back to ${assistant} in ${seconds} second${seconds === 1 ? "" : "s"}.`
+          : `Taking you back to ${assistant}.`}{" "}
+        If Gooper.io isn’t listed in settings yet, refresh that tab in a moment.
+      </p>
+      <details>
+        <summary>What happens if I leave it on “Ask for approval”?</summary>
+        <p>
+          {assistant} stops and waits for you to tap Allow before each step:
+          finding the store, looking up your order, working out your refund and
+          submitting the return. One return can take four or more extra taps,
+          and it pauses whenever you step away. Either way, Gooper.io only
+          submits returns you ask for, and checks with you first if a fee
+          applies.
+        </p>
+      </details>
+    </main>
+  );
 }
 
 const descriptions: Record<string, string> = {
@@ -223,8 +310,11 @@ function EmailStep({ emails, csrf }: { emails: EmailEntry[]; csrf: string }) {
 
 export default function AgentConsent() {
   const info = useLoaderData<typeof loader>();
+  const result = useActionData<typeof action>();
+  const connected = result && "connected" in result ? result.connected : null;
   const busy = useNavigation().state !== "idle";
   const needsEmail = info.emailStep && !info.emails.some((entry) => entry.confirmed);
+  if (connected) return <ConnectedStep {...connected} />;
   return (
     <main className="customer-returns connection-page">
       <h1>Connect {info.assistant} to Gooper.io</h1>
