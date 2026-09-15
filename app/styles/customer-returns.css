@@ -1,3 +1,8 @@
+/* Montserrat, a free face close to Proxima Nova, bundled with the app. */
+@import "@fontsource/montserrat/latin-400.css";
+@import "@fontsource/montserrat/latin-600.css";
+@import "@fontsource/montserrat/latin-800.css";
+
 .customer-returns {
   max-width: 760px;
   margin: 40px auto;
@@ -300,4 +305,18 @@ body:has(.connection-page) {
 }
 .connection-page .choice-row button {
   min-width: 96px;
+}
+.connection-page details {
+  margin: 12px 0 0;
+}
+.connection-page summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.connection-page summary:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 4px;
+}
+.connection-page .permission-tip p:last-child {
+  margin-bottom: 0;
 }

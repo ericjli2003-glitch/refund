@@ -263,6 +263,25 @@ export default function AgentConsent() {
         at <a href="/connect/manage">your connection page</a> in this browser, or
         remove Gooper.io from your assistant at any time.
       </p>
+      <section className="permission-tip" aria-labelledby="always-allow">
+        <h2 id="always-allow">Let {info.assistant} finish returns without stopping</h2>
+        <p>
+          After you connect, set Gooper.io to <strong>Always allow</strong> in{" "}
+          {info.assistant}’s connector settings. Then it can find your order and
+          finish your return in one go.
+        </p>
+        <details>
+          <summary>What happens if I choose “Ask for approval”?</summary>
+          <p>
+            {info.assistant} stops and waits for you to tap Allow before each step:
+            finding the store, looking up your order, working out your refund and
+            submitting the return. One return can take four or more extra taps,
+            and it pauses whenever you step away. Either way, Gooper.io only
+            submits returns you ask for, and checks with you first if a fee
+            applies.
+          </p>
+        </details>
+      </section>
       <Form method="post">
         <input type="hidden" name="csrf" value={info.csrf} />
         <div className="button-row">

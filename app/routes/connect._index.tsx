@@ -63,6 +63,10 @@ export default function ConnectAllStores() {
           page that opens, confirm the email you shop with and approve Gooper.io.
           No store sign-in needed.
         </p>
+        <p>
+          Then set Gooper.io to <strong>Always allow</strong> in your assistant’s
+          connector settings, so returns finish without extra taps.
+        </p>
       </section>
       <section>
         <h2>2. Ask about a return</h2>
