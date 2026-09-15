@@ -12,7 +12,7 @@ export const randomToken = () => randomBytes(32).toString("base64url");
 export const digest = (value: string) =>
   createHash("sha256").update(value).digest("base64url");
 
-// Refund's own key material, independent of the Shopify app secret, so rotating
+// Gooper.io's own key material, independent of the Shopify app secret, so rotating
 // either one never orphans data sealed or hashed with the other. The first
 // secret writes; retired secrets are listed only so existing sealed values,
 // signed quotes and customer identity hashes can still be read and matched.

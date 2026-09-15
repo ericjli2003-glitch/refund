@@ -14,7 +14,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           connected: false,
           reason: "merchant_not_connected",
           recovery:
-            "Check the store name or website. The merchant needs to install Refund to provide a hosted return portal.",
+            "Check the store name or website. The merchant needs to install Gooper.io to provide a hosted return portal.",
         },
         { status: 404, headers: intakeHeaders },
       );

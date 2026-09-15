@@ -107,13 +107,13 @@ export async function sendConsentCode(flow: Flow, input: string, now = Date.now(
   const assistant = await assistantName(flow.clientId);
   const url = `${appOrigin()}/verify/connect-email/${raw}`;
   const privacy =
-    "Refund uses this email only to find your orders at stores that use Refund. Never for marketing.";
+    "Gooper.io uses this email only to find your orders at stores that use Gooper.io. Never for marketing.";
   try {
     await sendEmail({
       to: email,
-      subject: `${code} is your Refund code`,
-      text: `Hi there,\n\nHere’s your code to finish connecting ${assistant} to Refund:\n\n${code}\n\nOn a different device? Tap the link below and choose the number shown on the Refund page:\n${url}\n\n${privacy}\n\nThe code works for 15 minutes. If you didn’t ask for this, just ignore this email.`,
-      html: `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;color:#16201c;max-width:520px;margin:0 auto;padding:24px"><p style="margin:0 0 16px">Hi there,</p><p style="margin:0 0 16px">Here’s your code to finish connecting ${escapeHtml(assistant)} to Refund:</p><p style="margin:0 0 20px;font-size:32px;font-weight:700;letter-spacing:6px">${code}</p><p style="margin:0 0 12px">On a different device? Tap below and choose the number shown on the Refund page.</p><p style="margin:0 0 24px"><a href="${escapeHtml(url)}" style="display:inline-block;background:#0a6b52;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">Confirm on this device</a></p><p style="margin:0 0 8px;color:#56635e;font-size:14px">${privacy}</p><p style="margin:0;color:#56635e;font-size:14px">The code works for 15 minutes. If you didn’t ask for this, just ignore this email.</p></div>`,
+      subject: `${code} is your Gooper.io code`,
+      text: `Hi there,\n\nHere’s your code to finish connecting ${assistant} to Gooper.io:\n\n${code}\n\nOn a different device? Tap the link below and choose the number shown on the Gooper.io page:\n${url}\n\n${privacy}\n\nThe code works for 15 minutes. If you didn’t ask for this, just ignore this email.`,
+      html: `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;color:#3b1d0a;max-width:520px;margin:0 auto;padding:24px"><p style="margin:0 0 16px">Hi there,</p><p style="margin:0 0 16px">Here’s your code to finish connecting ${escapeHtml(assistant)} to Gooper.io:</p><p style="margin:0 0 20px;font-size:32px;font-weight:700;letter-spacing:6px">${code}</p><p style="margin:0 0 12px">On a different device? Tap below and choose the number shown on the Gooper.io page.</p><p style="margin:0 0 24px"><a href="${escapeHtml(url)}" style="display:inline-block;background:#c2410c;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">Confirm on this device</a></p><p style="margin:0 0 8px;color:#7a4a2a;font-size:14px">${privacy}</p><p style="margin:0;color:#7a4a2a;font-size:14px">The code works for 15 minutes. If you didn’t ask for this, just ignore this email.</p></div>`,
       idempotencyKey: id,
     });
   } catch {
@@ -186,7 +186,7 @@ export async function removeConsentEmail(requestId: string, checkId: string) {
 
 export async function getConsentTap(raw: string, now = Date.now()) {
   const invalid = new Response(
-    "This link has expired or was already used. Send a new code from the Refund page.",
+    "This link has expired or was already used. Send a new code from the Gooper.io page.",
     { status: 400, headers: privateHeaders },
   );
   if (!OPAQUE_TOKEN.test(raw)) throw invalid;

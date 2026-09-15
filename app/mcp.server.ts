@@ -148,9 +148,9 @@ export function createCustomerReturnsMcpServer({
     server.registerTool(
       "find_store",
       {
-        title: "Find a store that uses Refund",
+        title: "Find a store that uses Gooper.io",
         description:
-          "Search Refund's directory of stores by business name or website. If exactly one store matches, go ahead with it without asking, and mention its name naturally so the customer can correct you. If several match, ask which one they bought from in one short, friendly question listing each name and website. Each result's shop is what link_store and the other tools take.",
+          "Search Gooper.io's directory of stores by business name or website. If exactly one store matches, go ahead with it without asking, and mention its name naturally so the customer can correct you. If several match, ask which one they bought from in one short, friendly question listing each name and website. Each result's shop is what link_store and the other tools take.",
         inputSchema: {
           merchant: z
             .string()
@@ -202,7 +202,7 @@ export function createCustomerReturnsMcpServer({
       {
         title: "Link a store to this connection",
         description:
-          "Connects a store so this connection can see the customer's orders there. If an email the customer already confirmed has orders at the store, it connects right away with nothing for them to do. With a different email they used at checkout, Refund emails them a one-tap confirmation, no Shopify sign-in and no account needed, and returns a number for them to pick on the confirmation page. Without an email, it asks you to get one. Says so if the store is already connected, or if the store hasn't set up returns through assistants yet; there's no Shopify sign-in to offer instead. Never ask for passwords or sign-in codes in chat.",
+          "Connects a store so this connection can see the customer's orders there. If an email the customer already confirmed has orders at the store, it connects right away with nothing for them to do. With a different email they used at checkout, Gooper.io emails them a one-tap confirmation, no Shopify sign-in and no account needed, and returns a number for them to pick on the confirmation page. Without an email, it asks you to get one. Says so if the store is already connected, or if the store hasn't set up returns through assistants yet; there's no Shopify sign-in to offer instead. Never ask for passwords or sign-in codes in chat.",
         inputSchema: {
           merchant: z
             .string()
@@ -236,7 +236,7 @@ export function createCustomerReturnsMcpServer({
       {
         title: "List confirmed emails",
         description:
-          "Shows the emails the customer confirmed for this connection, partly hidden. Refund uses them only to find the customer's orders at stores that use Refund, never for marketing. Use when the customer asks which emails Refund has, or wants to remove one.",
+          "Shows the emails the customer confirmed for this connection, partly hidden. Gooper.io uses them only to find the customer's orders at stores that use Gooper.io, never for marketing. Use when the customer asks which emails Gooper.io has, or wants to remove one.",
         inputSchema: {},
         annotations: {
           readOnlyHint: true,
@@ -290,7 +290,7 @@ export function createCustomerReturnsMcpServer({
             ? "Resume a customer return draft"
             : "Check a customer return status",
         description:
-          "Reads only the authenticated customer's latest Refund draft, any known submission status, and each approved return's shipping: the store's return label link and tracking, and whether the customer can add their own tracking. Use after interruption or an uncertain retry. Never creates a return or refund.",
+          "Reads only the authenticated customer's latest Gooper.io draft, any known submission status, and each approved return's shipping: the store's return label link and tracking, and whether the customer can add their own tracking. Use after interruption or an uncertain retry. Never creates a return or refund.",
         inputSchema: withShop({}),
         annotations: {
           readOnlyHint: true,

@@ -50,7 +50,7 @@ function environment(t: TestContext, configured = true) {
   });
   if (configured) {
     process.env.RESEND_API_KEY = "re_test";
-    process.env.REFUND_EMAIL_FROM = "Refund <returns@refund.test>";
+    process.env.REFUND_EMAIL_FROM = "Gooper.io <returns@refund.test>";
   } else {
     delete process.env.RESEND_API_KEY;
     delete process.env.REFUND_EMAIL_FROM;

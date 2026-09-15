@@ -46,7 +46,7 @@ export async function requireInstalledShop(value: string) {
       select: { id: true },
     }))
   ) {
-    throw new Response("This store has not connected Refund.", {
+    throw new Response("This store has not connected Gooper.io.", {
       status: 404,
       headers: privateHeaders,
     });

@@ -55,7 +55,7 @@ export function returnSessionTool(info: {
     name: "get_return_session",
     title: "Check customer verification for this return",
     description:
-      "Check customer verification and resume the signed-in customer's return draft, quote expiry, status, and recovery instructions. No Refund connector is needed for these in-page tools. Keep this page loaded while continuing in chat. Sign-in is not refund consent. This never creates a return or sends money.",
+      "Check customer verification and resume the signed-in customer's return draft, quote expiry, status, and recovery instructions. No Gooper.io connector is needed for these in-page tools. Keep this page loaded while continuing in chat. Sign-in is not refund consent. This never creates a return or sends money.",
     inputSchema: {
       type: "object",
       properties: {},

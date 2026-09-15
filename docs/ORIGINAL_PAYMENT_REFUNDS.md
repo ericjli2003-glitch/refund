@@ -1,13 +1,13 @@
 # Original-payment refund workflow
 
-Refund uses the merchant's Shopify installation to submit refunds through the
+Gooper.io uses the merchant's Shopify installation to submit refunds through the
 original payment processor. Customers sign in with the retailer's Shopify
-Customer Account. They do not open a separate Refund account or provide a new
+Customer Account. They do not open a separate Gooper.io account or provide a new
 card, bank account, or payout destination.
 
 ## Merchant setup
 
-In Refund's embedded dashboard, enable automatic refund payments and save the
+In Gooper.io's embedded dashboard, enable automatic refund payments and save the
 return window, maximum amount and refund timing. New installations default to
 estimates only. With immediate refunds (the default), enabling payments
 authorizes eligible refunds on customer confirmation, before the merchant
@@ -66,7 +66,7 @@ guarantee a fresh processor update. A refund-created webhook alone is not proof
 of payment success. Webhooks preserve failed attempts and do not downgrade
 successful processor evidence with older pending data.
 
-Refund does not advance money, purchase refund receivables, issue a new card,
+Gooper.io does not advance money, purchase refund receivables, issue a new card,
 promise instant bank settlement, or automatically generate shipping labels.
 
 ## Verification

@@ -53,7 +53,7 @@
       signal: AbortSignal.timeout(15_000),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "Refund is unavailable.");
+    if (!response.ok) throw new Error(payload.error || "Gooper.io is unavailable.");
     return payload;
   }
 
@@ -167,7 +167,7 @@
           return {
             isError: true,
             status: "temporarily_unavailable",
-            message: error instanceof Error ? error.message : "Refund is unavailable.",
+            message: error instanceof Error ? error.message : "Gooper.io is unavailable.",
             recovery: "Retry once. If it still fails, use the visible return link or contact the merchant.",
           };
         }

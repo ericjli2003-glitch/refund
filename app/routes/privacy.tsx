@@ -3,7 +3,7 @@ import type { MetaFunction } from "react-router";
 import { PublicShell } from "../components/PublicShell";
 import styles from "../styles/public.module.css";
 
-export const meta: MetaFunction = () => [{ title: "Privacy | Refund" }];
+export const meta: MetaFunction = () => [{ title: "Privacy | Gooper.io" }];
 
 export default function Privacy() {
   return (
@@ -14,7 +14,7 @@ export default function Privacy() {
         <p className={styles.updated}>Effective September 8, 2026</p>
 
         <p>
-          Refund helps Shopify merchants offer customer-confirmed returns
+          Gooper.io helps Shopify merchants offer customer-confirmed returns
           through compatible AI assistants. This policy explains the data the
           app uses to provide that service.
         </p>
@@ -31,7 +31,7 @@ export default function Privacy() {
             timestamps.
           </li>
           <li>
-            A keyed hash of the customer identifier. Refund does not store the
+            A keyed hash of the customer identifier. Gooper.io does not store the
             raw customer identifier in its operational return records.
           </li>
           <li>
@@ -50,7 +50,7 @@ export default function Privacy() {
 
         <h2>Merchant discovery records</h2>
         <p>
-          When a store cannot be found, Refund may retain its business name or
+          When a store cannot be found, Gooper.io may retain its business name or
           domain, issue category, source, and timestamps for private service
           improvement and merchant opportunity review. These records are not
           shared with merchants and do not trigger outreach. They exclude
@@ -63,7 +63,7 @@ export default function Privacy() {
         <p>
           Customer Account access tokens are used to validate the request and
           read the authenticated customer&apos;s eligible order information.
-          They are not stored in Refund&apos;s return records. Refund does not
+          They are not stored in Gooper.io&apos;s return records. Gooper.io does not
           collect debit or credit card numbers. Shopify and the merchant&apos;s
           payment provider process refunds to the original payment method.
         </p>
@@ -86,7 +86,7 @@ export default function Privacy() {
         <h2>Retention and deletion</h2>
         <p>
           We retain records only as long as needed to operate, secure, and
-          support the service or meet legal obligations. Refund processes
+          support the service or meet legal obligations. Gooper.io processes
           Shopify&apos;s mandatory customer data request, customer redaction,
           and shop redaction webhooks. Local shop data is also deleted when the
           app receives an uninstall webhook.
@@ -105,7 +105,7 @@ export default function Privacy() {
           Customers can contact the Shopify merchant where they placed their
           order to request access, correction, or deletion. Merchants can
           uninstall the app and can contact us through the support channel shown
-          on the Refund support page or Shopify App Store listing.
+          on the Gooper.io support page or Shopify App Store listing.
         </p>
 
         <h2>Changes</h2>

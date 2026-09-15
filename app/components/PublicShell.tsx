@@ -10,7 +10,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
         <header className={styles.header}>
           <Link className={styles.brand} to="/">
             <span className={styles.brandMark} aria-hidden="true" />
-            Refund
+            Gooper.io
           </Link>
           <nav className={styles.nav} aria-label="Public navigation">
             <Link to="/stores">Find your store</Link>
@@ -21,7 +21,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
         </header>
         {children}
         <footer className={styles.footer}>
-          <span>Refund for Shopify merchants</span>
+          <span>Gooper.io for Shopify merchants</span>
           <div className={styles.footerLinks}>
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>

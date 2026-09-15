@@ -1,15 +1,15 @@
 # Merchant-domain return discovery and proof
 
-Refund reuses its existing return engine. The new entry point is merchant-hosted
+Gooper.io reuses its existing return engine. The new entry point is merchant-hosted
 discovery, not a shopper-installed plugin or a second returns system.
 
 ## Implemented path
 
 1. The merchant publishes `templates/agents.md.liquid` in the active Shopify
-   theme, preserving Shopify's shopping guide and adding Refund return links.
-2. Shopify forwards `/apps/refund/*` to Refund's `/proxy/refund/*`, adding a signed
+   theme, preserving Shopify's shopping guide and adding Gooper.io return links.
+2. Shopify forwards `/apps/refund/*` to Gooper.io's `/proxy/refund/*`, adding a signed
    shop, timestamp and actual merchant-customized `path_prefix`.
-3. Refund validates with `authenticate.public.appProxy`, requires an installed
+3. Gooper.io validates with `authenticate.public.appProxy`, requires an installed
    offline session, and publishes a shop-bound guide, manifest, intake schema,
    public `start_return` MCP tool and browser entry page.
 4. MCP/JSON intake reuses `startReturnIntake`: an expiring draft and verification
@@ -54,34 +54,34 @@ intake quota. Shopify forwarding can aggregate users behind a proxy IP; monitor
    `shopify.app.toml` declares `write_app_proxy` and the proxy. Keep deployed
    `SCOPES` aligned (`render.yaml` and `.env.example` are updated). Existing
    installations may need to approve the new permission.
-2. Verify Refund's proxy path in the merchant's Shopify app settings. Preserve an
+2. Verify Gooper.io's proxy path in the merchant's Shopify app settings. Preserve an
    existing customized prefix/subpath and substitute it below. The backend uses
    the signed actual `path_prefix`, not a hard-coded assumption.
 3. Add **`templates/agents.md.liquid`** to the active theme. The starter is
    `storefront/templates/agents.md.liquid`; if the theme already has a guide,
    merge its Returns section instead of replacing merchant content. Adjust the
-   three Refund links for any customized app proxy path. Shopify serves this
+   three Gooper.io links for any customized app proxy path. Shopify serves this
    special template at `/agents.md`, and also uses it for `/llms.txt` and
    `/llms-full.txt` unless their own templates exist. Only `agents` and `request`
    are available in this context; do not use `shop`, settings or metafields.
    Preserve the Shopify UCP/MCP links and verify the rendered live response.
-4. Customer accounts must be enabled. Existing merchant return rules and Refund's
+4. Customer accounts must be enabled. Existing merchant return rules and Gooper.io's
    automatic-refund policy still apply; discovery does not enable automatic
    refunds. The theme embed is optional for this entry path.
 
 An ordinary snippet cannot publish a root route, but Shopify explicitly supports
 this special template. A URL redirect will not override Shopify's existing
 `/agents.md` response. No DNS change is needed. Do not replace Shopify's
-`/.well-known/ucp` or claim to register Refund in Shopify's managed MCP server.
+`/.well-known/ucp` or claim to register Gooper.io in Shopify's managed MCP server.
 Custom guide prose is merchant-maintained rather than automatically updated with
-Shopify's default guide. Reapply it when switching themes; remove Refund's section
-when uninstalling. Merchant theme editing/CLI does not require granting Refund
+Shopify's default guide. Reapply it when switching themes; remove Gooper.io's section
+when uninstalling. Merchant theme editing/CLI does not require granting Gooper.io
 `write_themes`; automated app API theme writes require that scope and Shopify's
 exemption. See `storefront/README.md` for a single-file deployment procedure.
 
 **Do not use a proxy redirect/iframe for sign-in.** Shopify follows upstream 30x
 redirects itself and strips Cookie/Set-Cookie. The entry page intentionally links
-to the top-level Refund portal so existing secure cookies, OAuth state/nonce,
+to the top-level Gooper.io portal so existing secure cookies, OAuth state/nonce,
 PKCE and CSRF protections work.
 
 ## UCP and normal ChatGPT/Claude: exact boundary
@@ -90,9 +90,9 @@ This implements the **MCP/browser branch** of the requested UCP/MCP architecture
 The manifest links Shopify's UCP profile but does not advertise
 `dev.ucp.shopping.order` or invent a standardized UCP `start_return` mutation.
 It does not implement UCP version/capability negotiation. `/ucp` is explicitly a
-Refund handoff manifest, not `/.well-known/ucp` or a standard UCP profile.
+Gooper.io handoff manifest, not `/.well-known/ucp` or a standard UCP profile.
 
-No Refund connector, OAuth agent grant, or Refund account is required for the
+No Gooper.io connector, OAuth agent grant, or Gooper.io account is required for the
 browser path. A browser-capable ChatGPT/Claude host can follow links and use the
 portal. The shopper must personally sign in and confirm the exact quote. Hosts
 supporting WebMCP can use existing Site Tools; others may use ordinary controls.
@@ -207,7 +207,7 @@ creates a draft, submits a return, or issues a refund.
 
 Use a merchant-owned **test order/payment** and customer account, with explicit
 authorization for that test transaction. Record host, mode/version and absence
-of a Refund connector. Start a normal conversation asking to return that item
+of a Gooper.io connector. Start a normal conversation asking to return that item
 from the merchant URL; do not configure a custom MCP connector.
 
 1. Observe discovery of `/agents.md`, the proxy and portal. Record any manual URL

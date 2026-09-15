@@ -13,7 +13,7 @@ export const loader = async () => {
         authorization_servers: [appOrigin()],
         scopes_supported: [...agentScopes],
         bearer_methods_supported: ["header"],
-        resource_name: "Refund returns for every store",
+        resource_name: "Gooper.io returns for every store",
       },
       { headers },
     );

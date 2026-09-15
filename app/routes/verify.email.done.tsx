@@ -19,11 +19,11 @@ const outcomes = {
   },
   confirmed: {
     heading: "Email confirmed",
-    body: "Go back to the Refund page on your other device. It will update in a moment, and you can finish connecting there.",
+    body: "Go back to the Gooper.io page on your other device. It will update in a moment, and you can finish connecting there.",
   },
   connect_mismatch: {
     heading: "That number didn’t match",
-    body: "To keep your orders safe, we cancelled this code. Send a new one from the Refund page and pick the number it shows.",
+    body: "To keep your orders safe, we cancelled this code. Send a new one from the Gooper.io page and pick the number it shows.",
   },
   connect_denied: {
     heading: "Got it, that email wasn’t added",

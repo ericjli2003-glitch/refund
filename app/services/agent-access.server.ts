@@ -72,11 +72,11 @@ export function agentResource(shop: string) {
   return new URL(`/mcp/${normalizeShopDomain(shop)}`, appOrigin()).href;
 }
 
-// One assistant connection covering every Refund store. It reaches a store's
+// One assistant connection covering every Gooper.io store. It reaches a store's
 // purchases through the emails the customer confirmed.
 export const allStoresResource = () => new URL("/mcp/stores", appOrigin()).href;
 
-// Every Refund MCP address opens the same connection to the whole network:
+// Every Gooper.io MCP address opens the same connection to the whole network:
 // /mcp/stores, and store addresses (/mcp/<shop>) saved from earlier setup
 // pages, which reach every store too.
 export function isConnectionResource(value: URL | string | null | undefined) {
@@ -172,7 +172,7 @@ export async function issueConnectionGrant(
   };
 }
 
-// Authorizes a connection itself. Only Refund's opaque tokens are accepted,
+// Authorizes a connection itself. Only Gooper.io's opaque tokens are accepted,
 // never Shopify access tokens, browser cookies, intake links, ID tokens or
 // signed return quotes; grants from retired single-store connections have no
 // connection and open nothing. Store access is a separate check
@@ -298,7 +298,7 @@ export async function connectionStore(
     }),
     prisma.storePolicy.findUnique({ where: { shop } }),
   ]);
-  if (!installed) throw new Error(`${shop} no longer uses Refund.`);
+  if (!installed) throw new Error(`${shop} no longer uses Gooper.io.`);
   let link = existing;
   let access = link ? storeLinkAccess(link, policy, installed.scope, now) : null;
   if (!access) {

@@ -79,7 +79,7 @@ test("REFUND_SECRET takes over writes while a listed retired secret stays readab
   );
 });
 
-test("rotating only the Shopify app secret no longer breaks Refund data", () => {
+test("rotating only the Shopify app secret no longer breaks Gooper.io data", () => {
   const before = withSecrets(
     { SHOPIFY_API_SECRET: "shopify-a", REFUND_SECRET: "refund" },
     () => ({

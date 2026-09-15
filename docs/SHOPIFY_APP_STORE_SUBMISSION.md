@@ -5,7 +5,7 @@ must be completed in Shopify, the host, and the assistant platforms.
 
 ## Suggested listing copy
 
-**App name:** Refund
+**App name:** Gooper.io
 
 **Subtitle:** Customer-confirmed returns in AI assistants
 
@@ -14,14 +14,14 @@ explicit confirmation while you control the return window and refund limit.
 
 **Description:**
 
-Refund connects your Shopify return workflow to compatible AI assistants.
+Gooper.io connects your Shopify return workflow to compatible AI assistants.
 Customers authenticate with their Shopify customer account, choose eligible
 items from their own orders, review Shopify's calculated amount, and explicitly
 confirm before anything is submitted.
 
 You control which returns can complete automatically with a master enable switch,
 return-window limit, maximum automatic refund amount, and currency setting.
-Refund rechecks eligibility before execution, prevents duplicate refunds with
+Gooper.io rechecks eligibility before execution, prevents duplicate refunds with
 idempotency controls, and reconciles status through Shopify webhooks. Attempts
 that need human review remain visible in the merchant activity dashboard.
 
@@ -39,7 +39,7 @@ use Shopify Billing and update the listing, terms, and reviewer instructions.
 
 ## Access-scope rationale
 
-| Scope           | Why Refund needs it                                                                    |
+| Scope           | Why Gooper.io needs it                                                                    |
 | --------------- | -------------------------------------------------------------------------------------- |
 | `read_orders`   | Resolve the customer-owned Shopify order and verify line-item details before a return. |
 | `write_orders`  | Submit the refund against the original order transaction after explicit confirmation.  |
@@ -52,7 +52,7 @@ use Shopify Billing and update the listing, terms, and reviewer instructions.
 | `customer_write_orders` | Request the customer-confirmed return in their own account. |
 
 Request protected customer data access for order and customer fields used in the
-workflow, including Level 2 access to the order email: Refund matches the email
+workflow, including Level 2 access to the order email: Gooper.io matches the email
 a customer gives their assistant against the store's orders before emailing
 that address a one-tap confirmation. The app hashes the customer identifier in operational records and does
 not store Customer Account access tokens there.
@@ -68,7 +68,7 @@ Provide Shopify with a development store and customer account that has a paid,
 fulfilled, returnable order. Include credentials only in the private reviewer
 fields in Partner Dashboard, never in this repository.
 
-1. Install Refund and open it from Shopify admin.
+1. Install Gooper.io and open it from Shopify admin.
 2. In **Policy**, enable automatic refunds, set a return window that includes the
    test order, set a maximum above the test line-item amount, and save.
 3. Open the test assistant connector and authenticate with the provided Shopify
@@ -78,9 +78,9 @@ fields in Partner Dashboard, never in this repository.
    before asking for explicit confirmation.
 6. Confirm once. Verify the assistant returns the Shopify return/refund status.
 7. Repeat with the same request UUID and verify no second refund is created.
-8. Return to Refund in Shopify admin and verify the attempt appears in Activity.
+8. Return to Gooper.io in Shopify admin and verify the attempt appears in Activity.
 9. Demonstrate the disabled state or a quote above the configured maximum to show
-   that Refund blocks the automatic action.
+   that Gooper.io blocks the automatic action.
 
 If a live refund would create cost or operational risk, use a Shopify test payment
 gateway and state that clearly in the reviewer notes.

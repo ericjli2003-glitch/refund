@@ -81,7 +81,7 @@ function setup(t: TestContext) {
   return { token, grant, find };
 }
 
-test("every Refund MCP address is the same network-wide connection resource", () => {
+test("every Gooper.io MCP address is the same network-wide connection resource", () => {
   process.env.SHOPIFY_APP_URL = "https://refund.test";
   assert.equal(isConnectionResource(allStoresResource()), true);
   assert.equal(isConnectionResource(resource), true);
@@ -475,7 +475,7 @@ test("a verified link opened with a retired secret is re-sealed with the current
   });
 });
 
-test("protected HTTP rejects cookie/upstream access and does not advertise Shopify as Refund's issuer", async (t) => {
+test("protected HTTP rejects cookie/upstream access and does not advertise Shopify as Gooper.io's issuer", async (t) => {
   setup(t);
   const { action } = await import("../routes/mcp.$shop");
   const upstream = t.mock.method(globalThis, "fetch", async () => {

@@ -45,14 +45,14 @@ export async function loader({ params }: LoaderFunctionArgs) {
 export const meta: MetaFunction<typeof loader> = ({ data: value }) =>
   value
     ? [
-        { title: `${value.displayName} returns | Refund` },
+        { title: `${value.displayName} returns | Gooper.io` },
         {
           name: "description",
-          content: `Return a purchase from ${value.displayName} (${value.merchant.name}) with Refund. Verify with Shopify, find your items, and review a return quote.`,
+          content: `Return a purchase from ${value.displayName} (${value.merchant.name}) with Gooper.io. Verify with Shopify, find your items, and review a return quote.`,
         },
         { tagName: "link", rel: "canonical", href: value.canonical },
       ]
-    : [{ title: "Store not found | Refund" }];
+    : [{ title: "Store not found | Gooper.io" }];
 
 export default function MerchantReturns() {
   const { merchant, displayName, origin, guidance, canonical, continueUrl } =
@@ -69,7 +69,7 @@ export default function MerchantReturns() {
       url: `https://${merchant.primaryDomain}`,
     },
     description:
-      "Verify a purchase with Shopify and review a return estimate with Refund. Eligibility and merchant approval are checked separately.",
+      "Verify a purchase with Shopify and review a return estimate with Gooper.io. Eligibility and merchant approval are checked separately.",
   };
   return (
     <PublicShell>
@@ -82,7 +82,7 @@ export default function MerchantReturns() {
         data-intake-api-url={`${origin}/api/return-intake`}
         data-customer-authenticated="false"
       >
-        <p className={styles.eyebrow}>Returns with Refund</p>
+        <p className={styles.eyebrow}>Returns with Gooper.io</p>
         <h1>{displayName} returns.</h1>
         <p>
           Bought something from {displayName}? Start here to verify your
@@ -109,7 +109,7 @@ export default function MerchantReturns() {
           <p>
             You can ask your assistant: “I want to return my snowboard from
             Testing Storefront.” This page identifies the Testing Shopify store
-            above and provides its Refund return service.
+            above and provides its Gooper.io return service.
           </p>
         ) : (
           <p>

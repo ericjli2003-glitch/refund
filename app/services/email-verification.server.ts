@@ -40,11 +40,11 @@ const OPAQUE_TOKEN = /^[\w-]{43}$/;
 export const verificationEmailContext = (id: string) => `email-verification:${id}`;
 
 function button(url: string, label: string) {
-  return `<a href="${escapeHtml(url)}" style="display:inline-block;background:#0a6b52;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">${escapeHtml(label)}</a>`;
+  return `<a href="${escapeHtml(url)}" style="display:inline-block;background:#c2410c;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 22px;border-radius:8px">${escapeHtml(label)}</a>`;
 }
 
 function emailLayout(paragraphs: string[], action?: string) {
-  return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;color:#16201c;max-width:520px;margin:0 auto;padding:24px">${paragraphs
+  return `<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:16px;line-height:1.55;color:#3b1d0a;max-width:520px;margin:0 auto;padding:24px">${paragraphs
     .map((text) => `<p style="margin:0 0 16px">${text}</p>`)
     .join("")}${action ? `<p style="margin:24px 0">${action}</p>` : ""}</div>`;
 }
@@ -63,13 +63,13 @@ const emailUnavailable = (store: Store) => ({
   status: "email_unavailable" as const,
   merchant: store,
   nextStep:
-    "Refund couldn't send the confirmation email just now. Apologize briefly and suggest trying again in a few minutes.",
+    "Gooper.io couldn't send the confirmation email just now. Apologize briefly and suggest trying again in a few minutes.",
 });
 
 // Sends the one-tap confirmation for an email the connection hasn't confirmed.
 // An address with no order at the store gets a short "we couldn't find an
 // order" note instead, and the chat hears the same thing either way, so
-// nobody can use Refund to learn who shops where.
+// nobody can use Gooper.io to learn who shops where.
 export async function startEmailVerification(
   connectionId: string,
   store: Store,
@@ -99,7 +99,7 @@ export async function startEmailVerification(
       status: "try_again_later" as const,
       merchant: store,
       nextStep:
-        "Refund has sent a few confirmation emails already. Let the customer know kindly that the most recent email still works for 20 minutes, or that they can try again in about an hour.",
+        "Gooper.io has sent a few confirmation emails already. Let the customer know kindly that the most recent email still works for 20 minutes, or that they can try again in about an hour.",
     };
   let hasOrders: boolean;
   try {
@@ -133,12 +133,12 @@ export async function startEmailVerification(
         ? {
             to: email,
             subject: `Confirm your return with ${store.name}`,
-            text: `Hi there,\n\nYou asked ${assistant} to help with a return from ${store.name}. Tap the link below to confirm it's you. You'll pick the number ${assistant} is showing you.\n\nYes, that's me: ${url}\n\nThe link works for 20 minutes. If you didn't ask for this, just ignore this email and nothing will happen.\n\nRefund uses this email only to find your orders at stores that use Refund. Never for marketing.`,
+            text: `Hi there,\n\nYou asked ${assistant} to help with a return from ${store.name}. Tap the link below to confirm it's you. You'll pick the number ${assistant} is showing you.\n\nYes, that's me: ${url}\n\nThe link works for 20 minutes. If you didn't ask for this, just ignore this email and nothing will happen.\n\nRefund uses this email only to find your orders at stores that use Gooper.io. Never for marketing.`,
             html: emailLayout(
               [
                 "Hi there,",
                 `You asked ${assistantHtml} to help with a return from <strong>${storeName}</strong>. Tap below to confirm it’s you. You’ll pick the number ${assistantHtml} is showing you.`,
-                `<span style="color:#56635e;font-size:14px">The link works for 20 minutes. If you didn’t ask for this, just ignore this email and nothing will happen. Refund uses this email only to find your orders at stores that use Refund, never for marketing.</span>`,
+                `<span style="color:#7a4a2a;font-size:14px">The link works for 20 minutes. If you didn’t ask for this, just ignore this email and nothing will happen. Gooper.io uses this email only to find your orders at stores that use Gooper.io, never for marketing.</span>`,
               ],
               button(url, "Yes, that’s me"),
             ),
@@ -151,7 +151,7 @@ export async function startEmailVerification(
             html: emailLayout([
               "Hi there,",
               `You asked ${assistantHtml} to help with a return from <strong>${storeName}</strong>, but we couldn’t find an order there for this email address. If you checked out with a different email, just give that one to ${assistantHtml}.`,
-              `<span style="color:#56635e;font-size:14px">If you didn’t ask for this, you can ignore this email.</span>`,
+              `<span style="color:#7a4a2a;font-size:14px">If you didn’t ask for this, you can ignore this email.</span>`,
             ]),
             idempotencyKey: id,
           },
@@ -166,7 +166,7 @@ export async function startEmailVerification(
     sentTo: maskEmail(email),
     matchNumber,
     expiresInSeconds: VERIFICATION_LIFETIME_MS / 1000,
-    nextStep: `Let the customer know, warmly, that an email from Refund is on its way to ${maskEmail(email)}. They tap "Yes, that's me" and pick the number ${matchNumber}, so tell them that number. When they say they're done, continue with shop "${store.shop}". If nothing arrives in a couple of minutes, they may have used a different email at checkout.`,
+    nextStep: `Let the customer know, warmly, that an email from Gooper.io is on its way to ${maskEmail(email)}. They tap "Yes, that's me" and pick the number ${matchNumber}, so tell them that number. When they say they're done, continue with shop "${store.shop}". If nothing arrives in a couple of minutes, they may have used a different email at checkout.`,
   };
 }
 
@@ -203,7 +203,7 @@ export async function linkStore(
       merchant: store,
       nextStep: `Good news: ${store.name} is already connected, so carry on with shop "${store.shop}" without asking the customer to do anything.`,
     };
-  // Email links always use the store's confirmed Refund return rules.
+  // Email links always use the store's confirmed Gooper.io return rules.
   if (!verifiedLinksAllowed(policy, installed?.scope)) return storeNotReady(store);
   let address: string | undefined;
   if (email) {
@@ -242,12 +242,12 @@ export async function linkStore(
     ? {
         status: "email_not_found" as const,
         merchant: store,
-        nextStep: `None of the emails the customer confirmed has an order at ${store.name}. Ask warmly, something like "Did you use a different email for that one?" If they share one, call link_store again with it and Refund will send a one-tap confirmation.`,
+        nextStep: `None of the emails the customer confirmed has an order at ${store.name}. Ask warmly, something like "Did you use a different email for that one?" If they share one, call link_store again with it and Gooper.io will send a one-tap confirmation.`,
       }
     : {
         status: "email_needed" as const,
         merchant: store,
-        nextStep: `Ask the customer, in one short friendly question, which email they used for their ${store.name} order. Then call link_store again with that email, and Refund will send a one-tap confirmation, no sign-in needed.`,
+        nextStep: `Ask the customer, in one short friendly question, which email they used for their ${store.name} order. Then call link_store again with that email, and Gooper.io will send a one-tap confirmation, no sign-in needed.`,
       };
 }
 
@@ -309,7 +309,7 @@ export async function completeEmailVerification(request: Request, raw: string) {
       data: { status: matched ? "VERIFIED" : "CANCELLED" },
     });
     if (result.count === 1 && email) {
-      // The email joins the connection, so it works at every Refund store.
+      // The email joins the connection, so it works at every Gooper.io store.
       const confirmed = await addConnectionEmail(
         tx,
         check.connectionId,

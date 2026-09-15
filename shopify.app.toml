@@ -1,7 +1,7 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 client_id = "24193de3d7837cab554bb1ff8b53d388"
-name = "refund"
+name = "Gooper.io"
 application_url = "https://refund-ztxz.onrender.com"
 embedded = true
 

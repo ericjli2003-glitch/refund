@@ -4,7 +4,7 @@ import { useLoaderData } from "react-router";
 import { PublicShell } from "../components/PublicShell";
 import styles from "../styles/public.module.css";
 
-export const meta: MetaFunction = () => [{ title: "Support | Refund" }];
+export const meta: MetaFunction = () => [{ title: "Support | Gooper.io" }];
 
 export const loader = async () => {
   const configured = process.env.PUBLIC_SUPPORT_EMAIL?.trim() ?? "";
@@ -32,12 +32,12 @@ export default function Support() {
             <p>
               Email <a href={`mailto:${supportEmail}`}>{supportEmail}</a>.
               Include your <code>.myshopify.com</code> domain and the return
-              status shown in Refund. Do not include payment-card information or
+              status shown in Gooper.io. Do not include payment-card information or
               customer access tokens.
             </p>
           ) : (
             <p>
-              Contact Refund through the support link on its Shopify App Store
+              Contact Gooper.io through the support link on its Shopify App Store
               listing. Include your <code>.myshopify.com</code> domain and the
               return status shown in the app.
             </p>
@@ -62,9 +62,9 @@ export default function Support() {
 
         <h2>Refund timing</h2>
         <p>
-          Refund submits eligible refunds to Shopify&apos;s original payment
+          Gooper.io submits eligible refunds to Shopify&apos;s original payment
           transaction. Bank posting time depends on the payment provider and is
-          not controlled by Refund.
+          not controlled by Gooper.io.
         </p>
 
         <h2>Privacy requests</h2>

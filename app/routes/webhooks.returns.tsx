@@ -33,8 +33,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       if (!returnId || !returnStatus) return;
 
       // A return waiting for its item that Shopify processes or closes outside
-      // Refund may already have been refunded there. Flag it so Retry refund
-      // records that refund instead of the merchant refunding twice. Refund's
+      // Gooper.io may already have been refunded there. Flag it so Retry refund
+      // records that refund instead of the merchant refunding twice. Gooper.io's
       // own receipt processing holds the record in RECEIVING, so it is skipped.
       if (["PROCESSED", "CLOSED"].includes(returnStatus))
         await transaction.agentReturn.updateMany({
@@ -42,7 +42,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           data: {
             status: "NEEDS_ATTENTION",
             failureReason:
-              "Shopify processed this return outside Refund while it waited for the item. Use Retry refund to record any refund, or check the order in Shopify.",
+              "Shopify processed this return outside Gooper.io while it waited for the item. Use Retry refund to record any refund, or check the order in Shopify.",
           },
         });
 

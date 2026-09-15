@@ -2,11 +2,11 @@
 :global(body) {
   min-height: 100%;
   margin: 0;
-  background: #0b110e;
+  background: #c2410c;
 }
 
 :global(body) {
-  color: #dfe6df;
+  color: #ffffff;
   font-family:
     Inter,
     -apple-system,
@@ -22,8 +22,8 @@
 .page {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 80% 5%, rgb(47 100 73 / 22%), transparent 28rem),
-    #0b110e;
+    radial-gradient(circle at 80% 5%, rgb(247 147 76 / 55%), transparent 28rem),
+    #c2410c;
 }
 
 .container {
@@ -36,11 +36,11 @@
   justify-content: space-between;
   align-items: center;
   min-height: 4.5rem;
-  border-bottom: 1px solid #243229;
+  border-bottom: 1px solid rgb(255 255 255 / 25%);
 }
 
 .brand {
-  color: #f7f4ec;
+  color: #ffffff;
   text-decoration: none;
   font-size: 1.05rem;
   font-weight: 800;
@@ -53,7 +53,7 @@
   height: 0.72rem;
   margin-right: 0.55rem;
   border-radius: 0.2rem;
-  background: #6ee7b7;
+  background: #fff4e8;
   transform: rotate(10deg);
 }
 
@@ -64,23 +64,23 @@
 
 .nav a,
 .footer a {
-  color: #aeb9b0;
+  color: #fff4e8;
   text-decoration: none;
   font-size: 0.84rem;
 }
 
 .nav a:hover,
 .footer a:hover {
-  color: #f7f4ec;
+  color: #ffffff;
 }
 
 .footer {
   display: flex;
   justify-content: space-between;
   gap: 1.5rem;
-  border-top: 1px solid #243229;
+  border-top: 1px solid rgb(255 255 255 / 25%);
   padding: 2rem 0 3rem;
-  color: #78867d;
+  color: #fff4e8;
   font-size: 0.8rem;
 }
 
@@ -91,7 +91,7 @@
 
 .eyebrow {
   margin: 0;
-  color: #6ee7b7;
+  color: #ffffff;
   font-size: 0.75rem;
   font-weight: 750;
   letter-spacing: 0.14em;
@@ -105,7 +105,7 @@
 
 .legal h1 {
   margin: 0.55rem 0 1rem;
-  color: #f7f4ec;
+  color: #ffffff;
   font-size: clamp(2.8rem, 7vw, 5.2rem);
   letter-spacing: -0.06em;
   line-height: 0.98;
@@ -113,20 +113,20 @@
 
 .updated {
   margin-bottom: 3rem;
-  color: #819087;
+  color: #fff4e8;
   font-size: 0.85rem;
 }
 
 .legal h2 {
   margin: 2.5rem 0 0.75rem;
-  color: #f0f2ed;
+  color: #ffffff;
   font-size: 1.35rem;
   letter-spacing: -0.025em;
 }
 
 .legal p,
 .legal li {
-  color: #aeb9b0;
+  color: #fff4e8;
   line-height: 1.75;
 }
 
@@ -135,15 +135,15 @@
 }
 
 .legal a {
-  color: #8af0c8;
+  color: #ffffff;
 }
 
 .callout {
   margin: 2rem 0;
-  border: 1px solid #30473a;
+  border: 1px solid rgb(255 255 255 / 35%);
   border-radius: 0.9rem;
   padding: 1.25rem;
-  background: #132019;
+  background: #b84a0e;
 }
 
 @media (max-width: 38rem) {

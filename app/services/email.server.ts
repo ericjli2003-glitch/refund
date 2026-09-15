@@ -38,5 +38,5 @@ export async function sendEmail(message: {
     }),
   });
   // Never echo the provider's response: it can include the address.
-  if (!response.ok) throw new Error("Refund couldn't send the email.");
+  if (!response.ok) throw new Error("Gooper.io couldn't send the email.");
 }

@@ -16,10 +16,10 @@ type MoneyBag = { presentmentMoney: Money; shopMoney: Money };
 type UserError = { field?: string[]; message: string };
 
 // A customer who proved who they are with the store's own Shopify sign-in when
-// linking the store. After that sign-in ends, Refund acts for them through the
+// linking the store. After that sign-in ends, Gooper.io acts for them through the
 // store's Admin API. The Admin API doesn't apply the store's Shopify return
-// rules, so Refund applies the fees and final-sale collections the merchant
-// confirmed in Refund instead.
+// rules, so Gooper.io applies the fees and final-sale collections the merchant
+// confirmed in Gooper.io instead.
 export type VerifiedCustomer = { customerId: string };
 // The email on the customer's orders, confirmed from their inbox. Covers
 // guest checkouts as well as account holders.
@@ -381,11 +381,11 @@ async function verifiedReturnInput(
   const orderCurrency =
     order.returnInformation.returnableLineItems.nodes[0]?.lineItem
       .currentTotalPrice.currencyCode;
-  // Shopify takes the fee in the order's currency, and Refund stores it in
+  // Shopify takes the fee in the order's currency, and Gooper.io stores it in
   // the shop's; it never converts between them.
   if (shippingFee > 0n && orderCurrency !== rules.currencyCode)
     throw new Error(
-      `This order was paid in ${orderCurrency ?? "another currency"}, but the store's return shipping fee is set in ${rules.currencyCode}. Refund can't quote this return in chat, so the customer can use the store's own returns page or contact the store. Nothing was submitted.`,
+      `This order was paid in ${orderCurrency ?? "another currency"}, but the store's return shipping fee is set in ${rules.currencyCode}. Gooper.io can't quote this return in chat, so the customer can use the store's own returns page or contact the store. Nothing was submitted.`,
     );
   return {
     client,
@@ -531,12 +531,12 @@ export async function requestVerifiedReturn(
   customerNote?: string,
   admin?: AdminGraphql,
 ) {
-  // Refund's own checks run before Shopify is asked, so a failure here means
+  // Gooper.io's own checks run before Shopify is asked, so a failure here means
   // no return exists.
   const input = await verifiedReturnInput(shop, order, items, admin).catch(
     (error: unknown) => {
       throw new ReturnNotCreatedError(
-        error instanceof Error ? error.message : "Refund couldn't prepare the return.",
+        error instanceof Error ? error.message : "Gooper.io couldn't prepare the return.",
       );
     },
   );
@@ -575,7 +575,7 @@ export async function requestVerifiedReturn(
 }
 
 // A signed-in quote shows what Shopify's own return rules charge. When Shopify
-// applies a fee or final-sale rule the merchant's saved Refund rules would
+// applies a fee or final-sale rule the merchant's saved Gooper.io rules would
 // miss, verified links pause until the merchant reviews and saves them again.
 // Rules that only charge more than Shopify don't pause anything.
 export async function noteReturnRulesDrift(
@@ -595,7 +595,7 @@ export async function noteReturnRulesDrift(
   );
   if (restocking > 0 && !(Number(policy.restockingFeePercent) > 0))
     problems.push(
-      "Shopify charged a customer a restocking fee, but your restocking fee in Refund is 0%.",
+      "Shopify charged a customer a restocking fee, but your restocking fee in Gooper.io is 0%.",
     );
   const shipping =
     calculation.financialSummary.returnShippingFeeSubtotalSet?.presentmentMoney;
@@ -605,7 +605,7 @@ export async function noteReturnRulesDrift(
     amount(shipping) > Number(policy.returnShippingFee)
   )
     problems.push(
-      `Shopify charged a customer a ${amount(shipping).toFixed(2)} ${shipping.currencyCode} return shipping fee, more than the ${policy.returnShippingFee} set in Refund.`,
+      `Shopify charged a customer a ${amount(shipping).toFixed(2)} ${shipping.currencyCode} return shipping fee, more than the ${policy.returnShippingFee} set in Gooper.io.`,
     );
   if (
     order.returnInformation.nonReturnableSummary?.nonReturnableReasons.includes(
@@ -614,7 +614,7 @@ export async function noteReturnRulesDrift(
     !policy.finalSaleCollectionIds.length
   )
     problems.push(
-      "Shopify marks some of your items final sale, but no final-sale collections are set in Refund.",
+      "Shopify marks some of your items final sale, but no final-sale collections are set in Gooper.io.",
     );
   if (!problems.length) return;
   await prisma.storePolicy

@@ -23,7 +23,7 @@ export function cleanReturnInstructions(value: unknown) {
   return text;
 }
 
-// Refund-hosted pages link to this URL, so it must stay on the merchant's own
+// Gooper.io-hosted pages link to this URL, so it must stay on the merchant's own
 // store domains rather than become an arbitrary outbound link.
 export function cleanReturnPolicyUrl(value: unknown, storeHosts: string[]) {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -92,7 +92,7 @@ export function guidanceMarkdown(guidance: ReturnGuidance) {
     lines.push(`- Return policy: ${guidance.returnPolicyUrl}`);
   if (guidance.automaticReturnWindowDays)
     lines.push(
-      `- Automatic returns through Refund: within ${guidance.automaticReturnWindowDays} days of purchase, subject to eligibility and the merchant's limits.`,
+      `- Automatic returns through Gooper.io: within ${guidance.automaticReturnWindowDays} days of purchase, subject to eligibility and the merchant's limits.`,
     );
   if (guidance.refundTiming)
     lines.push(
@@ -120,12 +120,12 @@ export function merchantAgentsTemplateSection(
   proxyPrefix = "/apps/refund",
 ) {
   if (!PROXY_PREFIX.test(proxyPrefix))
-    throw new Error("Use the store's Refund app proxy path, such as /apps/refund.");
+    throw new Error("Use the store's Gooper.io app proxy path, such as /apps/refund.");
   const merchantText = stripLiquid(guidanceMarkdown(guidance));
   return [
-    "## Returns through Refund",
+    "## Returns through Gooper.io",
     "",
-    "For an existing purchase that the shopper wants to return, use this store's Refund browser entry. No Refund plugin, connector, or Refund account is required.",
+    "For an existing purchase that the shopper wants to return, use this store's Gooper.io browser entry. No Gooper.io plugin, connector, or Gooper.io account is required.",
     "",
     `- Start a return: {{ agents.store_url }}${proxyPrefix}/start-return`,
     `- Return instructions for assistants: {{ agents.store_url }}${proxyPrefix}/agents.md`,
