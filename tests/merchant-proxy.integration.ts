@@ -170,6 +170,12 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
         });
       if (query.includes("RequestCustomerReturn")) {
         assert.equal(variables.orderId, orderId);
+        // Shopify requires a return reason; Gooper.io files returns under Other.
+        assert.equal(
+          (variables.requestedLineItems as Array<{ returnReasonDefinitionId: string }>)[0]
+            .returnReasonDefinitionId,
+          "gid://shopify/ReturnReasonDefinition/1",
+        );
         requestedQuantity = (
           variables.requestedLineItems as Array<{ quantity: number }>
         )[0].quantity;
@@ -189,6 +195,22 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
         request.headers.get("X-Shopify-Access-Token"),
         "fixture-admin-token",
       );
+      if (query.includes("ReturnReasonDefinitions"))
+        return Response.json({
+          data: {
+            returnReasonDefinitions: {
+              nodes: [
+                {
+                  id: "gid://shopify/ReturnReasonDefinition/1",
+                  handle: "other-reason",
+                  name: "Other",
+                  deleted: false,
+                },
+              ],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        });
       if (query.includes("ApproveReturnRequest")) {
         mutations.push("returnApproveRequest");
         return Response.json({
