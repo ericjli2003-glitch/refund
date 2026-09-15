@@ -8,7 +8,7 @@ import {
 } from "react-router";
 
 // Proxima Nova is licensed, so it loads only from an Adobe Fonts kit set in
-// ADOBE_FONTS_KIT_ID; pages fall back to similar fonts without one.
+// ADOBE_FONTS_KIT_ID; pages otherwise use the bundled Montserrat.
 export const loader = () => {
   const kit = process.env.ADOBE_FONTS_KIT_ID;
   return { adobeFontsKit: kit && /^[a-z0-9]{5,12}$/.test(kit) ? kit : null };
