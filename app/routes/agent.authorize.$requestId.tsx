@@ -9,7 +9,9 @@ import {
   useRevalidator,
   type ActionFunctionArgs,
   type LoaderFunctionArgs,
+  type ShouldRevalidateFunction,
 } from "react-router";
+import { ConnectionError } from "../components/ConnectionError";
 import {
   assistantForRedirect,
   finishAgentConsent,
@@ -109,6 +111,34 @@ export async function action({ request, params }: ActionFunctionArgs) {
   );
 }
 
+// Allow uses up the request, so reloading this page's data afterwards would
+// fail; the last-step screen needs nothing more from the server.
+export const shouldRevalidate: ShouldRevalidateFunction = ({
+  actionResult,
+  defaultShouldRevalidate,
+}) =>
+  actionResult && typeof actionResult === "object" && "connected" in actionResult
+    ? false
+    : defaultShouldRevalidate;
+
+export function ErrorBoundary() {
+  return <ConnectionError />;
+}
+
+// A picture of the setting to choose in the assistant, not a working control:
+// the toggle itself lives in the assistant's own settings.
+function AlwaysAllowPreview({ assistant }: { assistant: string }) {
+  return (
+    <figure className="setting-preview">
+      <div className="setting-preview-row" aria-hidden="true">
+        <span>Gooper.io tools</span>
+        <span className="setting-preview-pill">✓ Always allow</span>
+      </div>
+      <figcaption>What to choose for Gooper.io in {assistant}’s connector settings</figcaption>
+    </figure>
+  );
+}
+
 const connectorSettingsUrl = (assistant: string) =>
   assistant === "ChatGPT"
     ? "https://chatgpt.com/#settings/Connectors"
@@ -136,12 +166,17 @@ function ConnectedStep({
   }, [seconds, continueUrl]);
   return (
     <main className="customer-returns connection-page">
+      <header>
+        <span>GOOPER.IO</span>
+        <span>STEP 3 OF 3</span>
+      </header>
       <h1>You’re connected — one last step</h1>
-      <p>
+      <p className="lead">
         Set Gooper.io to <strong>Always allow</strong> in {assistant}’s connector
         settings, so {assistant} can finish your returns without stopping to ask
         before each step.
       </p>
+      <AlwaysAllowPreview assistant={assistant} />
       <div className="button-row">
         <a
           className="return-button"
@@ -315,77 +350,95 @@ export default function AgentConsent() {
   const busy = useNavigation().state !== "idle";
   const needsEmail = info.emailStep && !info.emails.some((entry) => entry.confirmed);
   if (connected) return <ConnectedStep {...connected} />;
+  const emailDone = !needsEmail;
   return (
     <main className="customer-returns connection-page">
+      <header>
+        <span>GOOPER.IO</span>
+        <span>CONNECT {info.assistant.toUpperCase()}</span>
+      </header>
       <h1>Connect {info.assistant} to Gooper.io</h1>
-      <p>
-        One connection works with every store that uses Gooper.io, so you can start
-        a return with any of them right in your chat.
+      <p className="lead">
+        One connection works with every store that uses Gooper.io, so you can
+        return things right in your chat.
       </p>
-      <p>
-        Gooper.io will send the connection back to{" "}
-        <strong>{info.callbackHost}</strong>.
-      </p>
-      {info.emailStep && <EmailStep emails={info.emails} csrf={info.csrf} />}
-      <h2>What {info.assistant} can do</h2>
-      <ul>
-        {info.scopes.map((scope) => (
-          <li key={scope}>{descriptions[scope]}</li>
-        ))}
-      </ul>
-      <p>
-        <strong>
-          {info.assistant} can submit returns and refunds for you.
-        </strong>{" "}
-        When you ask to return something, it takes care of it, and checks with
-        you first only if a fee would come out of your refund. Refunds go back
-        to your original payment method, and each store’s return rules still
-        apply.
-      </p>
-      <p>
-        {info.emailStep
-          ? "When you ask about a return, Gooper.io finds your order at that store using the emails you confirm here, so there’s usually nothing else to do. If you used a different email, your assistant asks and sends a quick confirmation."
-          : "When you ask about a return, your assistant asks for the email you used at that store and sends a quick confirmation."}
-      </p>
-      <p>
-        Stores stay connected while you keep using them, and the connection ends
-        after a year without use. See and remove your confirmed emails and stores
-        at <a href="/connect/manage">your connection page</a> in this browser, or
-        remove Gooper.io from your assistant at any time.
-      </p>
-      <section className="permission-tip" aria-labelledby="always-allow">
-        <h2 id="always-allow">Let {info.assistant} finish returns without stopping</h2>
-        <p>
-          After you connect, set Gooper.io to <strong>Always allow</strong> in{" "}
-          {info.assistant}’s connector settings. Then it can find your order and
-          finish your return in one go.
-        </p>
-        <details>
-          <summary>What happens if I choose “Ask for approval”?</summary>
-          <p>
-            {info.assistant} stops and waits for you to tap Allow before each step:
-            finding the store, looking up your order, working out your refund and
-            submitting the return. One return can take four or more extra taps,
-            and it pauses whenever you step away. Either way, Gooper.io only
-            submits returns you ask for, and checks with you first if a fee
-            applies.
-          </p>
-        </details>
-      </section>
-      <Form method="post">
-        <input type="hidden" name="csrf" value={info.csrf} />
-        <div className="button-row">
-          <button name="decision" value="allow" disabled={busy || needsEmail}>
-            Allow {info.assistant} access
-          </button>
-          <button name="decision" value="deny" disabled={busy}>
-            Cancel connection
-          </button>
-        </div>
-        {needsEmail && (
-          <p className="consent-email-hint">Confirm an email above to continue.</p>
+      <ol className="connect-steps">
+        {info.emailStep && (
+          <li className={emailDone ? "done" : "current"}>
+            <EmailStep emails={info.emails} csrf={info.csrf} />
+          </li>
         )}
-      </Form>
+        <li className={emailDone ? "current" : "upcoming"}>
+          <section aria-labelledby="allow-step">
+            <h2 id="allow-step">Allow {info.assistant}</h2>
+            <p>
+              {info.assistant} can find your orders and submit the returns you ask
+              for. It checks with you first only if a fee would come out of your
+              refund, and refunds go back to your original payment method.
+            </p>
+            <Form method="post">
+              <input type="hidden" name="csrf" value={info.csrf} />
+              <div className="button-row">
+                <button name="decision" value="allow" disabled={busy || needsEmail}>
+                  Allow {info.assistant} access
+                </button>
+                <button
+                  name="decision"
+                  value="deny"
+                  className="secondary"
+                  disabled={busy}
+                >
+                  Cancel
+                </button>
+              </div>
+              {needsEmail && (
+                <p className="consent-email-hint">Confirm your email first.</p>
+              )}
+            </Form>
+          </section>
+        </li>
+        <li className="upcoming">
+          <section aria-labelledby="always-allow">
+            <h2 id="always-allow">Turn on Always allow</h2>
+            <p>
+              Right after you allow, one tap opens {info.assistant}’s connector
+              settings. Set Gooper.io to <strong>Always allow</strong> so returns
+              finish without stopping.
+            </p>
+            {emailDone && <AlwaysAllowPreview assistant={info.assistant} />}
+            <details>
+              <summary>What happens if I leave it on “Ask for approval”?</summary>
+              <p>
+                {info.assistant} stops and waits for you to tap Allow before each
+                step: finding the store, looking up your order, working out your
+                refund and submitting the return. One return can take four or more
+                extra taps, and it pauses whenever you step away.
+              </p>
+            </details>
+          </section>
+        </li>
+      </ol>
+      <details className="fine-print">
+        <summary>What {info.assistant} can do, and how your data is used</summary>
+        <ul>
+          {info.scopes.map((scope) => (
+            <li key={scope}>{descriptions[scope]}</li>
+          ))}
+        </ul>
+        <p>
+          {info.emailStep
+            ? "Gooper.io finds your order at a store using the emails you confirm here. If you used a different email, your assistant asks and sends a quick confirmation."
+            : "When you ask about a return, your assistant asks for the email you used at that store and sends a quick confirmation."}{" "}
+          Each store’s return rules still apply. Stores stay connected while you
+          keep using them, and the connection ends after a year without use.
+        </p>
+        <p>
+          See and remove your confirmed emails and stores at{" "}
+          <a href="/connect/manage">your connection page</a> in this browser, or
+          remove Gooper.io from your assistant at any time. Gooper.io sends the
+          connection back to <strong>{info.callbackHost}</strong>.
+        </p>
+      </details>
     </main>
   );
 }

@@ -22,6 +22,7 @@ import {
 } from "../services/customer-security.server";
 import { maskEmail } from "../services/email-address.server";
 import { readConnectionBrowser } from "../services/connection-browser.server";
+import { ConnectionError } from "../components/ConnectionError";
 import "../styles/customer-returns.css";
 
 export const headers = () => ({
@@ -184,4 +185,8 @@ export default function ManageConnection() {
       )}
     </main>
   );
+}
+
+export function ErrorBoundary() {
+  return <ConnectionError />;
 }
