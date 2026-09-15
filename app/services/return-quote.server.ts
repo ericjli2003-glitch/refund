@@ -86,7 +86,7 @@ export async function createReturnQuote(
       "That order is not available in your authenticated account.",
     );
   const policy = await prisma.storePolicy.findUnique({ where: { shop } });
-  // Installing Refund enables estimates. Automatic payment authorization is
+  // Installing Gooper.io enables estimates. Automatic payment authorization is
   // separate and is still rechecked by the submission service.
   const submissionAvailable = Boolean(policy?.automaticRefundsEnabled);
   const refundTiming = refundTimingOf(policy?.refundTiming);
@@ -115,7 +115,7 @@ export async function createReturnQuote(
     items,
   );
   // A signed-in quote shows the fees and final-sale rules Shopify itself
-  // applies; pause verified links if Refund's saved rules would miss them.
+  // applies; pause verified links if Gooper.io's saved rules would miss them.
   if (typeof customerToken === "string" && policy)
     await noteReturnRulesDrift(shop, policy, order, calculation);
   const expectedRefund = refundFromReturnTotal(

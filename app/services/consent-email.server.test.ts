@@ -60,7 +60,7 @@ function checks(t: TestContext) {
     REFUND_EMAIL_FROM: process.env.REFUND_EMAIL_FROM,
   };
   process.env.RESEND_API_KEY = "re_test";
-  process.env.REFUND_EMAIL_FROM = "Refund <returns@refund.test>";
+  process.env.REFUND_EMAIL_FROM = "Gooper.io <returns@refund.test>";
   t.after(() => {
     for (const [name, value] of Object.entries(saved))
       if (value === undefined) delete process.env[name];
@@ -127,7 +127,7 @@ test("a code sent to the customer's shopping email confirms it on the approving 
     message: "We sent a code to p••@example.com.",
   });
   assert.deepEqual(sent[0].to, ["pat@example.com"]);
-  assert.match(sent[0].subject, /^\d{6} is your Refund code$/);
+  assert.match(sent[0].subject, /^\d{6} is your Gooper.io code$/);
   assert.match(sent[0].text, /never for marketing/i);
   assert.match(sent[0].text, /https:\/\/refund\.test\/verify\/connect-email\/[\w-]{43}/);
   const [pending] = await consentEmailState(flow.id, now);

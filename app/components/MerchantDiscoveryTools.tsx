@@ -52,7 +52,7 @@ export function MerchantDiscoveryTools() {
       {
         name: "find_merchant_return_page",
         description:
-          "Find a published Refund merchant by exact business name. Unresolved or ambiguous requests stop and record a minimal private discovery signal for Refund's operator, not the merchant. Do not contact the merchant or substitute another store. If an earlier external search already failed, use report_merchant_discovery_failure instead and stop.",
+          "Find a published Gooper.io merchant by exact business name. Unresolved or ambiguous requests stop and record a minimal private discovery signal for Gooper.io's operator, not the merchant. Do not contact the merchant or substitute another store. If an earlier external search already failed, use report_merchant_discovery_failure instead and stop.",
         inputSchema,
         annotations: {
           readOnlyHint: false,
@@ -64,7 +64,7 @@ export function MerchantDiscoveryTools() {
       {
         name: "report_merchant_discovery_failure",
         description:
-          "After the assistant cannot find the requested store, record only its business name/domain for Refund's private operator review and stop. This does not contact the merchant, create a return draft, look up purchases, or issue a refund. Do not continue with a URL fallback after this report.",
+          "After the assistant cannot find the requested store, record only its business name/domain for Gooper.io's private operator review and stop. This does not contact the merchant, create a return draft, look up purchases, or issue a refund. Do not continue with a URL fallback after this report.",
         inputSchema,
         annotations: {
           readOnlyHint: false,

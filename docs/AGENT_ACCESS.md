@@ -2,15 +2,15 @@
 
 ## What is implemented
 
-One remote MCP connection reaches every store that uses Refund, through the
-authorization-code flow: assistant → Refund consent (with email confirmation) →
+One remote MCP connection reaches every store that uses Gooper.io, through the
+authorization-code flow: assistant → Gooper.io consent (with email confirmation) →
 code exchange → return tools in the chat that find orders, quote, and submit
 returns and refunds after the customer confirms each one. Public intake and the
 existing browser tools remain separate and available.
 
 This is a backend implementation for host acceptance testing, not a claim that
 either host has completed a live test or that an unconnected chat can discover
-Refund automatically. Customers must enable a connection in the host for this
+Gooper.io automatically. Customers must enable a connection in the host for this
 first version. Assistants find stores across merchants through `/stores`, `/llms.txt`
 and the public MCP `find_store` tool.
 
@@ -35,10 +35,10 @@ step is skipped.
 
 Confirmed emails are saved on the connection (`ConnectionEmail`), encrypted,
 with a keyed hash for lookups, and used only to find the customer's orders at
-stores that use Refund, never for marketing:
+stores that use Gooper.io, never for marketing:
 
 1. The assistant finds the store with `find_store` and calls a return tool with
-   that `shop`. If the store has no link, Refund checks the connection's
+   that `shop`. If the store has no link, Gooper.io checks the connection's
    confirmed emails for orders there and links the store to the first match,
    with nothing for the customer to do. If none match, the tool returns
    `linkRequired` with reason `email_not_found`, and the assistant asks
@@ -49,7 +49,7 @@ stores that use Refund, never for marketing:
    assistant points the customer to the store's own returns page. Customers
    are never sent to a Shopify sign-in.
 2. `link_store` tries the confirmed emails first. With a different email the
-   customer used at checkout, it sends a one-tap confirmation from Refund
+   customer used at checkout, it sends a one-tap confirmation from Gooper.io
    (through Resend) and returns a two-digit number; once confirmed, that email
    is added to the connection, so it works at every store too. This is also
    how connections made before the consent-page step add their first email.
@@ -68,17 +68,17 @@ Limits and protections:
 
 - **Links that last while used.** Email links reach the customer's orders
   through the store's Admin API, which doesn't apply Shopify's return rules, so
-  Refund applies the restocking fee, return shipping fee and final-sale
-  collections the merchant confirmed in Refund. Assistant returns are on by
+  Gooper.io applies the restocking fee, return shipping fee and final-sale
+  collections the merchant confirmed in Gooper.io. Assistant returns are on by
   default and start once the merchant saves those rules; a merchant can turn
   them off. Stores linked by Shopify sign-in before linking went email-only use
   that sign-in while it lasts, then the verified customer ID under the same
   rules. A link ends after a year without use.
 - **Rule drift pauses links.** When a signed-in quote shows Shopify charging a
-  restocking fee Refund's rules lack, a higher return shipping fee, or final-sale
+  restocking fee Gooper.io's rules lack, a higher return shipping fee, or final-sale
   items with no final-sale collections set, verified links pause and the
   dashboard asks the merchant to review and save.
-- **Connection kept while used.** Refund access and refresh tokens are issued
+- **Connection kept while used.** Gooper.io access and refresh tokens are issued
   against the connection, not a store, and each refresh keeps it for another
   year. Access tokens still last one hour and rotate.
 - **Same browser.** Approving the connection sets an HttpOnly
@@ -99,7 +99,7 @@ Limits and protections:
 - Looking up orders by email needs Shopify's Level 2 protected customer data
   approval for the order email field. Without it, lookups fail and the store
   returns `store_not_ready`.
-- Every Refund MCP address opens this same connection: `/mcp/stores`, and
+- Every Gooper.io MCP address opens this same connection: `/mcp/stores`, and
   `/mcp/:shop` addresses saved from earlier setup pages, each with its own
   resource metadata. Single-store grants are retired and open nothing.
   Submission still needs the signed quote and explicit confirmation, and every
@@ -135,10 +135,10 @@ Do not use the bare `/mcp` or `/apps/refund/mcp` URL for this customer connectio
 those expose anonymous intake only. The browser flow remains an alternative, not
 a prerequisite for using the connected assistant after authorization.
 
-The consent page names no merchant: it connects every Refund store and says the
+The consent page names no merchant: it connects every Gooper.io store and says the
 assistant can submit returns and refunds, each after the customer confirms it in
 chat, to the original payment method. For submission to work at a store, its
-merchant must turn on automatic refunds in the Refund dashboard; otherwise the
+merchant must turn on automatic refunds in the Gooper.io dashboard; otherwise the
 assistant quotes and the store reviews the return.
 
 For a first test, ask the assistant to find an order at the Testing store and
@@ -160,7 +160,7 @@ are preserved. After deployment, one connection attempt should identify the
 failure category; this instrumentation is not itself a compatibility fix.
 
 - The production server mounts the installed MCP SDK's authorization, token,
-  registration, revocation and metadata handlers. Refund supplies durable
+  registration, revocation and metadata handlers. Gooper.io supplies durable
   encrypted client storage, browser consent and transactional grant storage.
   This is not a managed identity-provider deployment.
 - The issuer is exactly SHOPIFY_APP_URL's HTTPS origin, without a trailing slash.
@@ -180,16 +180,16 @@ failure category; this instrumentation is not itself a compatibility fix.
 - Codes expire after two minutes, require S256 PKCE and an exact resource/redirect
   match, and are consumed atomically with grant creation. A valid replay revokes
   the previously issued grant. Concurrent exchanges cannot issue two grants.
-- Independent opaque Refund access tokens are hash-stored, resource/shop/customer/
+- Independent opaque Gooper.io access tokens are hash-stored, resource/shop/customer/
   client-bound and scope-checked on every request and tool call. Shopify tokens
   stay encrypted server-side. Never paste either token into a chat or a URL.
 - Separate scopes are returns:read, returns:quote, returns:submit. Submission
   still requires the signed exact quote and explicit confirmation. Claude gets
   HTTP insufficient-scope challenges, not only tool metadata errors.
 - Access tokens last at most one hour. Clients registered for `refresh_token`
-  receive rotating Refund refresh tokens (reusing one revokes the chain), but no
+  receive rotating Gooper.io refresh tokens (reusing one revokes the chain), but no
   grant outlives the verified Shopify customer session, capped at four hours.
-  Shopify issues no refresh token to public PKCE app clients, so Refund cannot
+  Shopify issues no refresh token to public PKCE app clients, so Gooper.io cannot
   extend that session. Reconnecting first tries a silent `prompt=none` Shopify
   sign-in; the consent click is still required. No offline_access scope exists.
 - Customers can disconnect individual assistants in the return portal. Logout,

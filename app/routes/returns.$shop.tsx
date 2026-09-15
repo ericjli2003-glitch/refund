@@ -307,7 +307,7 @@ export default function CustomerReturns() {
       {
         name: "check_return_status",
         description:
-          "Check the signed-in customer's current Refund draft or submitted return status, including each approved return's shipping: the store's return label link, tracking, and whether the customer can add tracking. Use after a retry, interruption, or uncertain response before attempting any later action.",
+          "Check the signed-in customer's current Gooper.io draft or submitted return status, including each approved return's shipping: the store's return label link, tracking, and whether the customer can add tracking. Use after a retry, interruption, or uncertain response before attempting any later action.",
         inputSchema: {
           type: "object",
           properties: {},
@@ -412,7 +412,7 @@ export default function CustomerReturns() {
     <main className="customer-returns">
       <header>
         <a href={`https://${initial.shop}`}>← Back to store</a>
-        <span>REFUND · CUSTOMER RETURNS</span>
+        <span>GOOPER.IO · CUSTOMER RETURNS</span>
       </header>
       <h1>
         {continueInChat
@@ -425,12 +425,12 @@ export default function CustomerReturns() {
       </p>
       <p>
         Prefer a connected assistant?{" "}
-        <a href="/connect">Connect ChatGPT or Claude to Refund</a>.
+        <a href="/connect">Connect ChatGPT or Claude to Gooper.io</a>.
       </p>
       <p role="status">
         {browserTools === "checking" && "Checking browser return-tool support…"}
         {browserTools === "ready" &&
-          "Return tools are available to a compatible agent in this browser. No Refund connector is needed here; customer sign-in and refund confirmation are still required."}
+          "Return tools are available to a compatible agent in this browser. No Gooper.io connector is needed here; customer sign-in and refund confirmation are still required."}
         {browserTools === "unavailable" &&
           "This browser does not expose WebMCP page tools. You can use the return form below; automatic tool access depends on your browser and assistant."}
         {browserTools === "failed" &&
@@ -486,7 +486,7 @@ export default function CustomerReturns() {
                   .catch(() => {})
               }
             >
-              Sign out of Refund
+              Sign out of Gooper.io
             </button>
           </p>
           {result && (

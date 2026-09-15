@@ -8,7 +8,7 @@ import publicStyles from "../../styles/public.module.css";
 import styles from "./styles.module.css";
 
 export const meta: MetaFunction = () => [
-  { title: "Refund | Customer-confirmed Shopify returns" },
+  { title: "Gooper.io | Customer-confirmed Shopify returns" },
   {
     name: "description",
     content:
@@ -39,7 +39,7 @@ export default function Index() {
             </p>
             <h1>Customer-confirmed Shopify returns, inside AI assistants.</h1>
             <p className={styles.lede}>
-              Refund lets an authenticated customer find eligible items, review
+              Gooper.io lets an authenticated customer find eligible items, review
               Shopify&apos;s calculated amount, and confirm the return. You set
               the return window and refund limit.
             </p>
@@ -53,8 +53,8 @@ export default function Index() {
           {showForm && (
             <div className={styles.installCard}>
               <p className={publicStyles.eyebrow}>Merchant access</p>
-              <h2>Open Refund</h2>
-              <p>Install Refund to get your return portal. Your store identity and currency are set up automatically.</p>
+              <h2>Open Gooper.io</h2>
+              <p>Install Gooper.io to get your return portal. Your store identity and currency are set up automatically.</p>
               <Form className={styles.form} method="post" action="/auth/login">
                 <label className={styles.label}>
                   <span>Shop domain</span>
@@ -73,7 +73,7 @@ export default function Index() {
                 </button>
               </Form>
               <p className={styles.finePrint}>
-                Shopify handles installation. No separate Refund account is needed. Adding tools to your storefront is optional and requires one theme activation.
+                Shopify handles installation. No separate Gooper.io account is needed. Adding tools to your storefront is optional and requires one theme activation.
               </p>
             </div>
           )}
@@ -99,7 +99,7 @@ export default function Index() {
               <span className={styles.step}>02</span>
               <h3>Recalculate the quote</h3>
               <p>
-                Refund rechecks item eligibility, quantities, store policy, and
+                Gooper.io rechecks item eligibility, quantities, store policy, and
                 Shopify&apos;s latest suggested amount.
               </p>
             </article>

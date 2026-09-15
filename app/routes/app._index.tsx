@@ -305,7 +305,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (finalSaleCollectionIds.length) {
     if (!hasScope(session.scope, RETURN_RULES_SCOPE))
       throw new Response(
-        "Approve Refund's permission to read products before choosing final-sale collections.",
+        "Approve Gooper.io's permission to read products before choosing final-sale collections.",
         { status: 400 },
       );
     const collectionCheck = await admin.graphql(
@@ -591,12 +591,12 @@ export default function RefundDashboard() {
         View all orders
       </s-button>
 
-      <s-section heading="Refund is installed">
+      <s-section heading="Gooper.io is installed">
         <s-stack direction="block" gap="base">
           <s-paragraph>
             Your store is connected. Customers can verify purchases and get
             return estimates through your hosted return portal. No separate
-            Refund account or connector is needed.
+            Gooper.io account or connector is needed.
           </s-paragraph>
           <s-stack direction="inline" gap="base">
             <s-button href={returnPortalUrl} target="_blank" variant="primary">
@@ -664,8 +664,8 @@ export default function RefundDashboard() {
       {listingSaved && (
         <s-banner heading="Directory listing saved" tone="success">
           {listed
-            ? "Your store is listed in Refund's store directory."
-            : "Your store is hidden from Refund's store directory."}
+            ? "Your store is listed in Gooper.io's store directory."
+            : "Your store is hidden from Gooper.io's store directory."}
         </s-banner>
       )}
 
@@ -682,11 +682,11 @@ export default function RefundDashboard() {
           <s-stack direction="block" gap="base">
             <s-paragraph>
               {listed
-                ? "Your store is listed, so customers and assistants can find it by name in Refund's store directory."
-                : "Your store is hidden from Refund's store directory."}
+                ? "Your store is listed, so customers and assistants can find it by name in Gooper.io's store directory."
+                : "Your store is hidden from Gooper.io's store directory."}
             </s-paragraph>
             <s-paragraph color="subdued">
-              Listing publishes only your store name, website and Refund return
+              Listing publishes only your store name, website and Gooper.io return
               page, at /stores, in /llms.txt and to assistants searching the
               directory. Customers still verify every purchase, by confirming
               their email or with your store&apos;s Shopify sign-in. Hiding the store doesn&apos;t affect
@@ -873,7 +873,7 @@ export default function RefundDashboard() {
             <s-paragraph color="subdued">
               For customers signed in to your store, restocking and return
               shipping fees come from your Shopify return rules (Settings, then
-              Policies). Customers see them in their quote, and Refund deducts
+              Policies). Customers see them in their quote, and Gooper.io deducts
               them from the refund it submits.
             </s-paragraph>
             {!policy.returnRulesConfirmedAt && (
@@ -900,10 +900,10 @@ export default function RefundDashboard() {
               }
             ></s-switch>
             <s-paragraph color="subdued">
-              Customers who add Refund to ChatGPT or Claude confirm their email
-              once, and Refund finds their orders at your store by that email,
+              Customers who add Gooper.io to ChatGPT or Claude confirm their email
+              once, and Gooper.io finds their orders at your store by that email,
               with no store sign-in. Shopify doesn’t apply your return rules to
-              those returns, so Refund applies the fees and final-sale
+              those returns, so Gooper.io applies the fees and final-sale
               collections below. Saving confirms they match your Shopify return
               rules. Turn this off to stop returns through assistants; your
               return portal keeps working.
@@ -971,13 +971,13 @@ export default function RefundDashboard() {
               )
             ) : (
               <s-paragraph color="subdued">
-                To mark final-sale collections, approve Refund&apos;s updated
+                To mark final-sale collections, approve Gooper.io&apos;s updated
                 permission to read products when Shopify asks.
               </s-paragraph>
             )}
             <s-text-area
               label="Return instructions for customers and assistants"
-              details={`Shown with every quote, on your public return page, and in your store's Refund agent guide and manifest. Plain text, up to ${instructionsMaxLength} characters.`}
+              details={`Shown with every quote, on your public return page, and in your store's Gooper.io agent guide and manifest. Plain text, up to ${instructionsMaxLength} characters.`}
               maxLength={instructionsMaxLength}
               rows={4}
               value={returnInstructions}
@@ -1034,7 +1034,7 @@ export default function RefundDashboard() {
       <s-section heading="Returns section for your store's agents.md (optional)">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
-            Refund&apos;s app proxy already serves a current return guide at
+            Gooper.io&apos;s app proxy already serves a current return guide at
             /apps/refund/agents.md, including the guidance above. If your theme
             publishes its own agents.md template, add this Returns section to it
             so assistants reading your main store guide find returns too. Theme
@@ -1194,7 +1194,7 @@ export default function RefundDashboard() {
                         agentReturn.id,
                         agentReturn.status === "NOT_SUBMITTED"
                           ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
-                          : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Refund so the customer can try again.",
+                          : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
                         "Remove",
                       )}
                     {agentReturn.retryable &&

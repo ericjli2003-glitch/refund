@@ -19,7 +19,7 @@
     {
       "@context": "https://schema.org",
       "@type": "MerchantReturnPolicy",
-      "name": {{ shop.name | append: " returns with Refund" | json }},
+      "name": {{ shop.name | append: " returns with Gooper.io" | json }},
       "merchant": {
         "@type": "Organization",
         "name": {{ shop.name | json }},
@@ -30,7 +30,7 @@
     }
   </script>
   <p class="visually-hidden" data-refund-agent-metadata>
-    {{ shop.name }} supports customer-confirmed returns through Refund. AI assistants can use the start_return site tool on this top-level page. Shopify customer verification is required before purchase lookup. No return or refund is submitted during lookup or quote.
+    {{ shop.name }} supports customer-confirmed returns through Gooper.io. AI assistants can use the start_return site tool on this top-level page. Shopify customer verification is required before purchase lookup. No return or refund is submitted during lookup or quote.
   </p>
   {% if block.settings.show_launcher %}
     <button

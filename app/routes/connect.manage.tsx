@@ -31,7 +31,7 @@ export const headers = () => ({
 });
 
 // Connections are managed from the browser that approved them, identified by
-// the same HttpOnly cookie store links use; there's no Refund account.
+// the same HttpOnly cookie store links use; there's no Gooper.io account.
 export async function loader({ request }: LoaderFunctionArgs) {
   const browser = await readConnectionBrowser(request);
   if (!browser)
@@ -115,14 +115,14 @@ export default function ManageConnection() {
   return (
     <main className="customer-returns">
       <header>
-        <a href="/connect">← Refund for every store</a>
-        <span>REFUND · YOUR CONNECTION</span>
+        <a href="/connect">← Gooper.io for every store</a>
+        <span>GOOPER.IO · YOUR CONNECTION</span>
       </header>
-      <h1>Your Refund connection</h1>
+      <h1>Your Gooper.io connection</h1>
       {connections.length === 0 ? (
         <p>
-          There’s no Refund connection in this browser. Connections are managed
-          from the browser where you approved Refund in your assistant.
+          There’s no Gooper.io connection in this browser. Connections are managed
+          from the browser where you approved Gooper.io in your assistant.
         </p>
       ) : (
         connections.map((connection) => (
@@ -131,8 +131,8 @@ export default function ManageConnection() {
             <p className="consent-email-hint">Connected {connection.connectedOn}</p>
             <h3>Confirmed emails</h3>
             <p>
-              Refund uses these only to find your orders at stores that use
-              Refund. Never for marketing.
+              Gooper.io uses these only to find your orders at stores that use
+              Gooper.io. Never for marketing.
             </p>
             {connection.emails.length ? (
               <ul className="consent-email-list">
@@ -172,7 +172,7 @@ export default function ManageConnection() {
               <input type="hidden" name="csrf" value={csrf} />
               <input type="hidden" name="connectionId" value={connection.id} />
               <p>
-                Disconnecting removes Refund from {connection.assistant}, deletes
+                Disconnecting removes Gooper.io from {connection.assistant}, deletes
                 these emails and disconnects every store.
               </p>
               <button name="intent" value="disconnect" disabled={busy}>

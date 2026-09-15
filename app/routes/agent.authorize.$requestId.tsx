@@ -38,7 +38,7 @@ export const headers = () => ({
 type EmailEntry = Awaited<ReturnType<typeof consentEmailState>>[number];
 type StepResult = { ok: boolean; message: string };
 
-// One connection for every store in the Refund network. It needs no store
+// One connection for every store in the Gooper.io network. It needs no store
 // sign-in; once email is set up, the customer confirms the email they shop
 // with before allowing it.
 export async function loader({ request, params }: LoaderFunctionArgs) {
@@ -92,7 +92,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 const descriptions: Record<string, string> = {
-  "returns:read": "Find your orders at stores that use Refund, and what can be returned.",
+  "returns:read": "Find your orders at stores that use Gooper.io, and what can be returned.",
   "returns:quote": "Work out the exact refund for the items you choose, including any fees.",
   "returns:submit":
     "Submit returns and refunds to your original payment method, each one after you confirm it in your chat.",
@@ -188,7 +188,7 @@ function EmailStep({ emails, csrf }: { emails: EmailEntry[]; csrf: string }) {
     <section className="consent-email" aria-labelledby="confirm-email">
       <h2 id="confirm-email">Confirm your email</h2>
       <p>
-        Refund uses it to find your orders at any store that uses Refund, so
+        Gooper.io uses it to find your orders at any store that uses Gooper.io, so
         returns in your chat just work. We never use it for marketing.
       </p>
       {confirmed.length > 0 && (
@@ -227,13 +227,13 @@ export default function AgentConsent() {
   const needsEmail = info.emailStep && !info.emails.some((entry) => entry.confirmed);
   return (
     <main className="customer-returns">
-      <h1>Connect {info.assistant} to Refund</h1>
+      <h1>Connect {info.assistant} to Gooper.io</h1>
       <p>
-        One connection works with every store that uses Refund, so you can start
+        One connection works with every store that uses Gooper.io, so you can start
         a return with any of them right in your chat.
       </p>
       <p>
-        Refund will send the connection back to{" "}
+        Gooper.io will send the connection back to{" "}
         <strong>{info.callbackHost}</strong>.
       </p>
       {info.emailStep && <EmailStep emails={info.emails} csrf={info.csrf} />}
@@ -253,14 +253,14 @@ export default function AgentConsent() {
       </p>
       <p>
         {info.emailStep
-          ? "When you ask about a return, Refund finds your order at that store using the emails you confirm here, so there’s usually nothing else to do. If you used a different email, your assistant asks and sends a quick confirmation."
+          ? "When you ask about a return, Gooper.io finds your order at that store using the emails you confirm here, so there’s usually nothing else to do. If you used a different email, your assistant asks and sends a quick confirmation."
           : "When you ask about a return, your assistant asks for the email you used at that store and sends a quick confirmation."}
       </p>
       <p>
         Stores stay connected while you keep using them, and the connection ends
         after a year without use. See and remove your confirmed emails and stores
         at <a href="/connect/manage">your connection page</a> in this browser, or
-        remove Refund from your assistant at any time.
+        remove Gooper.io from your assistant at any time.
       </p>
       <Form method="post">
         <input type="hidden" name="csrf" value={info.csrf} />

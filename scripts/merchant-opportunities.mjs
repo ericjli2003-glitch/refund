@@ -19,7 +19,7 @@ try {
     },
   });
   console.log(
-    "Private Refund opportunities — unverified reports, not customer counts. No merchant outreach has been sent.",
+    "Private Gooper.io opportunities — unverified reports, not customer counts. No merchant outreach has been sent.",
   );
   console.table(records);
 } finally {

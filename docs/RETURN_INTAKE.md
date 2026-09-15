@@ -1,6 +1,6 @@
 # Public merchant return intake
 
-An agent that can reach Refund may call one public tool to prepare the customer's
+An agent that can reach Gooper.io may call one public tool to prepare the customer's
 return workflow. The API is an intake service, not an inbox that monitors private
 AI conversations. The calling agent identifies the return intent and sends the
 merchant website explicitly. There is no separate LLM classifier or model key.
@@ -38,7 +38,7 @@ The continuation is an encrypted request description, not a customer session.
 
 1. Merchant installation records the canonical store and its Shopify-reported
    primary domain. Background maintenance backfills existing installations and
-   refreshes domains every six hours; opening Refund also refreshes the mapping.
+   refreshes domains every six hours; opening Gooper.io also refreshes the mapping.
 2. Intake resolves only a known domain. A custom domain is rechecked with the
    canonical installed shop; arbitrary URLs are never fetched.
 3. The continuation expires after 30 minutes, uses authenticated encryption,
@@ -71,10 +71,10 @@ Shopify login or a confirmed test return.
 
 ### Customer sign-in scopes
 
-Refund requests `openid customer-account-api:full`. It verifies the ID token and
+Gooper.io requests `openid customer-account-api:full`. It verifies the ID token and
 then resolves the authenticated Customer Account API customer ID; it does not
 need an email claim to match ownership. The customer's checkout email can still
-be used on Shopify's own sign-in screen without granting Refund the OIDC `email`
+be used on Shopify's own sign-in screen without granting Gooper.io the OIDC `email`
 scope. In the Testing development store, requesting the additional `email`
 scope returned `invalid_scope`; the same PKCE flow without it successfully
 authenticated and retrieved the customer's orders. Do not broaden data access

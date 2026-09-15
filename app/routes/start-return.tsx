@@ -50,7 +50,7 @@ export default function StartReturn() {
   return (
     <main className="customer-returns">
       <header>
-        <span>REFUND · CUSTOMER RETURNS</span>
+        <span>GOOPER.IO · CUSTOMER RETURNS</span>
       </header>
       <h1>Where did you buy it?</h1>
       <p>

@@ -29,20 +29,20 @@ export default function ConnectAllStores() {
     <main className="customer-returns">
       <header>
         <a href="/stores">← Find a store</a>
-        <span>REFUND · ASSISTANT CONNECTION</span>
+        <span>GOOPER.IO · ASSISTANT CONNECTION</span>
       </header>
-      <h1>Connect your assistant to Refund for every store.</h1>
+      <h1>Connect your assistant to Gooper.io for every store.</h1>
       <p>
-        One connection works with every store that uses Refund. Confirm your
-        email once, and Refund finds your orders at the stores you bought from.
+        One connection works with every store that uses Gooper.io. Confirm your
+        email once, and Gooper.io finds your orders at the stores you bought from.
       </p>
       <section>
-        <h2>1. Add Refund to your assistant</h2>
+        <h2>1. Add Gooper.io to your assistant</h2>
         <p>
           Add a custom remote MCP connection in ChatGPT or hosted Claude. Name it
-          “Refund” and paste this URL:
+          “Gooper.io” and paste this URL:
         </p>
-        <label htmlFor="refund-all-stores-url">Refund connection URL</label>
+        <label htmlFor="refund-all-stores-url">Gooper.io connection URL</label>
         <input
           id="refund-all-stores-url"
           className="return-connection-url"
@@ -60,14 +60,14 @@ export default function ConnectAllStores() {
         </p>
         <p>
           Choose OAuth if asked, and leave client ID and secret blank. On the
-          page that opens, confirm the email you shop with and approve Refund.
+          page that opens, confirm the email you shop with and approve Gooper.io.
           No store sign-in needed.
         </p>
       </section>
       <section>
         <h2>2. Ask about a return</h2>
         <p>
-          Try: “I’d like to return something from [store].” Refund looks for
+          Try: “I’d like to return something from [store].” Gooper.io looks for
           your order there using the email you confirmed, so your assistant can
           usually help right away. If you used a different email at that store,
           it asks, and you tap a quick confirmation. No store account or sign-in
@@ -82,10 +82,10 @@ export default function ConnectAllStores() {
         <h2>3. Stay in control</h2>
         <p>
           A return and refund are only submitted after you confirm the exact
-          items and amount. Refund uses your email only to find your orders,
+          items and amount. Gooper.io uses your email only to find your orders,
           never for marketing. See and remove your confirmed emails and stores
           on <a href="/connect/manage">your connection page</a> in the browser
-          where you approved Refund, or remove Refund from your assistant at any
+          where you approved Gooper.io, or remove Gooper.io from your assistant at any
           time.
         </p>
       </section>

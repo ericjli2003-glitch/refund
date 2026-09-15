@@ -81,7 +81,7 @@ async function revokeGrantChain(
     });
     tokenHash = grant.rotatedToTokenHash;
   }
-  // Removing Refund from an assistant, or a replayed code or refresh token,
+  // Removing Gooper.io from an assistant, or a replayed code or refresh token,
   // ends an all-stores connection outright, including its confirmed emails.
   for (const connectionId of connections)
     await endConnection(db, connectionId, revokedAt);
@@ -167,7 +167,7 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
           // Refuse unbounded client accumulation during the initial hosted rollout.
           if ((await prisma.agentOAuthClient.count()) >= 5000)
             throw new ServerError(
-              "[registration_capacity] Refund cannot register more assistant clients at this time.",
+              "[registration_capacity] Gooper.io cannot register more assistant clients at this time.",
             );
           const id = randomUUID();
           const client: OAuthClientInformationFull = {
@@ -205,13 +205,13 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
         } catch (error) {
           if (error instanceof ServerError) throw error;
           throw new ServerError(
-            "[registration_storage] Refund could not save the assistant registration. The service operator must check storage and encryption configuration.",
+            "[registration_storage] Gooper.io could not save the assistant registration. The service operator must check storage and encryption configuration.",
           );
         }
       },
     },
     async authorize(client, params, res) {
-      // Every Refund address, /mcp/stores or a store's /mcp/<shop>, opens the
+      // Every Gooper.io address, /mcp/stores or a store's /mcp/<shop>, opens the
       // same connection to every store in the network.
       try {
         if (!isConnectionResource(params.resource)) throw new Error();
@@ -224,14 +224,14 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
           throw new Error();
       } catch {
         throw new InvalidRequestError(
-          "Invalid Refund resource, callback or PKCE challenge.",
+          "Invalid Gooper.io resource, callback or PKCE challenge.",
         );
       }
       let scopes: string[];
       try {
         scopes = checkedScopes(params.scopes);
       } catch {
-        throw new InvalidScopeError("Unsupported Refund permissions.");
+        throw new InvalidScopeError("Unsupported Gooper.io permissions.");
       }
       const rawId = randomToken();
       const id = digest(rawId);
@@ -369,7 +369,7 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
         try {
           requestedScopes = checkedScopes(scopes);
         } catch {
-          throw new InvalidScopeError("Unsupported Refund permissions.");
+          throw new InvalidScopeError("Unsupported Gooper.io permissions.");
         }
       }
       const result = await prisma.$transaction(async (tx) => {

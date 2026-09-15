@@ -10,7 +10,7 @@
 .heroCopy h1 {
   max-width: 13ch;
   margin: 0.55rem 0 1.5rem;
-  color: #f7f4ec;
+  color: #ffffff;
   font-size: clamp(3rem, 7vw, 6.6rem);
   font-weight: 600;
   letter-spacing: -0.065em;
@@ -20,7 +20,7 @@
 .lede {
   max-width: 42rem;
   margin: 0;
-  color: #b9c4bb;
+  color: #fff4e8;
   font-size: clamp(1.05rem, 2vw, 1.3rem);
   line-height: 1.7;
 }
@@ -33,32 +33,38 @@
 }
 
 .trustLine span {
-  border: 1px solid #31483a;
+  border: 1px solid rgb(255 255 255 / 40%);
   border-radius: 999px;
   padding: 0.48rem 0.75rem;
-  color: #d7ded7;
-  background: #132019;
+  color: #ffffff;
+  background: rgb(0 0 0 / 12%);
   font-size: 0.8rem;
 }
 
 .installCard {
-  border: 1px solid #2a3b31;
+  border: 1px solid #ffd6b0;
   border-radius: 1.25rem;
   padding: clamp(1.5rem, 4vw, 2.25rem);
-  background: linear-gradient(145deg, #17251d, #101713);
-  box-shadow: 0 1.75rem 5rem rgb(0 0 0 / 28%);
+  background: linear-gradient(145deg, #fff4e8, #ffe3c8);
+  color: #3b1d0a;
+  box-shadow: 0 1.75rem 5rem rgb(80 30 5 / 30%);
+}
+
+.installCard [class*="eyebrow"],
+.controlPanel [class*="eyebrow"] {
+  color: #b84a0e;
 }
 
 .installCard h2 {
   margin: 0.55rem 0 0.7rem;
-  color: #f7f4ec;
+  color: #3b1d0a;
   font-size: 2rem;
   letter-spacing: -0.035em;
 }
 
 .installCard > p:not(.finePrint) {
   margin: 0 0 1.5rem;
-  color: #aeb9b0;
+  color: #6b3a1c;
   line-height: 1.55;
 }
 
@@ -69,7 +75,7 @@
 }
 
 .label span {
-  color: #dfe6df;
+  color: #3b1d0a;
   font-size: 0.86rem;
   font-weight: 600;
 }
@@ -77,44 +83,44 @@
 .input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #3c5043;
+  border: 1px solid #b0703f;
   border-radius: 0.7rem;
   padding: 0.86rem 0.95rem;
-  color: #f7f4ec;
-  background: #0a100d;
+  color: #3b1d0a;
+  background: #ffffff;
   font: inherit;
 }
 
 .input:focus {
-  outline: 3px solid rgb(110 231 183 / 28%);
-  border-color: #6ee7b7;
+  outline: 3px solid rgb(194 65 12 / 30%);
+  border-color: #c2410c;
 }
 
 .button {
   border: 0;
   border-radius: 0.7rem;
   padding: 0.9rem 1rem;
-  color: #062016;
-  background: #6ee7b7;
+  color: #ffffff;
+  background: #c2410c;
   cursor: pointer;
   font: inherit;
   font-weight: 750;
 }
 
 .button:hover {
-  background: #8af0c8;
+  background: #9a3a0b;
 }
 
 .finePrint {
   margin: 0.9rem 0 0;
-  color: #829187;
+  color: #7a4a2a;
   font-size: 0.76rem;
   line-height: 1.5;
 }
 
 .section {
   padding: 5rem 0;
-  border-top: 1px solid #243229;
+  border-top: 1px solid rgb(255 255 255 / 25%);
 }
 
 .sectionHeading {
@@ -125,7 +131,7 @@
 .controlPanel h2 {
   max-width: 19ch;
   margin: 0.5rem 0 0;
-  color: #f7f4ec;
+  color: #ffffff;
   font-size: clamp(2rem, 4vw, 3.5rem);
   letter-spacing: -0.045em;
   line-height: 1.05;
@@ -139,14 +145,14 @@
 
 .featureCard {
   min-height: 15rem;
-  border: 1px solid #27372d;
+  border: 1px solid rgb(255 255 255 / 25%);
   border-radius: 1rem;
   padding: 1.5rem;
-  background: #111b16;
+  background: rgb(0 0 0 / 12%);
 }
 
 .step {
-  color: #6ee7b7;
+  color: #ffffff;
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.12em;
@@ -154,13 +160,13 @@
 
 .featureCard h3 {
   margin: 3.5rem 0 0.7rem;
-  color: #eff2ec;
+  color: #ffffff;
   font-size: 1.25rem;
 }
 
 .featureCard p {
   margin: 0;
-  color: #9dac9f;
+  color: #fff4e8;
   line-height: 1.65;
 }
 
@@ -171,12 +177,12 @@
   margin: 2rem 0 7rem;
   border-radius: 1.25rem;
   padding: clamp(2rem, 6vw, 4rem);
-  color: #092218;
-  background: #b7f7d8;
+  color: #3b1d0a;
+  background: #fff4e8;
 }
 
 .controlPanel h2 {
-  color: #092218;
+  color: #3b1d0a;
 }
 
 .controlPanel ul {
@@ -188,7 +194,7 @@
 }
 
 .controlPanel li {
-  border-bottom: 1px solid rgb(9 34 24 / 20%);
+  border-bottom: 1px solid rgb(59 29 10 / 20%);
   padding: 1rem 0;
   font-weight: 650;
 }

@@ -41,6 +41,6 @@ app.use(((error, _req, res, _next) => {
     .json({ error: status === 413 ? "request_too_large" : "server_error" });
 }) as express.ErrorRequestHandler);
 app.listen(Number(process.env.PORT || 3000), "0.0.0.0", () => {
-  console.log("Refund HTTP server ready");
+  console.log("Gooper.io HTTP server ready");
   startMerchantMaintenance();
 });

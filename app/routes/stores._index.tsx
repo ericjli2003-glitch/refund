@@ -40,11 +40,11 @@ export async function action({ request }: ActionFunctionArgs) {
 }
 
 export const meta: MetaFunction = () => [
-  { title: "Find your store | Refund returns" },
+  { title: "Find your store | Gooper.io returns" },
   {
     name: "description",
     content:
-      "Find a participating store by name and securely start a return with Refund.",
+      "Find a participating store by name and securely start a return with Gooper.io.",
   },
 ];
 export async function loader({ request }: LoaderFunctionArgs) {
@@ -107,7 +107,7 @@ export default function Stores() {
           starting a return. No merchant will be contacted.
         </p>
         <p>
-          Refund keeps a limited business-name discovery record for private
+          Gooper.io keeps a limited business-name discovery record for private
           service improvement and merchant opportunity review. Do not include
           personal or order details.
         </p>

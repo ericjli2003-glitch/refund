@@ -74,7 +74,7 @@ try {
   // Store setup pages lead to the one connection for every store.
   assert.ok(connectHtml.includes("https://refund.test/mcp/stores"));
   assert.ok(
-    connectHtml.includes("Connect your assistant to Refund for every store."),
+    connectHtml.includes("Connect your assistant to Gooper.io for every store."),
   );
   assert.ok(!connectHtml.includes(`https://refund.test/mcp/${shop}`));
   assert.ok(!connectHtml.includes("private-smoke-token-never-sent"));

@@ -46,7 +46,7 @@ export type AgentMcpEndpoint = {
   createServer: (authorization: string | null) => McpServer;
 };
 
-// Every request needs a Refund access token, and a tool call is also checked
+// Every request needs a Gooper.io access token, and a tool call is also checked
 // against that tool's permission before the MCP server runs it, so hosts get
 // an HTTP challenge rather than only a tool error.
 export async function handleAgentMcp(

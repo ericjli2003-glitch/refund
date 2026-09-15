@@ -6,7 +6,7 @@ const methodResponse = (request: Request) =>
   intakeResponse(
     request.method === "OPTIONS"
       ? new Response(null, { status: 204 })
-      : new Response("Use POST for the public Refund intake MCP endpoint.", {
+      : new Response("Use POST for the public Gooper.io intake MCP endpoint.", {
           status: 405,
           headers: { Allow: "POST, OPTIONS" },
         }),

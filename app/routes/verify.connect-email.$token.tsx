@@ -55,12 +55,12 @@ export default function ConfirmConnectEmail() {
     <main className="customer-returns">
       <h1>Confirm your email</h1>
       <p>
-        You’re connecting {info.assistant} to Refund with {info.sentTo}. Which
-        number is the Refund page showing?
+        You’re connecting {info.assistant} to Gooper.io with {info.sentTo}. Which
+        number is the Gooper.io page showing?
       </p>
       <Form method="post">
         <input type="hidden" name="csrf" value={info.csrf} />
-        <div role="group" aria-label="Number shown on the Refund page">
+        <div role="group" aria-label="Number shown on the Gooper.io page">
           {info.choices.map((choice) => (
             <button key={choice} name="choice" value={choice} disabled={busy}>
               {choice}
@@ -74,8 +74,8 @@ export default function ConfirmConnectEmail() {
         </p>
       </Form>
       <p>
-        Refund uses this email only to find your orders at stores that use
-        Refund. Never for marketing.
+        Gooper.io uses this email only to find your orders at stores that use
+        Gooper.io. Never for marketing.
       </p>
     </main>
   );

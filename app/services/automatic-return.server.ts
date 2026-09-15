@@ -543,7 +543,7 @@ async function settledOrBlocked(
     )
   )
     throw new Error(
-      "This order was refunded in Shopify after the customer's request. Refund issued no further refund; resolve the return in Shopify.",
+      "This order was refunded in Shopify after the customer's request. Gooper.io issued no further refund; resolve the return in Shopify.",
     );
   const current = (
     await adminData<{
@@ -558,7 +558,7 @@ async function settledOrBlocked(
     await approveReturn(admin, record.returnId, record.orderId);
   else if (current.status !== "OPEN")
     throw new Error(
-      `Shopify shows this return as ${current.status.toLowerCase()}. Refund issued no further refund; check the order in Shopify.`,
+      `Shopify shows this return as ${current.status.toLowerCase()}. Gooper.io issued no further refund; check the order in Shopify.`,
     );
   return null;
 }
@@ -635,7 +635,7 @@ function storedItems(value: Prisma.JsonValue): RequestedItem[] {
 }
 
 // Merchant-initiated recovery for a return Shopify requested or approved but
-// Refund never refunded. Nothing is refunded twice (see settledOrBlocked), the
+// Gooper.io never refunded. Nothing is refunded twice (see settledOrBlocked), the
 // amount must still equal what the customer confirmed, and an on-receipt
 // return goes back to waiting for its item rather than refunding early.
 export async function retryApprovedReturn(
@@ -712,7 +712,7 @@ export async function receiveReturnedItems(
   const items = storedItems(record.requestedLineItems);
   const onReceipt = record.refundTiming === "ON_RECEIPT";
   // RECEIVING also keeps a returns/process webhook for this very call from
-  // flagging the return as processed outside Refund.
+  // flagging the return as processed outside Gooper.io.
   const claimed = await prisma.agentReturn.updateMany({
     where: { id: record.id, shop, status: record.status, itemReceivedAt: null },
     data: { itemReceivedAt: new Date(), ...(onReceipt ? { status: "RECEIVING" } : {}) },
@@ -772,7 +772,7 @@ export async function receiveReturnedItems(
 
 // A string is a live Shopify customer session, which applies the store's own
 // return rules. Otherwise it's a store link's verified customer, reached
-// through the Admin API with the return rules the merchant confirmed in Refund.
+// through the Admin API with the return rules the merchant confirmed in Gooper.io.
 export async function getReturnableOrders(
   shop: string,
   access: CustomerAccess,

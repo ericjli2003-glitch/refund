@@ -1,16 +1,16 @@
-# Refund
+# Gooper.io
 
 ## Customer MCP connection
 
-Customers connect Refund to hosted ChatGPT or Claude once, at `/connect` with the
+Customers connect Gooper.io to hosted ChatGPT or Claude once, at `/connect` with the
 MCP URL `/mcp/stores`, and the connection works with every store that uses
-Refund. Store addresses (`/mcp/:shop`) saved from earlier setup pages open the
+Gooper.io. Store addresses (`/mcp/:shop`) saved from earlier setup pages open the
 same connection. The assistant can find orders, quote, and submit returns and
 refunds to the original payment method, each one after the customer confirms it
 in chat. Stores are reached through the email the customer confirms when
 connecting, a one-tap email confirmation for another address, or a Shopify
 sign-in where a store needs one. By default a linked store stays linked without
-another sign-in, using return rules the merchant confirms in Refund. See
+another sign-in, using return rules the merchant confirms in Gooper.io. See
 [customer connection setup and test limits](docs/AGENT_ACCESS.md).
 
 ## Alternative browser flow
@@ -20,13 +20,13 @@ Merchant-owned `/agents.md` and Shopify App Proxy entry points are documented in
 path reuses the existing portal and execution engine without a shopper connector
 or a required theme embed. It is MCP/browser handoff, not a standard UCP returns API.
 
-Refund is a Shopify app for customer-confirmed returns in compatible AI
-browsers. A merchant installs Refund and enables either its storefront app embed
+Gooper.io is a Shopify app for customer-confirmed returns in compatible AI
+browsers. A merchant installs Gooper.io and enables either its storefront app embed
 or the merchant-owned agent guide/App Proxy entry;
 customers do not install a connector or plugin. When an AI opens that storefront,
 WebMCP page tools advertise return support and can open the store's visible
 return flow. A customer signs in with the retailer, selects eligible line items,
-reviews Shopify's calculated amount, and explicitly confirms before Refund opens
+reviews Shopify's calculated amount, and explicitly confirms before Gooper.io opens
 the return and submits an idempotent refund to the original payment method.
 
 This is capability discovery, not background AI-visitor detection. The browser
@@ -64,10 +64,10 @@ cannot finish cleanly are marked `NEEDS_ATTENTION` for merchant review.
   expiry cleanup, customer redaction, shop redaction, and uninstall.
 - Customer identity is stored as a keyed hash. The one exception is an
   assistant store link that stays active without a new sign-in, which keeps the
-  verified Shopify customer ID encrypted (AES-256-GCM) so Refund can act for
+  verified Shopify customer ID encrypted (AES-256-GCM) so Gooper.io can act for
   that customer. Disconnecting the assistant, customer redaction, uninstall and
   a year without use delete it.
-- Refund does not collect card numbers. Shopify refunds the original order
+- Gooper.io does not collect card numbers. Shopify refunds the original order
   transaction.
 - The app handles Shopify's customer data-request, customer-redaction,
   shop-redaction, and uninstall webhooks.
@@ -99,11 +99,11 @@ npm run build
 
 ## Storefront WebMCP
 
-Installing Refund and opening its Shopify app provisions the store identity,
+Installing Gooper.io and opening its Shopify app provisions the store identity,
 merchant directory entry, store currency, and initial settings automatically.
 The hosted `/returns/SHOP.myshopify.com` portal supports customer verification,
 purchase lookup, estimates, and resumable drafts without a theme embed or a
-separate Refund account. Shopify customer accounts must be available on the store.
+separate Gooper.io account. Shopify customer accounts must be available on the store.
 Automatic refund payments remain optional and off for a new installation. An
 estimate created while they are off has a signed non-submittable flag; enabling
 payments later cannot turn that old estimate into authorization.
@@ -120,7 +120,7 @@ currently installed merchants. `/stores/testing-bl7vdfur.myshopify.com` is the
 public Testing Storefront return page and registers the same top-level tools as
 the theme embed. The page includes canonical metadata, visible merchant identity,
 structured data, and a sitemap entry. Installed stores are listed by default, and
-a merchant can hide the store from the Refund dashboard. `/llms.txt` lists them for
+a merchant can hide the store from the Gooper.io dashboard. `/llms.txt` lists them for
 assistants, and the public MCP's `find_store` tool searches them by partial name or
 website, returning every match for the customer to choose from.
 
@@ -137,14 +137,14 @@ customer who prefers the form. Quotes, errors, sign-out, and submission status
 remain visible. Without Site Tools, the ordinary purchase form stays expanded.
 The intake and portal tools ask the assistant to present results in the
 conversation and keep the portal loaded in a background tab where supported.
-Refund cannot hide ChatGPT's browser panel or focus the chat itself. Closing or
+Gooper.io cannot hide ChatGPT's browser panel or focus the chat itself. Closing or
 navigating the page can remove its tools; Shopify sign-in remains a visible
 customer action. See [OpenAI Site Tools](https://learn.chatgpt.com/docs/webmcp).
 
 ### Crawl rules are discovery support, not tool registration
 
 Shopify already provides `robots.txt`. Do not replace merchant rules or add a
-mandatory theme-edit step during installation. Refund's own `/robots.txt` allows
+mandatory theme-edit step during installation. Gooper.io's own `/robots.txt` allows
 public merchant profiles and advertises `/sitemap.xml`, while excluding private
 return, customer, and API routes. OAI-SearchBot uses the existing wildcard group;
 no additional agent-specific allow-all group is needed. Crawl permission does
@@ -155,9 +155,9 @@ See [OpenAI crawler roles](https://developers.openai.com/api/docs/bots) and
 On 2026-09-08, Testing's public `robots.txt` already allowed public crawling and
 linked Shopify shopping-agent/UCP discovery pages. Its `/agents.md` URL returned
 the password-protected storefront page to an unauthenticated request. Those
-comments do not register Refund tools. A future merchant-specific crawl-rule
+comments do not register Gooper.io tools. A future merchant-specific crawl-rule
 adjustment should follow an observed block and preserve existing/default rules;
-the public Refund profile remains the current discovery surface for this pilot.
+the public Gooper.io profile remains the current discovery surface for this pilot.
 
 The `refund-site-tools` theme app extension registers two page-scoped tools in
 browsers that support WebMCP:
@@ -212,7 +212,7 @@ return shipping labels.
 website plus optional `orderName` and `itemName` hints and returns a secure
 `continueUrl`. The same operation is available as JSON POST `/api/return-intake`.
 `/start-return` provides a human-readable entry page and accepts the same three
-query parameters for storefront handoffs. No customer account or Refund
+query parameters for storefront handoffs. No customer account or Gooper.io
 connector authorization is needed to prepare this link.
 
 The link carries encrypted, authenticated hints, expires after 30 minutes, and
@@ -223,9 +223,9 @@ authentication, a fresh exact quote, and explicit confirmation.
 
 Canonical installed `*.myshopify.com` domains work immediately. Primary custom
 domains are recorded from Shopify on app authentication, whenever the
-merchant opens the Refund dashboard, and by background directory maintenance.
+merchant opens the Gooper.io dashboard, and by background directory maintenance.
 Custom-domain requests are rechecked
-against that installed shop's Admin API; Refund never fetches a caller-supplied
+against that installed shop's Admin API; Gooper.io never fetches a caller-supplied
 website to infer the shop. Store names resolve only when they uniquely match a
 published merchant profile. An unresolved store is not a determination of return eligibility.
 
@@ -254,14 +254,14 @@ intake, not automatic discovery in every chat. The host still needs access to
 these tools, or a compatible browser must visit the store. Verification happens
 on Shopify's secure page. The current continuation resumes in the customer
 portal; it does **not** link a ChatGPT/Claude account, issue an agent access token,
-or resume protected remote tools. A Refund OAuth provider and host registration
+or resume protected remote tools. A Gooper.io OAuth provider and host registration
 are now implemented through a merchant-specific OAuth connection. The browser
 sign-in and exact-quote flow has been verified in the development store; each
 native host still needs its own connection and live acceptance test.
 
 ### Protected store tools
 
-The protected store endpoint is reserved for customer-approved Refund grants:
+The protected store endpoint is reserved for customer-approved Gooper.io grants:
 
 ```text
 https://YOUR_APP_HOST/mcp/SHOP.myshopify.com
@@ -269,7 +269,7 @@ https://YOUR_APP_HOST/mcp/SHOP.myshopify.com
 
 The backend supports hosted ChatGPT/Claude OAuth connection testing. The legacy Shopify-token
 pass-through has been removed. Cookies, Shopify tokens, intake links and quotes
-cannot authorize this endpoint. It accepts only separate, expiring Refund grants
+cannot authorize this endpoint. It accepts only separate, expiring Gooper.io grants
 bound to an approved client, customer session, store and resource, with per-tool
 `returns:read`, `returns:quote`, or `returns:submit` permissions. Submission still
 requires the exact signed quote and affirmative customer confirmation.
@@ -277,7 +277,7 @@ requires the exact signed quote and affirmative customer confirmation.
 The production HTTP server mounts the MCP SDK's OAuth handlers, durable dynamic
 client registration, and a separate customer consent page. A single-use S256
 PKCE code exchange mints the grant; no MCP tool exposes token minting. The
-metadata points to Refund's issuer, not Shopify. Customer sign-in resumes the
+metadata points to Gooper.io's issuer, not Shopify. Customer sign-in resumes the
 assistant consent screen, then returns a code to the exact host callback.
 See [connection setup and test limits](docs/AGENT_ACCESS.md).
 
@@ -290,7 +290,7 @@ The app uses PostgreSQL and runs Prisma migrations before starting the server.
 2. Set `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, and
    `PUBLIC_SUPPORT_EMAIL` in Render. The blueprint supplies `DATABASE_URL`.
    Also set `REFUND_SECRET` to a long random value so rotating the Shopify app
-   secret cannot orphan Refund's sealed data or customer identity hashes. On an
+   secret cannot orphan Gooper.io's sealed data or customer identity hashes. On an
    existing deployment, set `REFUND_PREVIOUS_SECRETS` to the current
    `SHOPIFY_API_SECRET` value at the same time; see `docs/PROJECT_STATE.md`.
 3. Keep `application_url`, the `/auth/callback` admin redirect,
@@ -313,11 +313,11 @@ cannot reach PostgreSQL.
 
 ## Connector-free ChatGPT desktop test (stop after quote)
 
-1. Install Refund and open its Shopify app. The hosted return portal is available
+1. Install Gooper.io and open its Shopify app. The hosted return portal is available
    without activating automatic payments or the theme embed. For the storefront
    variant of this test, activate **AI return assistance** in the published theme.
 2. Use the latest ChatGPT desktop app with Site tools enabled. Choose GPT-5.6
-   Sol or GPT-5.6 Terra. Do not install or enable the Refund connector.
+   Sol or GPT-5.6 Terra. Do not install or enable the Gooper.io connector.
 3. Start a blank Work/Codex conversation with no storefront tab open and say:
    `Return the snowboard I bought from Testing Storefront at https://testing-bl7vdfur.myshopify.com/. Navigate to the store
    yourself, use its site tools, and stop after showing me the quote. Do not
@@ -328,7 +328,7 @@ cannot reach PostgreSQL.
    bar lists `get_store_return_options` and `start_return` as site tools.
 5. Let ChatGPT call `start_return` and open its `continueUrl`. Complete Shopify
    customer verification yourself; never give the assistant the sign-in code.
-6. Back in the Refund portal, confirm its site tools include
+6. Back in the Gooper.io portal, confirm its site tools include
    `get_return_session`, `check_return_status`, `find_returnable_items`, and
    `quote_return`. Let ChatGPT find the snowboard and calculate the quote.
 7. Stop when the exact item, quantity, currency, amount, expiry, and correlation
@@ -343,31 +343,31 @@ Providing the exact URL tests connector-free navigation and tool discovery;
 resolving the generic name "Testing Storefront" alone is a separate, unproven
 merchant-identification test. Site tools are rollout-dependent and are currently
 unavailable with Luna or Enterprise/Edu; if no tools appear, check host support
-before interpreting that as a Refund failure.
+before interpreting that as a Gooper.io failure.
 
 For the new merchant-discovery acceptance test, start a separate blank conversation
 with just: `I want to return my snowboard from Testing Storefront.` Confirm the
-assistant identifies the exact Shopify domain or its Refund return page before
+assistant identifies the exact Shopify domain or its Gooper.io return page before
 authentication. If it cannot find the store, stop without starting a return.
-When Refund's `/stores` page is available, call `report_merchant_discovery_failure`
+When Gooper.io's `/stores` page is available, call `report_merchant_discovery_failure`
 with only `merchant: "Testing Storefront"`, then stop. Do not use a URL fallback
 to continue the return, substitute another store or product, or contact the merchant.
 When discovery succeeds, stop at the quote. The storefront password
-does not gate the public Refund merchant page; Shopify customer verification remains
+does not gate the public Gooper.io merchant page; Shopify customer verification remains
 required for all private purchase data.
 
 ### Private merchant opportunities
 
 Unresolved intake and explicit store-finder POST searches stop without returning a
-verification link, creating a return draft, looking up purchases, or quoting. Refund
+verification link, creating a return draft, looking up purchases, or quoting. Gooper.io
 records a private `MerchantOpportunity` for the owner, never in a merchant dashboard,
 customer response, notification, or merchant outreach. On `/stores`, the top-level
 `find_merchant_return_page` and `report_merchant_discovery_failure` tools provide
 the connector-free lookup/report path. A report always stops—even if the merchant
 is already installed. Failed searches entirely inside ChatGPT are invisible to
-Refund unless the assistant visits Refund or calls the reporting endpoint.
+Gooper.io unless the assistant visits Gooper.io or calls the reporting endpoint.
 
-Owner access: run `npm run opportunities` in the trusted Refund backend shell with
+Owner access: run `npm run opportunities` in the trusted Gooper.io backend shell with
 its existing database access (for example, the Render service shell). It lists the
 100 most recently seen, nonexpired records. There is no public read/export API and
 no merchant permission grants access to this report. Entries are unreviewed signals,

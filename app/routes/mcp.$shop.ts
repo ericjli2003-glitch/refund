@@ -4,7 +4,7 @@ import { normalizeShopDomain } from "../services/customer-account.server";
 import { handleNetworkMcp } from "../services/network-mcp.server";
 
 // A store's address, saved from an earlier setup page, opens the same
-// connection to every Refund store as /mcp/stores.
+// connection to every Gooper.io store as /mcp/stores.
 const handle = (request: Request, shopParam: string) => {
   let shop: string;
   try {

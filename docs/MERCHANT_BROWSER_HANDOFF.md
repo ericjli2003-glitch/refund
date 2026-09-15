@@ -1,17 +1,17 @@
-# Merchant-side returns without a Refund connector
+# Merchant-side returns without a Gooper.io connector
 
 This is the priority path for customers bringing their own **compatible browser
-agent**. The merchant installs Refund; the customer does not install a Refund
+agent**. The merchant installs Gooper.io; the customer does not install a Gooper.io
 connector. It is separate from the optional remote ChatGPT/Claude OAuth connector.
 
 ## Intended customer journey
 
 1. The customer asks their assistant to return a purchase from a merchant.
 2. The assistant opens the merchant's storefront in a browser that exposes
-   WebMCP tools. The merchant's enabled Refund embed publishes
+   WebMCP tools. The merchant's enabled Gooper.io embed publishes
    `get_store_return_options` and `start_return`, even with the launcher off.
 3. The assistant invokes `start_return` with order/item hints. This opens
-   the return panel and provides a visible link to the merchant's Refund portal.
+   the return panel and provides a visible link to the merchant's Gooper.io portal.
    It does not read orders or submit a return.
 4. On the portal, `get_return_session` reports whether customer verification is
    needed, or restores the verified customer's draft and quote. The customer completes Shopify sign-in themselves. Credentials and
@@ -24,7 +24,7 @@ connector. It is separate from the optional remote ChatGPT/Claude OAuth connecto
 
 ## What detection means
 
-Refund does not watch private ChatGPT/Claude conversations. A user-agent string,
+Gooper.io does not watch private ChatGPT/Claude conversations. A user-agent string,
 bot classifier, HTTP header, website visit or initial return intent is not proof
 of identity or approval. We publish narrowly scoped tools; a compatible agent
 chooses to invoke the return tool when its user asks. No background refund starts
@@ -52,7 +52,7 @@ registration failed. “Available” means page registration succeeded, **not** 
 ChatGPT or Claude has discovered or executed those tools. Unsupported browsers
 retain the normal return form. No flags, origin-trial enrollment, browser
 extension installation, cross-origin tool exposure or host permissions are
-silently enabled by Refund.
+silently enabled by Gooper.io.
 
 ## Acceptance checklist
 
@@ -82,18 +82,18 @@ unimplemented capabilities; this path uses the existing original-payment refund.
 
 Shopify serves the merchant's `/.well-known/ucp` profile. Its documented
 [Order MCP](https://shopify.dev/docs/agents/orders/order-mcp) currently exposes
-`get_order`, limited to orders placed through the calling agent. Refund's
+`get_order`, limited to orders placed through the calling agent. Gooper.io's
 Customer Account API flow handles the customer's existing purchases separately.
 The [profile documentation](https://shopify.dev/docs/agents/profiles) describes
 capability negotiation, but provides no app registration API for appending
-Refund's tools to that Shopify-owned profile. A Refund-hosted JSON file alone
+Gooper.io's tools to that Shopify-owned profile. A Gooper.io-hosted JSON file alone
 would not publish the app through the merchant's UCP service. Keep the existing
 WebMCP/MCP surfaces until a supported Shopify publication mechanism is available.
 
 The UCP Order capability (`dev.ucp.shopping.order`) is business-pushed: the
 business sends order `adjustments`, including returns and refunds, to the
-platform. Refund processes returns natively with `returnProcess`, so they are
+platform. Gooper.io processes returns natively with `returnProcess`, so they are
 ordinary Shopify returns, and any UCP order update about them is Shopify's to
 publish. UCP also requires vendor capabilities to use the vendor's own
-reverse-domain namespace hosted on that domain, so Refund defines none while it
+reverse-domain namespace hosted on that domain, so Gooper.io defines none while it
 is served from a Render subdomain.

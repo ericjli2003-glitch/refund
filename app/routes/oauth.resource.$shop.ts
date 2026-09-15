@@ -7,7 +7,7 @@ import {
 } from "../services/customer-security.server";
 
 // Resource metadata for a store's MCP address. That address opens the same
-// connection to every Refund store; the resource stays the address itself,
+// connection to every Gooper.io store; the resource stays the address itself,
 // because hosts check that it matches the URL they connected to.
 export const loader = async ({ params }: LoaderFunctionArgs) => {
   const headers = { ...privateHeaders, "Access-Control-Allow-Origin": "*" };
@@ -24,7 +24,7 @@ export const loader = async ({ params }: LoaderFunctionArgs) => {
         authorization_servers: [appOrigin()],
         scopes_supported: [...agentScopes],
         bearer_methods_supported: ["header"],
-        resource_name: "Refund returns for every store",
+        resource_name: "Gooper.io returns for every store",
       },
       { headers },
     );
