@@ -139,7 +139,8 @@ function AlwaysAllowPreview({ assistant }: { assistant: string }) {
         ))}
       </div>
       <figcaption>
-        What to choose in {assistant}: {settingsPath(assistant)}
+        What to choose in {assistant}: {settingsPath(assistant)}. Both groups
+        sit on Gooper.io’s own page, one click into your connectors list.
       </figcaption>
     </figure>
   );
@@ -189,9 +190,10 @@ function ConnectedStep({
       </header>
       <h1>One tap to finish — then turn on Always allow</h1>
       <p className="lead">
-        Tap below to finish connecting. {assistant}’s connector settings open in a
-        new tab: go to {settingsPath(assistant)} and set both tool groups to{" "}
-        <strong>Always allow</strong>, so your returns don’t stop at every step.
+        Tap below to finish connecting. Your {assistant} connectors open in a new
+        tab: click <strong>Gooper.io</strong> in that list, then set both tool
+        groups to <strong>Always allow</strong> so your returns don’t stop at
+        every step.
       </p>
       <AlwaysAllowPreview assistant={assistant} />
       <div className="button-row">
@@ -203,7 +205,7 @@ function ConnectedStep({
             window.open(settingsUrl, "_blank", "noopener,noreferrer");
           }}
         >
-          Finish &amp; open {assistant} settings ↗
+          Finish &amp; open my {assistant} connectors ↗
         </a>
         <a
           className="return-button secondary"
@@ -217,8 +219,10 @@ function ConnectedStep({
         {finishing
           ? `Finishing your connection in ${assistant}.`
           : `If you don’t tap anything, we’ll finish connecting in ${seconds} second${seconds === 1 ? "" : "s"}.`}{" "}
-        If Gooper.io isn’t listed in the settings tab yet, refresh it once the
-        connection finishes.
+        If Gooper.io isn’t listed in that tab yet, or its tools haven’t loaded,
+        refresh it once the connection finishes. You can also choose{" "}
+        <strong>Always allow</strong> the first time {assistant} asks to use a
+        Gooper.io tool in your chat.
       </p>
       <details>
         <summary>What happens if I leave it on “Ask for approval”?</summary>
