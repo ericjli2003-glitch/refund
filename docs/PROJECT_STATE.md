@@ -489,12 +489,15 @@ Assistants decide whether a connector's tools need approval, and Claude sets
 write tools to "Needs approval" by default. Gooper.io can't change that, and the
 setting only exists once the connection is made.
 
-- After Allow, the consent page shows "You're connected — one last step" with
-  **Open Claude connector settings** (claude.ai/customize/connectors, or
-  ChatGPT's settings) in a new tab and **Back to Claude**. A dropdown explains
-  what "Ask for approval" costs, and the page returns to the assistant
-  automatically after 10 seconds. Opening settings also finishes connecting,
-  so Gooper.io is listed in the new tab.
+- After Allow, the consent page shows "One tap to finish — then turn on Always
+  allow" with the steps and a preview of both tool groups.
+  **Finish & open Claude settings** opens the connector settings
+  (claude.ai/customize/connectors, or ChatGPT's settings) in a new tab and
+  finishes the connection in this tab, the way assistants expect their sign-in
+  window to return. **Just finish connecting** skips the settings tab. If the
+  customer taps nothing, the page finishes connecting after 60 seconds, so a
+  connection is never left half done. A dropdown explains what "Ask for
+  approval" costs.
 - Authorization codes now last 10 minutes (was 2), OAuth's recommended maximum,
   so the screen can't outlast the code. Codes are still single use and bound to
   PKCE and the approving browser.

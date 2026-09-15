@@ -155,7 +155,10 @@ const connectorSettingsUrl = (assistant: string) =>
     ? "https://chatgpt.com/#settings/Connectors"
     : "https://claude.ai/customize/connectors";
 
-const AUTO_CONTINUE_SECONDS = 10;
+// Finishing happens in this tab, the way assistants expect their sign-in window
+// to return; settings open alongside in a new tab. If the customer taps
+// nothing, the connection still finishes long before its code expires.
+const AUTO_FINISH_SECONDS = 60;
 
 function ConnectedStep({
   assistant,
@@ -166,48 +169,56 @@ function ConnectedStep({
   continueUrl: string;
   settingsUrl: string;
 }) {
-  const [seconds, setSeconds] = useState(AUTO_CONTINUE_SECONDS);
+  const [seconds, setSeconds] = useState(AUTO_FINISH_SECONDS);
+  const [finishing, setFinishing] = useState(false);
   useEffect(() => {
+    if (finishing) return;
     if (seconds <= 0) {
+      setFinishing(true);
       window.location.assign(continueUrl);
       return;
     }
     const timer = window.setTimeout(() => setSeconds((value) => value - 1), 1000);
     return () => window.clearTimeout(timer);
-  }, [seconds, continueUrl]);
+  }, [seconds, finishing, continueUrl]);
   return (
     <main className="customer-returns connection-page">
       <header>
         <span>GOOPER.IO</span>
         <span>STEP 3 OF 3</span>
       </header>
-      <h1>You’re connected — one last step</h1>
+      <h1>One tap to finish — then turn on Always allow</h1>
       <p className="lead">
-        In {assistant}, go to {settingsPath(assistant)} and set both tool groups
-        to <strong>Always allow</strong>, so {assistant} can finish your returns
-        without stopping to ask before each step.
+        Tap below to finish connecting. {assistant}’s connector settings open in a
+        new tab: go to {settingsPath(assistant)} and set both tool groups to{" "}
+        <strong>Always allow</strong>, so your returns don’t stop at every step.
       </p>
       <AlwaysAllowPreview assistant={assistant} />
       <div className="button-row">
         <a
           className="return-button"
-          href={settingsUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          // Finish connecting here, so Gooper.io is listed in the new tab.
-          onClick={() => window.setTimeout(() => window.location.assign(continueUrl), 300)}
+          href={continueUrl}
+          onClick={() => {
+            setFinishing(true);
+            window.open(settingsUrl, "_blank", "noopener,noreferrer");
+          }}
         >
-          Open {assistant} connector settings ↗
+          Finish &amp; open {assistant} settings ↗
         </a>
-        <a className="return-button secondary" href={continueUrl}>
-          Back to {assistant}
+        <a
+          className="return-button secondary"
+          href={continueUrl}
+          onClick={() => setFinishing(true)}
+        >
+          Just finish connecting
         </a>
       </div>
       <p className="consent-email-hint" role="status" aria-live="polite">
-        {seconds > 0
-          ? `Taking you back to ${assistant} in ${seconds} second${seconds === 1 ? "" : "s"}.`
-          : `Taking you back to ${assistant}.`}{" "}
-        If Gooper.io isn’t listed in settings yet, refresh that tab in a moment.
+        {finishing
+          ? `Finishing your connection in ${assistant}.`
+          : `If you don’t tap anything, we’ll finish connecting in ${seconds} second${seconds === 1 ? "" : "s"}.`}{" "}
+        If Gooper.io isn’t listed in the settings tab yet, refresh it once the
+        connection finishes.
       </p>
       <details>
         <summary>What happens if I leave it on “Ask for approval”?</summary>
