@@ -191,6 +191,29 @@ export async function createReturnQuote(
   };
 }
 
+// In chat the customer has already asked for this return. When nothing is
+// deducted, the refund is exactly what they asked for, so the assistant submits
+// without another question; a fee is the one thing worth checking first.
+export function chatQuoteNextStep(quote: {
+  submissionAvailable: boolean;
+  returnFees?: { restocking: unknown; returnShipping: unknown } | null;
+}) {
+  const goAheadWithoutAsking = Boolean(
+    quote.submissionAvailable &&
+      quote.returnFees &&
+      !quote.returnFees.restocking &&
+      !quote.returnFees.returnShipping,
+  );
+  return {
+    goAheadWithoutAsking,
+    nextStep: !quote.submissionAvailable
+      ? "The store reviews these returns itself, so nothing can be submitted from chat. Let the customer know kindly and stop."
+      : goAheadWithoutAsking
+        ? "Nothing is deducted, so the customer's request is the go-ahead. Call confirm_return now without asking, then tell them it's done: the refund amount, when it arrives, and how to send the item back."
+        : "A return fee comes out of this refund, so check once before submitting: in one sentence, say what's going back, the fee and the refund, and ask if they'd like to go ahead.",
+  };
+}
+
 export async function submitReturnQuote(
   shop: string,
   customerToken: CustomerAccess,

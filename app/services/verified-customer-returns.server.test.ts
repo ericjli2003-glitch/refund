@@ -305,6 +305,38 @@ test("verified quotes and return requests apply the merchant's confirmed fees ac
   );
 });
 
+test("Shopify's negative line credits quote as money back to the customer", async (t) => {
+  confirmedRules(t);
+  const { admin } = adminMock(({ query }) => {
+    if (query.includes("VerifiedReturnableFulfillments")) return returnable;
+    if (query.includes("VerifiedReturnCalculation"))
+      return {
+        returnCalculate: {
+          returnLineItems: [
+            {
+              quantity: 1,
+              fulfillmentLineItem: { lineItem: { id: "gid://shopify/LineItem/1" } },
+              subtotalSet: bag("-20.00"),
+              totalTaxSet: bag("-2.00"),
+              restockingFee: null,
+            },
+          ],
+          returnShippingFee: null,
+        },
+      };
+    throw new Error(`Unexpected query: ${query}`);
+  });
+  const calculation = await calculateVerifiedReturn(
+    shop,
+    order,
+    [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1 }],
+    admin,
+  );
+  assert.deepEqual(calculation.financialSummary, {
+    returnTotalSet: { presentmentMoney: money("-22.00"), shopMoney: money("-22.00") },
+  });
+});
+
 test("verified links need confirmed rules, and product access when final-sale collections are set", () => {
   const policy = {
     verifiedStoreLinks: true,

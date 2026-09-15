@@ -9,8 +9,8 @@ must be completed in Shopify, the host, and the assistant platforms.
 
 **Subtitle:** Customer-confirmed returns in AI assistants
 
-**One-line value:** Let authenticated customers complete eligible returns with
-explicit confirmation while you control the return window and refund limit.
+**One-line value:** Let verified customers complete eligible returns in one
+request while you control the return window, refund limit and return fees.
 
 **Description:**
 
@@ -75,10 +75,11 @@ fields in Partner Dashboard, never in this repository.
    test order, set a maximum above the test line-item amount, and save.
 3. Open the test assistant connector and authenticate with the provided Shopify
    customer account.
-4. Ask the assistant to find returnable items, quote one item, and start a return.
-5. Verify that the assistant shows the exact item, quantity, currency, and amount
-   before asking for explicit confirmation.
-6. Confirm once. Verify the assistant returns the Shopify return/refund status.
+4. Ask the assistant to return the test item.
+5. With no return fees set, verify the assistant submits the return without
+   further questions and reports the item, amount and Shopify return/refund
+   status. With a restocking fee set, verify it asks once, naming the fee.
+6. Verify the refund matches the quoted amount in Shopify admin.
 7. Repeat with the same request UUID and verify no second refund is created.
 8. Return to Gooper.io in Shopify admin and verify the attempt appears in Activity.
 9. Demonstrate the disabled state or a quote above the configured maximum to show

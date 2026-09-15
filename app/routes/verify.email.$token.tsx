@@ -84,8 +84,8 @@ export default function ConfirmEmail() {
       </Form>
       <p>
         This lets {info.assistant} find your orders at {info.storeName} and
-        submit returns and refunds for you, each one after you say yes in your
-        chat.
+        submit returns and refunds when you ask, checking with you first if a fee
+        applies.
       </p>
     </main>
   );

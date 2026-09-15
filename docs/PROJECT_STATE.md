@@ -436,6 +436,34 @@ needed", which tells customers not to try again.
 authentication for returns) is further away in chat; the hosted portal still
 uses Shopify sign-in.
 
+### 14. Returns in chat with as few questions as possible (decided and implemented)
+
+A test return asked the customer too many questions, and its quote failed on the
+email-link path.
+
+- **Quote fix.** Shopify's Admin `returnCalculate` reports a returned line's
+  subtotal and tax as negative credits. The verified quote added them as
+  positive, so a $14.00 refund read as $14.00 owed and stopped before quoting.
+  Line credits are now read as money back whatever their sign.
+- **Few questions.** In chat, a customer's request to return an item is the
+  go-ahead when nothing is deducted. `quote_return` returns
+  `goAheadWithoutAsking` and the assistant calls `confirm_return` right away.
+  A restocking or return shipping fee gets one short question first. The
+  assistant picks the store, order and item itself when only one fits, and
+  never asks for an order number, a reason or to confirm the store.
+- **Consent wording.** The consent page, `/connect`, the email confirmation
+  page, llms.txt, the home page and the App Store listing now say returns go
+  ahead when the customer asks, with a check only when a fee applies.
+- **Unchanged.** The hosted return page and in-page WebMCP tools still confirm
+  the exact quote before submitting, since those flows start from a quote on
+  screen. Every submission still needs a signed, customer-bound quote; the
+  amount is rechecked against Shopify before any refund, and duplicates never
+  refund twice.
+
+**Tradeoff:** Hosts such as Claude may still ask the customer to allow the
+submit tool the first time, since it moves money; that approval is the host's,
+not Gooper.io's.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

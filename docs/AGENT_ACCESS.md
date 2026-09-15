@@ -102,8 +102,13 @@ Limits and protections:
 - Every Gooper.io MCP address opens this same connection: `/mcp/stores`, and
   `/mcp/:shop` addresses saved from earlier setup pages, each with its own
   resource metadata. Single-store grants are retired and open nothing.
-  Submission still needs the signed quote and explicit confirmation, and every
-  tool checks its scope.
+  Submission still needs the signed quote, and every tool checks its scope.
+- **Few questions.** A customer's request to return an item is the go-ahead when
+  nothing is deducted: `quote_return` returns `goAheadWithoutAsking: true` and
+  the assistant calls `confirm_return` right away. A restocking or return
+  shipping fee gets one short check first. The assistant picks the store, order
+  and item itself when only one fits, and never asks for an order number or a
+  reason.
 
 ## Connect and test
 
@@ -184,7 +189,8 @@ failure category; this instrumentation is not itself a compatibility fix.
   client-bound and scope-checked on every request and tool call. Shopify tokens
   stay encrypted server-side. Never paste either token into a chat or a URL.
 - Separate scopes are returns:read, returns:quote, returns:submit. Submission
-  still requires the signed exact quote and explicit confirmation. Claude gets
+  still requires the signed exact quote, plus the customer's agreement when a
+  fee applies. Claude gets
   HTTP insufficient-scope challenges, not only tool metadata errors.
 - Access tokens last at most one hour. Clients registered for `refresh_token`
   receive rotating Gooper.io refresh tokens (reusing one revokes the chain), but no

@@ -4,9 +4,10 @@ import * as z from "zod/v4";
 import { getReturnableOrders } from "./services/automatic-return.server";
 import { CustomerAccountApiError } from "./services/customer-account.server";
 import {
+  chatQuoteNextStep,
   createReturnQuote,
-  submitReturnQuote,
   readBoundQuote,
+  submitReturnQuote,
 } from "./services/return-quote.server";
 import {
   AgentAccessError,
@@ -330,7 +331,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Find a customer's returnable purchases",
       description:
-        "Lists returnable items from the authenticated customer's own recent Shopify orders. Use this before quoting or confirming a return. Never ask the customer for card details.",
+        "Lists returnable items from the authenticated customer's own recent Shopify orders. Pick the item yourself: when one matches what the customer described, or it's their only returnable item, use it without asking. Ask one short question only when several items could match. Never ask for an order number, a reason or card details.",
       inputSchema: withShop({
         query: z
           .string()
@@ -402,7 +403,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Quote a customer return",
       description:
-        "Checks the selected items, calculates the exact refund after any return fees, and saves a resumable quote. Share it warmly in plain words: what's going back, any fees, the refund amount, when it arrives, and how to send the item back. If submissionAvailable is false, explain kindly that the store reviews these returns itself, and stop. Otherwise ask whether they'd like to go ahead, and wait for a clear yes.",
+        "Checks the selected items, calculates the exact refund after any return fees, and saves a resumable quote. If submissionAvailable is false, explain kindly that the store reviews these returns itself, and stop. Otherwise follow goAheadWithoutAsking: when true, nothing is deducted, so the customer's request is the go-ahead and you call confirm_return right away; when false, a fee applies, so check once in one sentence before submitting.",
       inputSchema: withShop({
         orderId: z.string().min(1),
         items: itemsSchema,
@@ -434,8 +435,7 @@ export function createCustomerReturnsMcpServer({
                 {
                   ...(draft?.quote || quote),
                   correlationId: draft?.id,
-                  nextStep:
-                    "Summarize this for the customer in a friendly way, then ask something like \"Want me to go ahead with this return?\" Only call confirm_return after a clear yes to this exact return and amount.",
+                  ...chatQuoteNextStep(draft?.quote || quote),
                 },
                 null,
                 2,
@@ -454,7 +454,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Confirm and submit a customer return",
       description:
-        "After the authenticated customer explicitly confirms the exact items and quoted amount, requests and opens the Shopify return and refunds the original payment method, either immediately or after the store receives the item, as the quote's refundTiming states. This is consequential and must never be called speculatively.",
+        "Submits a return the customer asked for: requests and opens the Shopify return and refunds the original payment method, either immediately or after the store receives the item, as the quote's refundTiming states. Call it right after quote_return when goAheadWithoutAsking is true, or after the customer says yes when a fee applies. Never for an item the customer didn't ask to return.",
       inputSchema: withShop({
         quoteToken: z
           .string()
@@ -466,7 +466,9 @@ export function createCustomerReturnsMcpServer({
         customerNote: z.string().max(300).optional(),
         customerConfirmed: z
           .literal(true)
-          .describe("Must be true only after explicit customer confirmation"),
+          .describe(
+            "True when the customer asked to return these items and either nothing is deducted or they agreed to the fee",
+          ),
       }),
       annotations: {
         readOnlyHint: false,
