@@ -317,12 +317,99 @@ body:has(.connection-page) {
   outline: 2px solid #ffffff;
   outline-offset: 4px;
 }
-.connection-page .permission-tip p:last-child {
-  margin-bottom: 0;
-}
 .connection-page .return-button.secondary {
   background: transparent;
 }
 .connection-page .return-button.secondary:hover {
   background: rgb(255 255 255 / 16%);
+}
+.connection-page .lead {
+  font-size: 18px;
+}
+.connection-page button.secondary {
+  background: transparent;
+}
+.connection-page button.secondary:hover:not(:disabled) {
+  background: rgb(255 255 255 / 16%);
+}
+.connection-page .connect-steps {
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 16px;
+  margin: 32px 0;
+  padding: 0;
+}
+.connection-page .connect-steps > li {
+  counter-increment: step;
+  position: relative;
+  padding-left: 52px;
+}
+.connection-page .connect-steps > li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 26px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: #ff6b00;
+  font-weight: 800;
+}
+.connection-page .connect-steps > li.done::before {
+  content: "✓";
+}
+.connection-page .connect-steps > li.upcoming > section {
+  opacity: 0.85;
+}
+.connection-page .connect-steps > li.current > section {
+  border-color: #ffffff;
+  box-shadow: 0 12px 32px rgb(120 40 0 / 25%);
+}
+.connection-page .connect-steps section {
+  margin: 0;
+}
+.connection-page .connect-steps h2 {
+  margin-top: 0;
+}
+.connection-page .setting-preview {
+  margin: 16px 0;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #1f1e1d;
+  color: #f4f1ec;
+}
+.connection-page .setting-preview-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-weight: 600;
+}
+.connection-page .setting-preview-pill {
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #3a3937;
+  color: #ffffff;
+  font-weight: 800;
+}
+.connection-page .setting-preview figcaption {
+  margin-top: 10px;
+  font-size: 13px;
+  color: #d9d4cc;
+}
+.connection-page .fine-print {
+  margin: 32px 0;
+}
+@media (max-width: 520px) {
+  .connection-page .connect-steps > li {
+    padding-left: 0;
+    padding-top: 44px;
+  }
+  .connection-page .connect-steps > li::before {
+    top: 0;
+  }
 }

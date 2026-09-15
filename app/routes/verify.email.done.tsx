@@ -1,5 +1,6 @@
 import { data, useLoaderData, type LoaderFunctionArgs } from "react-router";
 import { privateHeaders } from "../services/customer-security.server";
+import { ConnectionError } from "../components/ConnectionError";
 import "../styles/customer-returns.css";
 
 export const headers = () => privateHeaders;
@@ -47,4 +48,8 @@ export default function EmailConfirmed() {
       <p>{body}</p>
     </main>
   );
+}
+
+export function ErrorBoundary() {
+  return <ConnectionError />;
 }

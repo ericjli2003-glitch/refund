@@ -16,6 +16,7 @@ import {
 } from "../services/consent-email.server";
 import { privateHeaders, unseal } from "../services/customer-security.server";
 import { maskEmail, numberChoices } from "../services/email-address.server";
+import { ConnectionError } from "../components/ConnectionError";
 import "../styles/customer-returns.css";
 
 export const headers = () => ({
@@ -79,4 +80,8 @@ export default function ConfirmConnectEmail() {
       </p>
     </main>
   );
+}
+
+export function ErrorBoundary() {
+  return <ConnectionError />;
 }

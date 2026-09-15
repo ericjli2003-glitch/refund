@@ -20,6 +20,7 @@ import {
   numberChoices,
   verificationEmailContext,
 } from "../services/email-verification.server";
+import { ConnectionError } from "../components/ConnectionError";
 import "../styles/customer-returns.css";
 
 export const headers = () => ({
@@ -89,4 +90,8 @@ export default function ConfirmEmail() {
       </p>
     </main>
   );
+}
+
+export function ErrorBoundary() {
+  return <ConnectionError />;
 }
