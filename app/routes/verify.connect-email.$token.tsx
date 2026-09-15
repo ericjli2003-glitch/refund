@@ -52,7 +52,7 @@ export default function ConfirmConnectEmail() {
   const info = useLoaderData<typeof loader>();
   const busy = useNavigation().state !== "idle";
   return (
-    <main className="customer-returns">
+    <main className="customer-returns connection-page">
       <h1>Confirm your email</h1>
       <p>
         You’re connecting {info.assistant} to Gooper.io with {info.sentTo}. Which
@@ -60,18 +60,18 @@ export default function ConfirmConnectEmail() {
       </p>
       <Form method="post">
         <input type="hidden" name="csrf" value={info.csrf} />
-        <div role="group" aria-label="Number shown on the Gooper.io page">
+        <div className="button-row choice-row" role="group" aria-label="Number shown on the Gooper.io page">
           {info.choices.map((choice) => (
             <button key={choice} name="choice" value={choice} disabled={busy}>
               {choice}
             </button>
           ))}
         </div>
-        <p>
+        <div className="button-row">
           <button name="choice" value="deny" disabled={busy}>
             I didn’t ask for this
           </button>
-        </p>
+        </div>
       </Form>
       <p>
         Gooper.io uses this email only to find your orders at stores that use
