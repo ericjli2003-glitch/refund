@@ -7,7 +7,7 @@ merchant website explicitly. There is no separate LLM classifier or model key.
 
 ## Interfaces
 
-- Streamable HTTP MCP: `POST /mcp`, tool `start_return`.
+- Streamable HTTP MCP: `POST /mcp/public`, tool `start_return`.
 - JSON: `POST /api/return-intake` with `Content-Type: application/json`.
 - Browser: `GET /start-return` (form) or with merchant/order/item query hints.
 - Authenticated browser portal: `/returns/SHOP.myshopify.com`.

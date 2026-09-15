@@ -24,7 +24,7 @@ const request = (path, options = {}) =>
     signal: AbortSignal.timeout(15000),
   });
 const rpc = async (method, params = {}) => {
-  const response = await request("/mcp", {
+  const response = await request("/mcp/public", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

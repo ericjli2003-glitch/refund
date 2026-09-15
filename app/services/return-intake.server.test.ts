@@ -17,7 +17,7 @@ import {
   startReturnIntake,
 } from "./return-intake.server";
 import { readIntakeBody } from "./public-intake-http.server";
-import { action as publicMcpAction } from "../routes/mcp";
+import { action as publicMcpAction } from "../routes/mcp.public";
 import { action as intakeAction } from "../routes/api.return-intake";
 import { loader as startPage } from "../routes/start-return";
 import { startCustomerLogin } from "./customer-session.server";

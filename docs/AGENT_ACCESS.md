@@ -19,7 +19,7 @@ and the public MCP `find_store` tool.
 Setup page: `/connect`. MCP URL:
 
 ```text
-https://refund-ztxz.onrender.com/mcp/stores
+https://refund-ztxz.onrender.com/mcp
 ```
 
 The customer adds this once. Approving it needs no store sign-in. Once Resend is
@@ -99,7 +99,7 @@ Limits and protections:
 - Looking up orders by email needs Shopify's Level 2 protected customer data
   approval for the order email field. Without it, lookups fail and the store
   returns `store_not_ready`.
-- Every Gooper.io MCP address opens this same connection: `/mcp/stores`, and
+- Every Gooper.io MCP address opens this same connection: `/mcp`, `/mcp/stores`, and
   `/mcp/:shop` addresses saved from earlier setup pages, each with its own
   resource metadata. Single-store grants are retired and open nothing.
   Submission still needs the signed quote, and every tool checks its scope.
@@ -120,7 +120,7 @@ grants access. The issuer comes from server configuration, never a request heade
 Use this exact remote MCP URL (no trailing slash):
 
 ```text
-https://refund-ztxz.onrender.com/mcp/stores
+https://refund-ztxz.onrender.com/mcp
 ```
 
 A connector saved earlier with a store address, such as
@@ -136,7 +136,7 @@ client IDs/secrets blank. CIMD is deliberately not advertised.
   URL, and use OAuth/DCR. See [OpenAI's current test instructions](https://developers.openai.com/plugins/deploy/connect-chatgpt).
   Account/workspace policy can restrict developer mode.
 
-Do not use the bare `/mcp` or `/apps/refund/mcp` URL for this customer connection:
+Do not use `/mcp/public` or `/apps/refund/mcp` for this customer connection:
 those expose anonymous intake only. The browser flow remains an alternative, not
 a prerequisite for using the connected assistant after authorization.
 

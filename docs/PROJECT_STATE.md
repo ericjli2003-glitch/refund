@@ -464,6 +464,20 @@ email-link path.
 submit tool the first time, since it moves money; that approval is the host's,
 not Gooper.io's.
 
+### 15. A short connector address (decided and implemented)
+
+Customers paste the connector URL into Claude or ChatGPT, so it should be short.
+
+- `/mcp` is now the connector, with resource metadata at `/oauth/resource/mcp`.
+  `/mcp/stores` and store addresses keep working and open the same connection.
+- The anonymous intake MCP moved from `/mcp` to `/mcp/public` (storefront
+  widget, llms.txt and rate limits updated). The app proxy's
+  `/apps/refund/mcp` is unchanged.
+- The connector moves to `https://gooper.io/mcp` once gooper.io points at
+  Render and `SHOPIFY_APP_URL` and the Shopify app URLs switch to it. Existing
+  assistant connections then reconnect once, because OAuth resources are tied
+  to the address.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

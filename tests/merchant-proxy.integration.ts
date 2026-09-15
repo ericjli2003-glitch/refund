@@ -463,9 +463,9 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       assert.equal(mutations.length, 0);
       assert.deepEqual(
         publicRatePolicy("/proxy/refund/mcp.data"),
-        publicRatePolicy("/mcp"),
+        publicRatePolicy("/mcp/public"),
       );
-      assert.deepEqual(publicRatePolicy("/%70roxy/refund/mcp"), publicRatePolicy("/mcp"));
+      assert.deepEqual(publicRatePolicy("/%70roxy/refund/mcp"), publicRatePolicy("/mcp/public"));
     },
   );
 

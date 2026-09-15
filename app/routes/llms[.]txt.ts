@@ -29,8 +29,8 @@ export async function loader() {
 
 - Store directory: ${origin}/stores
 - Search: GET ${origin}/api/merchants?query=STORE_NAME_OR_WEBSITE
-- Public MCP (streamable HTTP, no sign-in): POST ${origin}/mcp with tools find_store and start_return
-- One assistant connection for every store (streamable HTTP, OAuth): ${origin}/mcp/stores. Setup: ${origin}/connect
+- Public MCP (streamable HTTP, no sign-in): POST ${origin}/mcp/public with tools find_store and start_return
+- One assistant connection for every store (streamable HTTP, OAuth): ${origin}/mcp. Setup: ${origin}/connect
 
 ## Rules for assistants
 
