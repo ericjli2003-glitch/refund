@@ -490,7 +490,7 @@ write tools to "Needs approval" by default. Gooper.io can't change that, and the
 setting only exists once the connection is made.
 
 - After Allow, the consent page shows "You're connected — one last step" with
-  **Open Claude connector settings** (claude.ai/settings/connectors, or
+  **Open Claude connector settings** (claude.ai/customize/connectors, or
   ChatGPT's settings) in a new tab and **Back to Claude**. A dropdown explains
   what "Ask for approval" costs, and the page returns to the assistant
   automatically after 10 seconds. Opening settings also finishes connecting,

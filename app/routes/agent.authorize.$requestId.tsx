@@ -130,19 +130,30 @@ export function ErrorBoundary() {
 function AlwaysAllowPreview({ assistant }: { assistant: string }) {
   return (
     <figure className="setting-preview">
-      <div className="setting-preview-row" aria-hidden="true">
-        <span>Gooper.io tools</span>
-        <span className="setting-preview-pill">✓ Always allow</span>
+      <div aria-hidden="true">
+        {["Read-only tools", "Write/delete tools"].map((group) => (
+          <div key={group} className="setting-preview-row">
+            <span>{group}</span>
+            <span className="setting-preview-pill">✓ Always allow</span>
+          </div>
+        ))}
       </div>
-      <figcaption>What to choose for Gooper.io in {assistant}’s connector settings</figcaption>
+      <figcaption>
+        What to choose in {assistant}: {settingsPath(assistant)}
+      </figcaption>
     </figure>
   );
 }
 
+const settingsPath = (assistant: string) =>
+  assistant === "ChatGPT"
+    ? "Settings → Connectors → Gooper.io"
+    : "Customize → Connectors → Gooper.io → Tool permissions";
+
 const connectorSettingsUrl = (assistant: string) =>
   assistant === "ChatGPT"
     ? "https://chatgpt.com/#settings/Connectors"
-    : "https://claude.ai/settings/connectors";
+    : "https://claude.ai/customize/connectors";
 
 const AUTO_CONTINUE_SECONDS = 10;
 
@@ -172,9 +183,9 @@ function ConnectedStep({
       </header>
       <h1>You’re connected — one last step</h1>
       <p className="lead">
-        Set Gooper.io to <strong>Always allow</strong> in {assistant}’s connector
-        settings, so {assistant} can finish your returns without stopping to ask
-        before each step.
+        In {assistant}, go to {settingsPath(assistant)} and set both tool groups
+        to <strong>Always allow</strong>, so {assistant} can finish your returns
+        without stopping to ask before each step.
       </p>
       <AlwaysAllowPreview assistant={assistant} />
       <div className="button-row">
