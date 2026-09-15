@@ -4,6 +4,7 @@ import type {
   ReturnableOrder,
 } from "./automatic-return.server";
 import { ReturnNotCreatedError, type RequestedItem } from "./return-guards.server";
+import { otherReturnReasonId } from "./return-reasons.server";
 import {
   adminData,
   adminFor,
@@ -546,6 +547,13 @@ export async function requestVerifiedReturn(
       );
     },
   );
+  const returnReasonDefinitionId = await otherReturnReasonId(shop, input.client).catch(
+    (error: unknown) => {
+      throw new ReturnNotCreatedError(
+        error instanceof Error ? error.message : "Shopify could not list return reasons.",
+      );
+    },
+  );
   const note = customerNote?.slice(0, 300);
   const { returnRequest } = await adminData<{
     returnRequest: {
@@ -560,6 +568,7 @@ export async function requestVerifiedReturn(
         orderId: order.id,
         returnLineItems: input.lines.map((line) => ({
           ...line,
+          returnReasonDefinitionId,
           ...(note ? { customerNote: note } : {}),
         })),
         ...(input.returnShippingFee

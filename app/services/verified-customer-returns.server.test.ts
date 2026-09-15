@@ -13,6 +13,7 @@ import {
 const shop = "example.myshopify.com";
 const customerId = "gid://shopify/Customer/42";
 const confirmed = new Date("2026-09-01T00:00:00Z");
+const REASON = "gid://shopify/ReturnReasonDefinition/9";
 
 function mockDelegate(
   t: TestContext,
@@ -248,6 +249,13 @@ test("verified quotes and return requests apply the merchant's confirmed fees ac
           returnShippingFee: { amountSet: bag("5.00") },
         },
       };
+    if (query.includes("ReturnReasonDefinitions"))
+      return {
+        returnReasonDefinitions: {
+          nodes: [{ id: REASON, handle: "other-reason", name: "Other", deleted: false }],
+          pageInfo: { hasNextPage: false, endCursor: null },
+        },
+      };
     if (query.includes("RequestVerifiedCustomerReturn"))
       return {
         returnRequest: {
@@ -289,7 +297,11 @@ test("verified quotes and return requests apply the merchant's confirmed fees ac
   assert.deepEqual(find("RequestVerifiedCustomerReturn").variables, {
     input: {
       orderId: order.id,
-      returnLineItems: lines.map((line) => ({ ...line, customerNote: "Too small" })),
+      returnLineItems: lines.map((line) => ({
+        ...line,
+        returnReasonDefinitionId: REASON,
+        customerNote: "Too small",
+      })),
       returnShippingFee,
     },
   });

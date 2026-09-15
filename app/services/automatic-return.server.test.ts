@@ -20,6 +20,7 @@ const RETURN_LINE_ITEM = "gid://shopify/ReturnLineItem/4";
 const LOCATION = "gid://shopify/Location/5";
 const REVERSE_LINE_ITEM = "gid://shopify/ReverseFulfillmentOrderLineItem/6";
 const REFUND = "gid://shopify/Refund/8";
+const REASON = "gid://shopify/ReturnReasonDefinition/9";
 
 function mockDelegate(
   t: TestContext,
@@ -452,6 +453,7 @@ test("a request Shopify refuses outright is not submitted, and the same confirma
       return data;
     },
   );
+  const requested: Array<{ requestedLineItems: Array<Record<string, unknown>> }> = [];
   let request = () =>
     Response.json({
       data: null,
@@ -468,7 +470,8 @@ test("a request Shopify refuses outright is not submitted, and the same confirma
       return Response.json({
         graphql_api: "https://shopify.com/1/customer/api/2026-07/graphql",
       });
-    const { query } = JSON.parse(String(init.body));
+    const { query, variables } = JSON.parse(String(init.body));
+    if (query.includes("RequestCustomerReturn")) requested.push(variables);
     if (query.includes("CustomerReturnableOrders"))
       return Response.json({
         data: {
@@ -518,9 +521,12 @@ test("a request Shopify refuses outright is not submitted, and the same confirma
       idempotencyKey: "quote-1",
       expectedRefund: { amount: "14.00", currencyCode: "CAD" },
       refundTiming: "IMMEDIATE",
+      lookupReturnReason: async () => REASON,
     });
 
   await assert.rejects(submit(), /Nothing was submitted.*customer_write_customers/);
+  // Shopify requires a return reason; the customer is never asked for one.
+  assert.equal(requested[0].requestedLineItems[0].returnReasonDefinitionId, REASON);
   assert.equal(created.length, 1);
   assert.equal(updates.at(-1)?.status, "NOT_SUBMITTED");
   assert.match(String(updates.at(-1)?.failureReason), /customer_write_customers/);
