@@ -483,6 +483,24 @@ Customers paste the connector URL into Claude or ChatGPT, so it should be short.
   assistant connections then reconnect once, because OAuth resources are tied
   to the address.
 
+### 16. A last step after connecting (decided and implemented)
+
+Assistants decide whether a connector's tools need approval, and Claude sets
+write tools to "Needs approval" by default. Gooper.io can't change that, and the
+setting only exists once the connection is made.
+
+- After Allow, the consent page shows "You're connected — one last step" with
+  **Open Claude connector settings** (claude.ai/settings/connectors, or
+  ChatGPT's settings) in a new tab and **Back to Claude**. A dropdown explains
+  what "Ask for approval" costs, and the page returns to the assistant
+  automatically after 10 seconds. Opening settings also finishes connecting,
+  so Gooper.io is listed in the new tab.
+- Authorization codes now last 10 minutes (was 2), OAuth's recommended maximum,
+  so the screen can't outlast the code. Codes are still single use and bound to
+  PKCE and the approving browser.
+- Tools keep accurate read-only and destructive hints; nothing is relabeled to
+  skip approval.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

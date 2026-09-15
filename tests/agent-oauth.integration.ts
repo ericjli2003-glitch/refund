@@ -167,8 +167,9 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
     const cookie =
       options.cookie ??
       `${flow.cookie}${options.noCustomer ? "" : `; ${customerCookie}`}`;
-    // Allow and Cancel always answer with a redirect response.
-    return (await consentAction({
+    // Cancel answers with a redirect. Allow shows the last-step screen, which
+    // continues to the same callback; answer with that redirect here.
+    const result = await consentAction({
       request: new Request(url, {
         method: "POST",
         headers: {
@@ -185,7 +186,17 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       context: {},
       url: new URL(url),
       pattern: "/agent/authorize/:requestId",
-    })) as Response;
+    });
+    if (result instanceof Response) return result;
+    const { data, init } = result as unknown as {
+      data: { connected: { assistant: string; continueUrl: string; settingsUrl: string } };
+      init?: ResponseInit;
+    };
+    assert.equal(data.connected.assistant, "Claude");
+    assert.equal(data.connected.settingsUrl, "https://claude.ai/settings/connectors");
+    const response = new Headers(init?.headers);
+    response.set("Location", data.connected.continueUrl);
+    return new Response(null, { status: 302, headers: response });
   }
   const exchange = (
     flow: Flow,

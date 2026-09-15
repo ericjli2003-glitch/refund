@@ -172,7 +172,9 @@ export async function finishAgentConsent(request: Request, rawId: string) {
               status: "APPROVED",
               connectionId,
               codeHash: digest(code),
-              codeExpiresAt: new Date(Date.now() + 120_000),
+              // Ten minutes, OAuth's recommended maximum, so the last-step
+              // screen after Allow can't outlast the code.
+              codeExpiresAt: new Date(Date.now() + 600_000),
             }
           : { status: "DENIED" },
     });

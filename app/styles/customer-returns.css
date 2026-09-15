@@ -320,3 +320,9 @@ body:has(.connection-page) {
 .connection-page .permission-tip p:last-child {
   margin-bottom: 0;
 }
+.connection-page .return-button.secondary {
+  background: transparent;
+}
+.connection-page .return-button.secondary:hover {
+  background: rgb(255 255 255 / 16%);
+}
