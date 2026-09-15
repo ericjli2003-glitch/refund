@@ -155,8 +155,6 @@ const connectorSettingsUrl = (assistant: string) =>
     ? "https://chatgpt.com/#settings/Connectors"
     : "https://claude.ai/customize/connectors";
 
-const AUTO_CONTINUE_SECONDS = 10;
-
 function ConnectedStep({
   assistant,
   continueUrl,
@@ -166,48 +164,42 @@ function ConnectedStep({
   continueUrl: string;
   settingsUrl: string;
 }) {
-  const [seconds, setSeconds] = useState(AUTO_CONTINUE_SECONDS);
-  useEffect(() => {
-    if (seconds <= 0) {
-      window.location.assign(continueUrl);
-      return;
-    }
-    const timer = window.setTimeout(() => setSeconds((value) => value - 1), 1000);
-    return () => window.clearTimeout(timer);
-  }, [seconds, continueUrl]);
   return (
     <main className="customer-returns connection-page">
       <header>
         <span>GOOPER.IO</span>
         <span>STEP 3 OF 3</span>
       </header>
-      <h1>You’re connected — one last step</h1>
+      <h1>Finish connecting — then change one setting</h1>
       <p className="lead">
-        In {assistant}, go to {settingsPath(assistant)} and set both tool groups
-        to <strong>Always allow</strong>, so {assistant} can finish your returns
-        without stopping to ask before each step.
+        Keep this page open. First finish the connection in {assistant}. Then
+        come back here, open {settingsPath(assistant)}, and set both tool groups
+        to <strong>Always allow</strong> so your returns don’t stop at every
+        step.
       </p>
       <AlwaysAllowPreview assistant={assistant} />
       <div className="button-row">
         <a
           className="return-button"
+          href={continueUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Finish in {assistant} ↗
+        </a>
+        <a
+          className="return-button secondary"
           href={settingsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          // Finish connecting here, so Gooper.io is listed in the new tab.
-          onClick={() => window.setTimeout(() => window.location.assign(continueUrl), 300)}
         >
           Open {assistant} connector settings ↗
         </a>
-        <a className="return-button secondary" href={continueUrl}>
-          Back to {assistant}
-        </a>
       </div>
       <p className="consent-email-hint" role="status" aria-live="polite">
-        {seconds > 0
-          ? `Taking you back to ${assistant} in ${seconds} second${seconds === 1 ? "" : "s"}.`
-          : `Taking you back to ${assistant}.`}{" "}
-        If Gooper.io isn’t listed in settings yet, refresh that tab in a moment.
+        This page stays open. Finish the connection before opening settings so
+        Gooper.io appears there; if it isn’t listed yet, refresh the settings
+        tab in a moment.
       </p>
       <details>
         <summary>What happens if I leave it on “Ask for approval”?</summary>
