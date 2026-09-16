@@ -20,7 +20,7 @@ export function createIntakeMcpServer(shop?: string) {
     server.registerTool(
       "find_store",
       {
-        title: "Find a store that uses Gooper.io",
+        title: "Find the store",
         description:
           "Search Gooper.io's directory of listed Shopify stores by business name or website. If exactly one store matches, go ahead with it without asking and mention its name naturally. If several match, ask which one they bought from in one short, friendly question listing each name and website. If none match, let the customer know kindly and stop. Send only a business name or domain, never customer, order, item, payment or sign-in details. Doesn't read purchases, start a return, or refund money.",
         inputSchema: {
@@ -61,7 +61,7 @@ export function createIntakeMcpServer(shop?: string) {
   server.registerTool(
     "start_return",
     {
-      title: "Start a return with a merchant",
+      title: "Start your return",
       description:
         "Find a connected merchant and prepare a secure purchase-verification link. If the merchant cannot be uniquely resolved, stop; Gooper.io records only the business name/domain privately for its operator. Do not request a URL fallback, substitute another store/item, or contact the merchant. Does not read purchases, create a return, or refund money. No Gooper.io account is required.",
       inputSchema: shop ? intakeSchema.omit({ merchant: true }) : intakeSchema,

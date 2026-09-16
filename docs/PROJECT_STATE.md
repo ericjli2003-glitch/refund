@@ -517,7 +517,9 @@ token — nothing the customer can check their own refund against.
 
 - **Titles are the dialog's heading**, so all eleven tools are named in the
   customer's own words: "Check your refund amount", "Submit your return and
-  refund", "Find what you can return", and so on.
+  refund", "Find what you can return", and so on. The anonymous intake tools
+  at `/mcp/public` are named the same way ("Find the store", "Start your
+  return"); their arguments were already words.
 - **Arguments are words.** Every store tool takes `store` (a name, website or
   myshopify.com domain) instead of `shop`, and `quote_return` takes `returning`
   — each entry an order number, a product name and a quantity — so the dialog
