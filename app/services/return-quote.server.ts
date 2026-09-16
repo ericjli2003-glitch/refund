@@ -358,7 +358,7 @@ export function chatQuoteNextStep(quote: { submissionAvailable: boolean }) {
   return {
     needsConfirmation: quote.submissionAvailable,
     nextStep: quote.submissionAvailable
-      ? "In one short message show what's going back (grouped by order when there's more than one), any fees, the refund total and when it arrives. Then ask once, like \"Want me to go ahead?\", and call confirm_return only after a clear yes. Ask nothing else."
+      ? "Explain the quote conversationally, never as JSON, a code block or field/value pairs. For one item, say something like: \"You can return your [item] to [store] for [amount and currency], with no return fees. Want me to go ahead?\" Fill in only facts from this quote; if fees apply, state them instead, and explain whether the refund is issued now or after the store receives the item. Do not promise an arrival date unless provided. For several items, use a short readable list grouped by order, then the total and one question. After a clear yes, briefly say you're submitting the return and call confirm_return. Ask nothing else."
       : "The store reviews these returns itself, so nothing can be submitted from chat. Let the customer know kindly and stop.",
   };
 }

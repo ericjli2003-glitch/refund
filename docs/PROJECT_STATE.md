@@ -544,6 +544,14 @@ token — nothing the customer can check their own refund against.
 two items that differ only by variant (or by nothing at all) can't be told
 apart by name. That case refuses and asks, rather than picking one.
 
+Conversational wording is supplied through the shared chat instructions, the
+quote's next-step guidance and the submit tool description. Assistants are asked
+to describe the item, store, quoted refund, fees and timing in plain sentences,
+ask once, then briefly acknowledge submission after a clear yes. JSON remains
+the tool input format; the assistant must not copy it into its chat reply.
+The host still controls its separate tool-approval card, so these instructions
+cannot replace that card or guarantee that the host hides raw arguments.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

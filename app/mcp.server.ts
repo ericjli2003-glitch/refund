@@ -489,7 +489,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Submit your return and refund",
       description:
-        "Submits the quoted return: opens a Shopify return for each order in the quote and refunds the original payment method, either immediately or after the store receives the items, as the quote's refundTiming states. Pass the quoteId from quote_return. Call it only after the customer says yes to these exact items and this refund total. Each order reports its own result, so one order failing never undoes another.",
+        "Submits the quoted return: opens a Shopify return for each order in the quote and refunds the original payment method, either immediately or after the store receives the items, as the quote's refundTiming states. Pass the quoteId from quote_return. Call it only after the customer says yes to these exact items and this refund total. Before calling, say briefly in the conversation what you're doing, such as \"I'll submit that return for you now.\" Never paste the tool arguments or JSON into the conversation. Each order reports its own result, so one order failing never undoes another.",
       inputSchema: withStore({
         quoteId: z
           .string()
