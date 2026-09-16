@@ -24,7 +24,7 @@ function quote(number: string) {
   const shown = items.map(item => ({ ...item, title: `Item ${number}`, orderName: `#${number}` }));
   return { ...value, items: shown, orderName: `#${number}`,
     orders: [{ orderId: `gid://shopify/Order/${number}`, orderName: `#${number}`, items: shown, expectedRefund, returnFees: { restocking: null, returnShipping: null } }],
-    quoteToken: signQuote(value), expiresAt: new Date(expiresAt).toISOString(), paymentMethod: "Original", refundTiming: "IMMEDIATE" as const, returnFees: { restocking: null, returnShipping: null }, returnShipping: "Store instructions", nextStep: "Stop at quote" };
+    quoteId: value.id as string, quoteToken: signQuote(value), expiresAt: new Date(expiresAt).toISOString(), paymentMethod: "Original", refundTiming: "IMMEDIATE" as const, returnFees: { restocking: null, returnShipping: null }, returnShipping: "Store instructions", nextStep: "Stop at quote" };
 }
 try {
   await prisma.session.create({ data: { id: `offline_${shop}`, shop, isOnline: false, state: "test", accessToken: "test-only-never-sent" } });

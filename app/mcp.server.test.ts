@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -44,12 +44,18 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
   );
   const confirmationSchema = tools.find(
     (tool) => tool.name === "confirm_return",
-  )?.inputSchema as { required?: string[] } | undefined;
+  )?.inputSchema as
+    | { required?: string[]; properties?: Record<string, unknown> }
+    | undefined;
   assert.equal(
     confirmationSchema?.required?.includes("customerConfirmed"),
     true,
   );
-  assert.equal(confirmationSchema?.required?.includes("quoteToken"), true);
+  // The dialog the customer approves names the quote by its short id, not by
+  // a two-thousand-character signed token.
+  assert.equal(confirmationSchema?.required?.includes("quoteToken"), false);
+  assert.ok(confirmationSchema?.properties?.quoteId);
+  assert.ok(confirmationSchema?.properties?.quoteToken);
   assert.deepEqual(
     tools.find((tool) => tool.name === "confirm_return")?._meta
       ?.securitySchemes,
@@ -58,6 +64,18 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
         type: "oauth2",
         scopes: ["returns:submit"],
       },
+    ],
+  );
+  // Titles are the dialog's heading, so they read as the customer's own words.
+  assert.deepEqual(
+    tools.map((tool) => tool.title),
+    [
+      "Pick up where you left off",
+      "Check on your return",
+      "Find what you can return",
+      "Check your refund amount",
+      "Submit your return and refund",
+      "Add your tracking number",
     ],
   );
   const trackingTool = tools.find((tool) => tool.name === "add_return_tracking");
@@ -188,8 +206,18 @@ test("the all-stores server names the store on every private tool and asks to li
   );
   for (const tool of tools.slice(5)) {
     const schema = tool.inputSchema as { required?: string[] };
-    assert.equal(schema.required?.includes("shop"), true, tool.name);
+    assert.equal(schema.required?.includes("store"), true, tool.name);
   }
+  assert.deepEqual(
+    tools.slice(0, 5).map((tool) => tool.title),
+    [
+      "Find the store",
+      "See which stores are connected",
+      "Connect the store to this chat",
+      "See the emails you've confirmed",
+      "Forget one of your emails",
+    ],
+  );
   assert.equal(
     tools.find((tool) => tool.name === "link_store")?.annotations
       ?.destructiveHint,
@@ -202,16 +230,17 @@ test("the all-stores server names the store on every private tool and asks to li
   // Hosts receive the shared conversation style with the tools.
   assert.match(client.getInstructions() ?? "", /store associate/);
 
-  const missingShop = await client.callTool({
+  const missingStore = await client.callTool({
     name: "find_returnable_items",
     arguments: {},
   });
-  assert.equal(missingShop.isError, true);
+  assert.equal(missingStore.isError, true);
   assert.equal(authorized.length, 0);
 
+  // A store's own domain names it without a directory lookup.
   const result = await client.callTool({
     name: "find_returnable_items",
-    arguments: { shop: "example.myshopify.com" },
+    arguments: { store: "example.myshopify.com" },
   });
   assert.equal(result.isError, true);
   assert.deepEqual(authorized, [["returns:read", "example.myshopify.com"]]);
@@ -308,4 +337,189 @@ test("returnable order discovery accepts Shopify's null non-returnable summary",
     JSON.parse(content[0].text).orders[0].nonReturnableReasons,
     [],
   );
+});
+
+// Two orders, one of them holding two line items with the same title, so a
+// product name alone can be unambiguous, wrong, or ambiguous.
+const returnableOrders = (t: TestContext) =>
+  t.mock.method(
+    globalThis,
+    "fetch",
+    async (_url: string | URL | Request, options?: RequestInit) => {
+      if (!options?.body)
+        return Response.json({
+          graphql_api: "https://shopify.com/customer/api/2026-07/graphql",
+        });
+      const item = (id: string, title: string) => ({
+        quantity: 2,
+        lineItem: {
+          id: `gid://shopify/LineItem/${id}`,
+          presentmentTitle: title,
+          currentTotalPrice: { amount: "14.00", currencyCode: "CAD" },
+        },
+      });
+      return Response.json({
+        data: {
+          customer: {
+            id: "gid://shopify/Customer/1",
+            orders: {
+              nodes: [
+                {
+                  id: "gid://shopify/Order/1",
+                  name: "#1001",
+                  processedAt: "2026-09-01T00:00:00Z",
+                  returnInformation: {
+                    nonReturnableSummary: null,
+                    returnableLineItems: {
+                      nodes: [
+                        item("11", "Twin Candle"),
+                        item("12", "Twin Candle"),
+                      ],
+                    },
+                  },
+                },
+                {
+                  id: "gid://shopify/Order/2",
+                  name: "#1002",
+                  processedAt: "2026-09-02T00:00:00Z",
+                  returnInformation: {
+                    nonReturnableSummary: null,
+                    returnableLineItems: { nodes: [item("21", "Blue Mug")] },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+    },
+  );
+
+test("a quote asked for in words refuses every reading but the only one", async (t) => {
+  const { createCustomerReturnsMcpServer } = await import("./mcp.server");
+  returnableOrders(t);
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const server = createCustomerReturnsMcpServer({
+    authorize: async () => ({
+      shop: "words.myshopify.com",
+      customerToken: "customer-token",
+    }),
+    resourceMetadataUrl:
+      "https://refund.test/oauth/resource/words.myshopify.com",
+  });
+  const client = new Client({ name: "words-test", version: "1" });
+  t.after(async () => {
+    await client.close();
+    await server.close();
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const quote = async (returning: unknown) =>
+    client.callTool({ name: "quote_return", arguments: { returning } });
+
+  // Two line items on the same order share a title.
+  const duplicate = await quote([{ product: "Twin Candle" }]);
+  assert.equal(duplicate.isError, true);
+  assert.match(
+    JSON.stringify(duplicate.content),
+    /More than one returnable item matches .*Twin Candle/,
+  );
+
+  const unknownOrder = await quote([
+    { order: "#9999", product: "Blue Mug", quantity: 1 },
+  ]);
+  assert.equal(unknownOrder.isError, true);
+  assert.match(
+    JSON.stringify(unknownOrder.content),
+    /no returnable order #9999 at this store/,
+  );
+
+  const otherOrder = await quote([{ order: "#1001", product: "Blue Mug" }]);
+  assert.equal(otherOrder.isError, true);
+  assert.match(
+    JSON.stringify(otherOrder.content),
+    /isn.{0,3}t on order #1001.*order #1002/,
+  );
+});
+
+test("confirming by quote id never reaches another customer's quote", async (t) => {
+  const { createCustomerReturnsMcpServer } = await import("./mcp.server");
+  const prisma = (await import("./db.server")).default;
+  const QUOTE_ID = "11111111-1111-4111-8111-111111111111";
+  const drafts = [
+    {
+      id: "draft-a",
+      shop: "shared.myshopify.com",
+      customerSubjectHash: "customer-a",
+      quoteId: QUOTE_ID,
+      sealedQuoteToken: "sealed",
+    },
+  ];
+  const lookups: unknown[] = [];
+  const original = prisma.returnDraft.findFirst;
+  Reflect.set(
+    prisma.returnDraft,
+    "findFirst",
+    async ({ where }: { where: Record<string, string> }) => {
+      lookups.push(where);
+      return (
+        drafts.find((draft) =>
+          Object.entries(where).every(
+            ([field, value]) => Reflect.get(draft, field) === value,
+          ),
+        ) ?? null
+      );
+    },
+  );
+  t.after(() => Reflect.set(prisma.returnDraft, "findFirst", original));
+  const upstream = t.mock.method(globalThis, "fetch", async () => {
+    throw new Error("No upstream request is allowed");
+  });
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
+  const server = createCustomerReturnsMcpServer({
+    authorize: async () => ({
+      shop: "shared.myshopify.com",
+      customerToken: "customer-token",
+      customerSubjectHash: "customer-b",
+    }),
+    resourceMetadataUrl:
+      "https://refund.test/oauth/resource/shared.myshopify.com",
+  });
+  const client = new Client({ name: "quote-id-test", version: "1" });
+  t.after(async () => {
+    await client.close();
+    await server.close();
+  });
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+
+  const result = await client.callTool({
+    name: "confirm_return",
+    arguments: { quoteId: QUOTE_ID, customerConfirmed: true },
+  });
+  assert.equal(result.isError, true);
+  assert.match(
+    JSON.stringify(result.content),
+    /isn.t one of this customer's/,
+  );
+  // The lookup is scoped to the confirming customer and store, which is why
+  // customer A's quote is simply not there.
+  assert.deepEqual(lookups, [
+    {
+      shop: "shared.myshopify.com",
+      customerSubjectHash: "customer-b",
+      quoteId: QUOTE_ID,
+    },
+  ]);
+  assert.equal(upstream.mock.callCount(), 0);
+
+  const withoutAQuote = await client.callTool({
+    name: "confirm_return",
+    arguments: { customerConfirmed: true },
+  });
+  assert.equal(withoutAQuote.isError, true);
+  assert.match(JSON.stringify(withoutAQuote.content), /Name the quote/);
 });
