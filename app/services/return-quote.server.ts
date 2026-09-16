@@ -371,6 +371,7 @@ export async function submitReturnQuote(
     throw new Error("This estimate cannot submit a return or refund. Contact the merchant for approval.");
   const basket = quote.orders.length > 1;
   const submitted: SubmittedOrder[] = [];
+  const failures: unknown[] = [];
   for (const selection of quote.orders) {
     const orderName =
       orders.find((order) => order.id === selection.orderId)?.name ?? null;
@@ -401,6 +402,11 @@ export async function submitReturnQuote(
         ...describeRefundProgress(result),
       });
     } catch (error) {
+      // A single order answers exactly as it always has: the caller sees the
+      // failure itself, never a success-shaped reply with the problem buried
+      // inside. Only a basket reports per-order outcomes.
+      if (!basket) throw error;
+      failures.push(error);
       submitted.push({
         orderId: selection.orderId,
         orderName,
@@ -419,6 +425,8 @@ export async function submitReturnQuote(
     }
   }
 
+  // A basket where nothing went through is a failure, not a partial success.
+  if (failures.length === submitted.length) throw failures[0];
   const [first] = submitted;
   const statuses = new Set(submitted.map((order) => order.status));
   const status = statuses.size === 1 ? first.status : "PARTIAL";
