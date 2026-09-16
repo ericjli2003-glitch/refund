@@ -3,7 +3,7 @@ import prisma from "../db.server";
 import { describeRefundProgress } from "../refund-status";
 import { seal, unseal } from "./customer-security.server";
 import { readBoundQuote, returnItemsSchema, type createReturnQuote } from "./return-quote.server";
-import { sameReturnItems, moneyAmountsMatch } from "./return-guards.server";
+import { moneyAmountsMatch } from "./return-guards.server";
 
 export type CustomerContext = {
   shop: string;
@@ -15,11 +15,47 @@ const DRAFT_LIFETIME_MS = 14 * 24 * 60 * 60_000;
 const owner = (context: CustomerContext) => ({
   shop: context.shop, customerSubjectHash: context.customerSubjectHash,
 });
-function sameSelection(left: unknown, right: unknown) {
-  const a = returnItemsSchema.safeParse(left);
-  const b = returnItemsSchema.safeParse(right);
-  return a.success && b.success && sameReturnItems(a.data, b.data);
-}
+type Basket = Array<{
+  orderId: string;
+  items: Array<{ lineItemId: string; quantity: number }>;
+}>;
+
+// A basket is the same whatever order the assistant listed it in.
+const sameBasket = (left: Basket, right: Basket) => {
+  const normalize = (basket: Basket) =>
+    JSON.stringify(
+      [...basket]
+        .map((order) => ({
+          orderId: order.orderId,
+          items: [...order.items]
+            .map((item) => ({ lineItemId: item.lineItemId, quantity: item.quantity }))
+            .sort((a, b) => a.lineItemId.localeCompare(b.lineItemId)),
+        }))
+        .sort((a, b) => a.orderId.localeCompare(b.orderId)),
+    );
+  return Boolean(left.length) && normalize(left) === normalize(right);
+};
+
+// Drafts saved before baskets existed hold one order beside its items.
+const savedBasket = (draft: ReturnDraft, snapshot: Snapshot | null): Basket =>
+  snapshot?.orders?.length
+    ? snapshot.orders.map((order) => ({ orderId: order.orderId, items: order.items }))
+    : draft.orderId
+      ? [
+          {
+            orderId: draft.orderId,
+            items: returnItemsSchema.safeParse(draft.selectedItems).data ?? [],
+          },
+        ]
+      : [];
+
+type Snapshot = {
+  expectedRefund?: Quote["expectedRefund"];
+  paymentMethod?: string;
+  returnShipping?: string;
+  returnFees?: Quote["returnFees"];
+  orders?: Quote["orders"];
+} | null;
 
 // Only a validated continuation after Shopify verification may claim an intake.
 // Knowing a correlation ID alone never authorizes this operation. Accepts a
@@ -73,16 +109,31 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
   try {
     const quoteToken = unseal(draft.sealedQuoteToken, `return-draft:${draft.id}:${context.shop}`);
     const bound = readBoundQuote(quoteToken, context.shop, context.customerSubjectHash);
-    const snapshot = draft.quoteSnapshot as { expectedRefund?: Quote["expectedRefund"]; paymentMethod?: string; returnShipping?: string; returnFees?: Quote["returnFees"] } | null;
-    if (bound.id !== draft.quoteId || bound.orderId !== draft.orderId ||
+    const snapshot = draft.quoteSnapshot as Snapshot;
+    const saved = savedBasket(draft, snapshot);
+    if (bound.id !== draft.quoteId ||
         bound.expiresAt !== draft.quoteExpiresAt.getTime() ||
-        !sameSelection(draft.selectedItems, bound.items) ||
+        !sameBasket(saved, bound.orders) ||
         !snapshot?.expectedRefund ||
         !moneyAmountsMatch(snapshot.expectedRefund.amount, bound.expectedRefund.amount) ||
         snapshot.expectedRefund.currencyCode !== bound.expectedRefund.currencyCode) return null;
+    const orders: Quote["orders"] = snapshot.orders?.length
+      ? snapshot.orders
+      : [
+          {
+            orderId: bound.orders[0].orderId,
+            orderName: draft.orderName || "",
+            items: draft.selectedItems as Quote["orders"][number]["items"],
+            expectedRefund: bound.orders[0].expectedRefund,
+            returnFees: snapshot.returnFees || { restocking: null, returnShipping: null },
+          },
+        ];
     return {
-      orderId: bound.orderId, orderName: draft.orderName || "",
-      items: draft.selectedItems as Quote["items"], expectedRefund: bound.expectedRefund,
+      orders,
+      orderId: orders[0].orderId, orderName: draft.orderName || "",
+      items: orders.flatMap((order) =>
+        order.items.map((item) => ({ ...item, orderName: order.orderName })),
+      ) as Quote["items"], expectedRefund: bound.expectedRefund,
       submissionAvailable: bound.submissionAvailable,
       refundTiming: bound.refundTiming,
       quoteToken, expiresAt: draft.quoteExpiresAt.toISOString(),
@@ -97,14 +148,14 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
 }
 
 function sameQuote(a: Quote, b: Quote) {
-  return a.submissionAvailable === b.submissionAvailable && a.refundTiming === b.refundTiming && a.orderId === b.orderId && sameSelection(a.items, b.items) &&
+  return a.submissionAvailable === b.submissionAvailable && a.refundTiming === b.refundTiming && sameBasket(a.orders, b.orders) &&
     a.expectedRefund.currencyCode === b.expectedRefund.currencyCode &&
     moneyAmountsMatch(a.expectedRefund.amount, b.expectedRefund.amount);
 }
 
 export async function saveReturnQuote(context: CustomerContext, quote: Quote) {
   const bound = readBoundQuote(quote.quoteToken, context.shop, context.customerSubjectHash);
-  if (bound.submissionAvailable !== quote.submissionAvailable || bound.refundTiming !== quote.refundTiming || bound.orderId !== quote.orderId || !sameSelection(quote.items, bound.items) ||
+  if (bound.submissionAvailable !== quote.submissionAvailable || bound.refundTiming !== quote.refundTiming || !sameBasket(quote.orders, bound.orders) ||
       !moneyAmountsMatch(bound.expectedRefund.amount, quote.expectedRefund.amount) ||
       bound.expectedRefund.currencyCode !== quote.expectedRefund.currencyCode)
     throw new Error("Quote details do not match their signed authorization.");
@@ -116,9 +167,11 @@ export async function saveReturnQuote(context: CustomerContext, quote: Quote) {
   await prisma.returnDraft.updateMany({
     where: { id: draft.id, ...owner(context), quoteId: draft.quoteId, stage: draft.stage },
     data: {
-      stage: "QUOTED", orderId: quote.orderId, orderName: quote.orderName,
-      selectedItems: quote.items,
-      quoteSnapshot: { expectedRefund: quote.expectedRefund, paymentMethod: quote.paymentMethod, returnShipping: quote.returnShipping, returnFees: quote.returnFees },
+      stage: "QUOTED", orderId: quote.orders[0].orderId, orderName: quote.orderName,
+      selectedItems: quote.orders.flatMap((order) =>
+        order.items.map((item) => ({ lineItemId: item.lineItemId, quantity: item.quantity })),
+      ),
+      quoteSnapshot: { expectedRefund: quote.expectedRefund, paymentMethod: quote.paymentMethod, returnShipping: quote.returnShipping, returnFees: quote.returnFees, orders: quote.orders },
       quoteId: bound.id, quoteExpiresAt: new Date(bound.expiresAt),
       sealedQuoteToken: seal(quote.quoteToken, `return-draft:${draft.id}:${context.shop}`),
       expiresAt: new Date(Date.now() + DRAFT_LIFETIME_MS),

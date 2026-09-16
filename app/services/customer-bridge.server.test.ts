@@ -3,6 +3,7 @@ import test, { type TestContext } from "node:test";
 import { randomUUID } from "node:crypto";
 import prisma from "../db.server";
 import {
+  customerIdentityHash,
   digest,
   randomToken,
   seal,
@@ -162,6 +163,21 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
   const saved = await saveReturnQuote(context, {
     submissionAvailable: true,
     refundTiming: "IMMEDIATE",
+    orders: [
+      {
+        orderId: "gid://shopify/Order/1",
+        orderName: "#1001",
+        items: [
+          {
+            lineItemId: "gid://shopify/LineItem/1",
+            quantity: 1,
+            title: "Snowboard",
+          },
+        ],
+        expectedRefund: { amount: "14.00", currencyCode: "CAD" },
+        returnFees: { restocking: null, returnShipping: null },
+      },
+    ],
     orderId: "gid://shopify/Order/1",
     orderName: "#1001",
     items: [
@@ -169,6 +185,7 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
         lineItemId: "gid://shopify/LineItem/1",
         quantity: 1,
         title: "Snowboard",
+        orderName: "#1001",
       },
     ],
     expectedRefund: { amount: "14.00", currencyCode: "CAD" },
@@ -512,23 +529,109 @@ test("quotes use Shopify shop money for policy limits without changing customer 
   assert.equal(writes.mock.callCount(), 0);
 });
 
-test("in chat, a return with nothing deducted goes ahead without another question", async () => {
+test("a submittable quote always asks the customer once before anything moves", async () => {
   const { chatQuoteNextStep } = await import("./return-quote.server");
-  const none = { restocking: null, returnShipping: null };
-  const fee = { amount: "1.40", currencyCode: "CAD" };
-  assert.equal(
-    chatQuoteNextStep({ submissionAvailable: true, returnFees: none }).goAheadWithoutAsking,
-    true,
+  const submittable = chatQuoteNextStep({ submissionAvailable: true });
+  assert.equal(submittable.needsConfirmation, true);
+  assert.match(submittable.nextStep, /ask once/);
+  assert.match(submittable.nextStep, /only after a clear yes/);
+  const estimate = chatQuoteNextStep({ submissionAvailable: false });
+  assert.equal(estimate.needsConfirmation, false);
+  assert.match(estimate.nextStep, /store reviews these returns itself/);
+});
+
+test("a basket takes items from several orders, and totals only within one currency", async () => {
+  const { addMoney, basketFromInput } = await import("./return-quote.server");
+  const first = { orderId: "gid://shopify/Order/1", items: [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1 }] };
+  const second = { orderId: "gid://shopify/Order/2", items: [{ lineItemId: "gid://shopify/LineItem/2", quantity: 2 }] };
+  assert.deepEqual(basketFromInput({ orders: [first, second] }), [first, second]);
+  // Callers from before baskets existed still send one order beside its items.
+  assert.deepEqual(basketFromInput(first), [first]);
+  assert.throws(() => basketFromInput({ orders: [first, first] }), /only once/);
+  assert.throws(() => basketFromInput({ items: first.items }), /Choose what to return/);
+  assert.deepEqual(addMoney([{ amount: "14.00", currencyCode: "CAD" }, { amount: "6.50", currencyCode: "CAD" }]), {
+    amount: "20.50",
+    currencyCode: "CAD",
+  });
+  assert.throws(
+    () => addMoney([{ amount: "14.00", currencyCode: "CAD" }, { amount: "6.50", currencyCode: "USD" }]),
+    /different currencies/,
   );
-  for (const quote of [
-    { submissionAvailable: true, returnFees: { ...none, restocking: fee } },
-    { submissionAvailable: true, returnFees: { ...none, returnShipping: fee } },
-    { submissionAvailable: true },
-    { submissionAvailable: false, returnFees: none },
-  ])
-    assert.equal(chatQuoteNextStep(quote).goAheadWithoutAsking, false);
-  assert.match(
-    chatQuoteNextStep({ submissionAvailable: true, returnFees: { ...none, restocking: fee } }).nextStep,
-    /check once/,
+});
+
+test("one order failing never hides another that already refunded", async (t) => {
+  const { signQuote } = await import("./customer-security.server");
+  const { submitReturnQuote } = await import("./return-quote.server");
+  const shop = "basket-test.myshopify.com";
+  const customerId = "gid://shopify/Customer/1";
+  const order = (number: string) => ({
+    id: `gid://shopify/Order/${number}`,
+    name: `#${number}`,
+    processedAt: new Date().toISOString(),
+    returnInformation: {
+      nonReturnableSummary: null,
+      returnableLineItems: {
+        nodes: [{ lineItem: { id: `gid://shopify/LineItem/${number}` }, quantity: 1 }],
+      },
+    },
+  });
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
+    if (!init?.body)
+      return Response.json({ graphql_api: "https://shopify.com/1/customer/api/2026-07/graphql" });
+    return Response.json({
+      data: { customer: { id: customerId, orders: { nodes: [order("1"), order("2")] } } },
+    });
+  });
+  const money = (amount: string) => ({ amount, currencyCode: "CAD" });
+  const quoteToken = signQuote({
+    version: 1,
+    id: randomUUID(),
+    shop,
+    subject: customerIdentityHash(customerId),
+    submissionAvailable: true,
+    refundTiming: "IMMEDIATE",
+    expectedRefund: money("20.50"),
+    orders: [
+      {
+        orderId: "gid://shopify/Order/1",
+        items: [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1 }],
+        expectedRefund: money("14.00"),
+      },
+      {
+        orderId: "gid://shopify/Order/2",
+        items: [{ lineItemId: "gid://shopify/LineItem/2", quantity: 1 }],
+        expectedRefund: money("6.50"),
+      },
+    ],
+    expiresAt: Date.now() + 600_000,
+  });
+  const keys: string[] = [];
+  const result = await submitReturnQuote(
+    shop,
+    "customer-token",
+    { quoteToken, customerConfirmed: true },
+    async ({ orderId, idempotencyKey, expectedRefund }) => {
+      keys.push(idempotencyKey);
+      if (orderId.endsWith("/2")) throw new Error("Shopify turned this one down");
+      return {
+        orderId,
+        orderName: "#1",
+        status: "REFUND_SUBMITTED",
+        returnId: "gid://shopify/Return/1",
+        refundId: "gid://shopify/Refund/1",
+        amount: expectedRefund.amount,
+        currencyCode: expectedRefund.currencyCode,
+        refundStatus: "PENDING",
+      } as Awaited<ReturnType<typeof executeAutomaticReturn>>;
+    },
   );
+  assert.equal(result.status, "PARTIAL");
+  assert.equal(result.orders.length, 2);
+  assert.equal(result.orders[0].status, "REFUND_SUBMITTED");
+  assert.equal(result.orders[1].status, "NOT_SUBMITTED");
+  assert.match(result.orders[1].message, /turned this one down/);
+  // Only the order that refunded counts towards the total.
+  assert.deepEqual({ amount: result.amount, currencyCode: result.currencyCode }, money("14.00"));
+  // Each order carries its own key, so a retry can't refund the first twice.
+  assert.equal(new Set(keys).size, 2);
 });

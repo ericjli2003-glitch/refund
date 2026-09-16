@@ -246,7 +246,7 @@ const descriptions: Record<string, string> = {
   "returns:read": "Find your orders at stores that use Gooper.io, and what can be returned.",
   "returns:quote": "Work out the exact refund for the items you choose, including any fees.",
   "returns:submit":
-    "Submit returns and refunds to your original payment method when you ask for them, checking with you first if a fee applies.",
+    "Submit returns and refunds to your original payment method, each one after you say yes to the exact items and amount.",
 };
 
 function Note({ result }: { result?: StepResult }) {
@@ -401,9 +401,11 @@ export default function AgentConsent() {
           <section aria-labelledby="allow-step">
             <h2 id="allow-step">Allow {info.assistant}</h2>
             <p>
-              {info.assistant} can find your orders and submit the returns you ask
-              for. It checks with you first only if a fee would come out of your
-              refund, and refunds go back to your original payment method.
+              {info.assistant} can find your orders and handle returns for you,
+              including items from more than one order at the same store. It
+              always shows the exact items, any fees and your refund, and asks
+              once before anything is submitted. Refunds go back to your original
+              payment method.
             </p>
             <Form method="post">
               <input type="hidden" name="csrf" value={info.csrf} />
@@ -458,8 +460,9 @@ export default function AgentConsent() {
           {info.emailStep
             ? "Gooper.io finds your order at a store using the emails you confirm here. If you used a different email, your assistant asks and sends a quick confirmation."
             : "When you ask about a return, your assistant asks for the email you used at that store and sends a quick confirmation."}{" "}
-          Each store’s return rules still apply. Stores stay connected while you
-          keep using them, and the connection ends after a year without use.
+          Each store’s return rules still apply, and nothing is submitted until
+          you say yes to the exact items and refund. Stores stay connected while
+          you keep using them, and the connection ends after a year without use.
         </p>
         <p>
           See and remove your confirmed emails and stores at{" "}

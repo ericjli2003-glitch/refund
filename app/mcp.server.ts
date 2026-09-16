@@ -403,10 +403,22 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Quote a customer return",
       description:
-        "Checks the selected items, calculates the exact refund after any return fees, and saves a resumable quote. If submissionAvailable is false, explain kindly that the store reviews these returns itself, and stop. Otherwise follow goAheadWithoutAsking: when true, nothing is deducted, so the customer's request is the go-ahead and you call confirm_return right away; when false, a fee applies, so check once in one sentence before submitting.",
+        "Checks the selected items, calculates the exact refund after any return fees, and saves a resumable quote. One quote can cover items from several of that store's orders: pass orders, or a single orderId with items. If submissionAvailable is false, explain kindly that the store reviews these returns itself, and stop. Otherwise show what's going back, any fees and the refund total, ask once, and call confirm_return after a clear yes.",
       inputSchema: withShop({
-        orderId: z.string().min(1),
-        items: itemsSchema,
+        orderId: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("One order's ID; or use orders for items from several orders"),
+        items: itemsSchema.optional(),
+        orders: z
+          .array(z.object({ orderId: z.string().min(1), items: itemsSchema }))
+          .min(1)
+          .max(5)
+          .optional()
+          .describe(
+            "Items from up to five of this store's orders, quoted as one refund",
+          ),
       }),
       annotations: {
         readOnlyHint: false,
@@ -423,6 +435,7 @@ export function createCustomerReturnsMcpServer({
         const quote = await createReturnQuote(shop, customerToken, {
           orderId: input.orderId,
           items: input.items,
+          orders: input.orders,
         });
         const draft = customerSubjectHash
           ? await saveReturnQuote({ shop, customerSubjectHash, draftId }, quote)
@@ -454,7 +467,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Confirm and submit a customer return",
       description:
-        "Submits a return the customer asked for: requests and opens the Shopify return and refunds the original payment method, either immediately or after the store receives the item, as the quote's refundTiming states. Call it right after quote_return when goAheadWithoutAsking is true, or after the customer says yes when a fee applies. Never for an item the customer didn't ask to return.",
+        "Submits the quoted return: opens a Shopify return for each order in the quote and refunds the original payment method, either immediately or after the store receives the items, as the quote's refundTiming states. Call it only after the customer says yes to these exact items and this refund total. Each order reports its own result, so one order failing never undoes another.",
       inputSchema: withShop({
         quoteToken: z
           .string()
@@ -467,7 +480,7 @@ export function createCustomerReturnsMcpServer({
         customerConfirmed: z
           .literal(true)
           .describe(
-            "True when the customer asked to return these items and either nothing is deducted or they agreed to the fee",
+            "True only after the customer says yes to these exact items and this refund total",
           ),
       }),
       annotations: {
@@ -499,6 +512,7 @@ export function createCustomerReturnsMcpServer({
               text: JSON.stringify(
                 {
                   status: result.status,
+                  orders: result.orders,
                   orderId: result.orderId,
                   returnId: result.returnId,
                   refundId: result.refundId,

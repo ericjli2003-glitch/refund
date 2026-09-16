@@ -13,13 +13,17 @@ const shop = `draft-${randomUUID()}.myshopify.com`;
 const context = { shop, customerSubjectHash: "verified-a" };
 function quote(number: string) {
   const expiresAt = Date.now() + 600_000;
+  const items = [{ lineItemId: `gid://shopify/LineItem/${number}`, quantity: 1 }];
+  const expectedRefund = { amount: number, currencyCode: "CAD" };
   const value = {
     version: 1, id: randomUUID(), shop, subject: context.customerSubjectHash, submissionAvailable: true,
-    orderId: `gid://shopify/Order/${number}`,
-    items: [{ lineItemId: `gid://shopify/LineItem/${number}`, quantity: 1 }],
-    expectedRefund: { amount: number, currencyCode: "CAD" }, expiresAt,
+    orderId: `gid://shopify/Order/${number}`, items,
+    orders: [{ orderId: `gid://shopify/Order/${number}`, items, expectedRefund }],
+    expectedRefund, expiresAt,
   };
-  return { ...value, items: value.items.map(item => ({ ...item, title: `Item ${number}` })), orderName: `#${number}`,
+  const shown = items.map(item => ({ ...item, title: `Item ${number}`, orderName: `#${number}` }));
+  return { ...value, items: shown, orderName: `#${number}`,
+    orders: [{ orderId: `gid://shopify/Order/${number}`, orderName: `#${number}`, items: shown, expectedRefund, returnFees: { restocking: null, returnShipping: null } }],
     quoteToken: signQuote(value), expiresAt: new Date(expiresAt).toISOString(), paymentMethod: "Original", refundTiming: "IMMEDIATE" as const, returnFees: { restocking: null, returnShipping: null }, returnShipping: "Store instructions", nextStep: "Stop at quote" };
 }
 try {
