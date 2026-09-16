@@ -194,38 +194,38 @@ function ConnectedStep({
       </header>
       <h1>One tap to finish — then turn on Always allow</h1>
       <p className="lead">
-        Tap below to finish connecting. Gooper.io’s page in {assistant} opens in a
-        new tab: set both tool groups to <strong>Always allow</strong> so your
-        returns don’t stop at every step.
+        Tap below to finish connecting. {assistant} then shows your connectors:
+        open <strong>Gooper.io</strong> there and set both tool groups to{" "}
+        <strong>Always allow</strong> so your returns don’t stop at every step.
       </p>
       <AlwaysAllowPreview assistant={assistant} />
       <div className="button-row">
         <a
           className="return-button"
           href={continueUrl}
+          onClick={() => setFinishing(true)}
+        >
+          Finish connecting
+        </a>
+        <a
+          className="return-button secondary"
+          href={continueUrl}
           onClick={() => {
             setFinishing(true);
             window.open(settingsUrl, "_blank", "noopener,noreferrer");
           }}
         >
-          Finish &amp; open Gooper.io in {assistant} ↗
-        </a>
-        <a
-          className="return-button secondary"
-          href={continueUrl}
-          onClick={() => setFinishing(true)}
-        >
-          Just finish connecting
+          Finish &amp; open Gooper.io permissions ↗
         </a>
       </div>
       <p className="consent-email-hint" role="status" aria-live="polite">
         {finishing
           ? `Finishing your connection in ${assistant}.`
           : `If you don’t tap anything, we’ll finish connecting in ${seconds} second${seconds === 1 ? "" : "s"}.`}{" "}
-        If that tab is empty or its tools haven’t loaded, refresh it once the
-        connection finishes, or find Gooper.io under {settingsPath(assistant)}.
-        You can also choose <strong>Always allow</strong> the first time{" "}
-        {assistant} asks to use a Gooper.io tool in your chat.
+        Gooper.io sits under {settingsPath(assistant)}; if its tools haven’t
+        loaded yet, refresh that page once the connection finishes. You can also
+        choose <strong>Always allow</strong> the first time {assistant} asks to
+        use a Gooper.io tool in your chat.
       </p>
       <details>
         <summary>What happens if I leave it on “Ask for approval”?</summary>

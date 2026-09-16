@@ -491,13 +491,14 @@ setting only exists once the connection is made.
 
 - After Allow, the consent page shows "One tap to finish — then turn on Always
   allow" with the steps and a preview of both tool groups.
-  **Finish & open Gooper.io in Claude** opens the connector's own permissions
-  page in a new tab and finishes the connection in this tab, the way assistants
-  expect their sign-in window to return. Claude names that page after the OAuth
-  client it registered with us (claude.ai/customize/connectors/<client id>), so
-  the link skips the connectors list; a non-UUID client falls back to the list,
-  and the hint names the list path and the first in-chat tool prompt as other
-  ways in. ChatGPT still gets its connector settings. **Just finish connecting** skips the settings tab. If the
+  **Finish connecting** finishes in this tab, the way assistants expect their
+  sign-in window to return, and opens nothing else: the assistant already shows
+  its connectors afterwards. **Finish & open Gooper.io permissions** also opens
+  the connector's own page, which Claude names after the OAuth client it
+  registered with us (claude.ai/customize/connectors/<client id>); a non-UUID
+  client falls back to the connectors list. The hint names the list path and
+  the first in-chat tool prompt as other ways in. ChatGPT still gets its
+  connector settings. **Just finish connecting** skips the settings tab. If the
   customer taps nothing, the page finishes connecting after 60 seconds, so a
   connection is never left half done. A dropdown explains what "Ask for
   approval" costs.
