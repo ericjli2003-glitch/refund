@@ -12,7 +12,7 @@ export const meta: MetaFunction = () => [
   {
     name: "description",
     content:
-      "Let customers complete eligible Shopify returns inside compatible AI assistants, in one request and within merchant-controlled limits.",
+      "Let customers complete eligible Shopify returns inside compatible AI assistants, with explicit confirmation and merchant-controlled limits.",
   },
 ];
 
@@ -44,7 +44,7 @@ export default function Index() {
               window and refund limit.
             </p>
             <div className={styles.trustLine}>
-              <span>Returns in one request</span>
+              <span>Explicit confirmation</span>
               <span>Original payment method</span>
               <span>Idempotent execution</span>
             </div>
@@ -105,11 +105,11 @@ export default function Index() {
             </article>
             <article className={styles.featureCard}>
               <span className={styles.step}>03</span>
-              <h3>Ask only when it matters</h3>
+              <h3>Require confirmation</h3>
               <p>
-                A return goes ahead when the customer asks for it. If a fee would
-                come out of the refund, the customer agrees to it first. Duplicate
-                requests do not refund twice.
+                Nothing is submitted until the customer confirms the exact items
+                and refund amount, even across several orders. Duplicate requests
+                do not refund twice.
               </p>
             </article>
           </div>

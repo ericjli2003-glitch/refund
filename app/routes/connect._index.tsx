@@ -85,8 +85,8 @@ export default function ConnectAllStores() {
       <section>
         <h2>3. Stay in control</h2>
         <p>
-          Your assistant submits a return only when you ask for one, and checks
-          with you first if a fee would come out of your refund. Gooper.io uses your email only to find your orders,
+          Your assistant shows the exact items, any fees and your refund, then
+          submits only after you say yes. Gooper.io uses your email only to find your orders,
           never for marketing. See and remove your confirmed emails and stores
           on <a href="/connect/manage">your connection page</a> in the browser
           where you approved Gooper.io, or remove Gooper.io from your assistant at any

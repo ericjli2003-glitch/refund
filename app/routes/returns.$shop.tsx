@@ -357,11 +357,24 @@ export default function CustomerReturns() {
       {
         name: "quote_return",
         description:
-          "Calculate and persist a resumable return quote without submitting anything. Show the exact order, products, quantities, currency, amount, any return fees already deducted, when the refund is issued, correlation ID, and the store's return instructions in the conversation; do not require the customer to click the page's quote button. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
+          "Calculate and persist a resumable return quote without submitting anything. One quote can cover items from several of this customer's orders: pass orders, or a single orderId with items. Show the exact orders, products, quantities, currency, amount, any return fees already deducted, when the refund is issued, correlation ID, and the store's return instructions in the conversation; do not require the customer to click the page's quote button. If submissionAvailable is false, explain that merchant approval is needed and stop. Otherwise, stop for explicit customer confirmation.",
         inputSchema: {
           type: "object",
-          properties: { orderId: { type: "string" }, items },
-          required: ["orderId", "items"],
+          properties: {
+            orderId: { type: "string" },
+            items,
+            orders: {
+              type: "array",
+              maxItems: 5,
+              items: {
+                type: "object",
+                properties: { orderId: { type: "string" }, items },
+                required: ["orderId", "items"],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: [],
           additionalProperties: false,
         },
         annotations: {
@@ -558,14 +571,18 @@ export default function CustomerReturns() {
                   ? "Review before confirming"
                   : "Your return estimate"}
               </h2>
-              <p>{quote.orderName}</p>
-              <ul>
-                {quote.items.map((item) => (
-                  <li key={item.lineItemId}>
-                    {item.quantity} × {item.title}
-                  </li>
-                ))}
-              </ul>
+              {quote.orders.map((order) => (
+                <div key={order.orderId}>
+                  <p>Order {order.orderName}</p>
+                  <ul>
+                    {order.items.map((item) => (
+                      <li key={item.lineItemId}>
+                        {item.quantity} × {item.title}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
               <p className="return-amount">
                 {quote.expectedRefund.currencyCode}{" "}
                 {quote.expectedRefund.amount}
