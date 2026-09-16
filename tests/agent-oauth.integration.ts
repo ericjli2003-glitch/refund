@@ -193,7 +193,10 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       init?: ResponseInit;
     };
     assert.equal(data.connected.assistant, "Claude");
-    assert.equal(data.connected.settingsUrl, "https://claude.ai/customize/connectors");
+    assert.equal(
+      data.connected.settingsUrl,
+      `https://claude.ai/customize/connectors/${client.client_id}`,
+    );
     const response = new Headers(init?.headers);
     response.set("Location", data.connected.continueUrl);
     return new Response(null, { status: 302, headers: response });

@@ -104,7 +104,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       connected: {
         assistant,
         continueUrl: callback.href,
-        settingsUrl: connectorSettingsUrl(assistant),
+        settingsUrl: connectorSettingsUrl(assistant, flow.clientId),
       },
     },
     { headers: { ...headers(), ...(setCookie ? { "Set-Cookie": setCookie } : {}) } },
@@ -139,8 +139,7 @@ function AlwaysAllowPreview({ assistant }: { assistant: string }) {
         ))}
       </div>
       <figcaption>
-        What to choose in {assistant}: {settingsPath(assistant)}. Both groups
-        sit on Gooper.io’s own page, one click into your connectors list.
+        What to choose in {assistant}: {settingsPath(assistant)}
       </figcaption>
     </figure>
   );
@@ -151,10 +150,15 @@ const settingsPath = (assistant: string) =>
     ? "Settings → Connectors → Gooper.io"
     : "Customize → Connectors → Gooper.io → Tool permissions";
 
-const connectorSettingsUrl = (assistant: string) =>
-  assistant === "ChatGPT"
-    ? "https://chatgpt.com/#settings/Connectors"
-    : "https://claude.ai/customize/connectors";
+// Claude names a connector's page after the OAuth client it registered with
+// us, so this opens Gooper.io's own permissions instead of the whole list.
+const connectorSettingsUrl = (assistant: string, clientId: string) => {
+  if (assistant === "ChatGPT") return "https://chatgpt.com/#settings/Connectors";
+  const list = "https://claude.ai/customize/connectors";
+  return /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(clientId)
+    ? `${list}/${clientId}`
+    : list;
+};
 
 // Finishing happens in this tab, the way assistants expect their sign-in window
 // to return; settings open alongside in a new tab. If the customer taps
@@ -190,10 +194,9 @@ function ConnectedStep({
       </header>
       <h1>One tap to finish — then turn on Always allow</h1>
       <p className="lead">
-        Tap below to finish connecting. Your {assistant} connectors open in a new
-        tab: click <strong>Gooper.io</strong> in that list, then set both tool
-        groups to <strong>Always allow</strong> so your returns don’t stop at
-        every step.
+        Tap below to finish connecting. Gooper.io’s page in {assistant} opens in a
+        new tab: set both tool groups to <strong>Always allow</strong> so your
+        returns don’t stop at every step.
       </p>
       <AlwaysAllowPreview assistant={assistant} />
       <div className="button-row">
@@ -205,7 +208,7 @@ function ConnectedStep({
             window.open(settingsUrl, "_blank", "noopener,noreferrer");
           }}
         >
-          Finish &amp; open my {assistant} connectors ↗
+          Finish &amp; open Gooper.io in {assistant} ↗
         </a>
         <a
           className="return-button secondary"
@@ -219,10 +222,10 @@ function ConnectedStep({
         {finishing
           ? `Finishing your connection in ${assistant}.`
           : `If you don’t tap anything, we’ll finish connecting in ${seconds} second${seconds === 1 ? "" : "s"}.`}{" "}
-        If Gooper.io isn’t listed in that tab yet, or its tools haven’t loaded,
-        refresh it once the connection finishes. You can also choose{" "}
-        <strong>Always allow</strong> the first time {assistant} asks to use a
-        Gooper.io tool in your chat.
+        If that tab is empty or its tools haven’t loaded, refresh it once the
+        connection finishes, or find Gooper.io under {settingsPath(assistant)}.
+        You can also choose <strong>Always allow</strong> the first time{" "}
+        {assistant} asks to use a Gooper.io tool in your chat.
       </p>
       <details>
         <summary>What happens if I leave it on “Ask for approval”?</summary>
