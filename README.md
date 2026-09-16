@@ -42,7 +42,9 @@ acceptance checklist.
    authenticated customer's Shopify Customer Account API context.
 2. `quote_return` recalculates Shopify's expected total for the exact line items
    and quantities.
-3. `confirm_return` requires the signed `quoteToken` returned by `quote_return`.
+3. `confirm_return` is authorized by the signed quote from `quote_return`: in
+   chat it takes the short `quoteId` and reads the sealed token from the
+   customer's own draft, and the portal passes the `quoteToken` itself.
    In chat, the customer's request is the go-ahead when nothing is deducted
    (`goAheadWithoutAsking`); a return fee gets one confirmation first. The quote supplies a stable retry key. It rechecks
    customer ownership, returnability, store policy, currency, and amount before

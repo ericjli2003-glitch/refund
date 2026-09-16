@@ -508,6 +508,42 @@ setting only exists once the connection is made.
 - Tools keep accurate read-only and destructive hints; nothing is relabeled to
   skip approval.
 
+### 17. An approval dialog the customer can read (decided and implemented)
+
+Decision 16 left the approval prompt itself unreadable. Hosts print the tool's
+title and its raw arguments, so submitting a return showed
+`gid://shopify/LineItem/18781517840669` above a two-thousand-character quote
+token — nothing the customer can check their own refund against.
+
+- **Titles are the dialog's heading**, so all eleven tools are named in the
+  customer's own words: "Check your refund amount", "Submit your return and
+  refund", "Find what you can return", and so on. The anonymous intake tools
+  at `/mcp/public` are named the same way ("Find the store", "Start your
+  return"); their arguments were already words.
+- **Arguments are words.** Every store tool takes `store` (a name, website or
+  myshopify.com domain) instead of `shop`, and `quote_return` takes `returning`
+  — each entry an order number, a product name and a quantity — so the dialog
+  reads `{ store: "Testing", returning: [{ order: "#1001", product: "Refund
+  Test Product", quantity: 1 }] }`.
+- **Resolved against the customer's own orders, and refused when unsure**
+  (`app/services/return-wording.server.ts`). A store name resolves through
+  `resolveMerchant`, which already returns null when it is ambiguous. A product
+  title matching two line items, an order number that isn't theirs, and a
+  product from a different order each stop with a message naming the problem;
+  nothing is guessed, because a wrong guess refunds the wrong thing.
+- **IDs still work underneath.** `orderId`, `items` and `orders` are unchanged,
+  because the portal and every signed quote bind to real Shopify IDs.
+- **`confirm_return` takes the short `quoteId`.** The sealed token is read from
+  the customer's own draft (`ReturnDraft.quoteId` -> `sealedQuoteToken`), so a
+  quote id alone never reaches another customer's quote, and the token itself
+  never has to travel through chat. `quoteToken` stays accepted for the portal
+  and for a session that keeps no draft, and `quote_return` returns it only
+  when there is no draft to hold it.
+
+**Tradeoff:** a product name is resolved from Shopify's `presentmentTitle`, so
+two items that differ only by variant (or by nothing at all) can't be told
+apart by name. That case refuses and asks, rather than picking one.
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.

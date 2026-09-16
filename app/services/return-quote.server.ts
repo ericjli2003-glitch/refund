@@ -7,6 +7,7 @@ import {
   executeAutomaticReturn,
   getReturnableOrders,
   refundTimingOf,
+  type ReturnableOrder,
 } from "./automatic-return.server";
 import { moneyIsAbove, refundFromReturnTotal } from "./return-guards.server";
 import {
@@ -18,6 +19,7 @@ import {
   signQuote,
   verifyQuoteSignature,
 } from "./customer-security.server";
+import { resolveReturning, returningSchema } from "./return-wording.server";
 
 // A basket holds items from a few of the customer's orders at one store.
 // Shopify opens a return per order, so each order keeps its own quote, refund
@@ -57,6 +59,8 @@ export const quoteInputSchema = z.object({
   items: returnItemsSchema.optional(),
   // Or items from several of this store's orders.
   orders: z.array(orderSelectionSchema).min(1).max(MAX_ORDERS).optional(),
+  // Or the words the customer used, resolved against their own orders.
+  returning: returningSchema.optional(),
 });
 
 export const confirmInputSchema = z.object({
@@ -67,14 +71,24 @@ export const confirmInputSchema = z.object({
 
 export type OrderSelection = z.infer<typeof orderSelectionSchema>;
 
-export function basketFromInput(input: unknown): OrderSelection[] {
+// `available` is the customer's own returnable orders, which is what a product
+// title or order number is resolved against; IDs need no lookup, so a caller
+// that passes them can leave it out.
+export function basketFromInput(
+  input: unknown,
+  available: ReturnableOrder[] = [],
+): OrderSelection[] {
   const raw = quoteInputSchema.parse(input);
   const orders =
     raw.orders ??
-    (raw.orderId && raw.items ? [{ orderId: raw.orderId, items: raw.items }] : null);
+    (raw.orderId && raw.items
+      ? [{ orderId: raw.orderId, items: raw.items }]
+      : raw.returning
+        ? resolveReturning(raw.returning, available)
+        : null);
   if (!orders)
     throw new Error(
-      "Choose what to return: pass orders, or a single orderId with items.",
+      "Choose what to return: pass returning with each order number and product name, or the orders and items by ID.",
     );
   if (new Set(orders.map((order) => order.orderId)).size !== orders.length)
     throw new Error("Each order can appear only once in a return.");
@@ -187,8 +201,10 @@ export async function createReturnQuote(
   customerToken: CustomerAccess,
   input: unknown,
 ) {
-  const selections = basketFromInput(input);
   const { customerId, orders } = await getReturnableOrders(shop, customerToken);
+  // Resolved against the customer's own orders, so a product name can only
+  // ever mean something they actually bought.
+  const selections = basketFromInput(input, orders);
   const policy = await prisma.storePolicy.findUnique({ where: { shop } });
   // Installing Gooper.io enables estimates. Automatic payment authorization is
   // separate and is still rechecked by the submission service.
@@ -263,9 +279,12 @@ export async function createReturnQuote(
     );
   }
 
+  // A plain string: the id travels through drafts and tool arguments, not only
+  // through crypto.randomUUID's literal type.
+  const quoteId: string = randomUUID();
   const quote = {
     version: 1 as const,
-    id: randomUUID(),
+    id: quoteId,
     shop,
     orders: priced.map((entry) => ({
       orderId: entry.order.id,
@@ -306,6 +325,9 @@ export async function createReturnQuote(
     expectedRefund,
     submissionAvailable,
     refundTiming,
+    // The short id confirm_return takes; the signed token is what actually
+    // authorizes the submission, and callers that hold it may send it instead.
+    quoteId,
     quoteToken: signQuote(quote),
     expiresAt: new Date(quote.expiresAt).toISOString(),
     nextStep: submissionAvailable

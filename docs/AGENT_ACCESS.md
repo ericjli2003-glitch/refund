@@ -38,7 +38,7 @@ with a keyed hash for lookups, and used only to find the customer's orders at
 stores that use Gooper.io, never for marketing:
 
 1. The assistant finds the store with `find_store` and calls a return tool with
-   that `shop`. If the store has no link, Gooper.io checks the connection's
+   that store's name or website as `store`, which resolves to one shop or stops. If the store has no link, Gooper.io checks the connection's
    confirmed emails for orders there and links the store to the first match,
    with nothing for the customer to do. If none match, the tool returns
    `linkRequired` with reason `email_not_found`, and the assistant asks

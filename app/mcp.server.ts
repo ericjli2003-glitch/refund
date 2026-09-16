@@ -20,11 +20,13 @@ import {
   markDraftSubmitted,
   notePurchaseLookup,
   saveReturnQuote,
+  sealedQuoteFor,
 } from "./services/return-draft.server";
 import {
   addReturnTracking,
   returnShippingFor,
 } from "./services/return-shipping.server";
+import { resolveStore, returningSchema } from "./services/return-wording.server";
 import type { CustomerAccess } from "./services/verified-customer-returns.server";
 import { returnsChatStyle } from "./services/chat-style.server";
 
@@ -98,6 +100,17 @@ const json = (value: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }],
 });
 
+// The signed token authorizes a submission and is thousands of characters
+// long; the assistant works with the short quote id instead, and the sealed
+// token stays in the customer's own draft.
+const withoutToken = <T extends { quoteToken?: string }>(
+  value: T,
+): Omit<T, "quoteToken"> => {
+  const shown = { ...value };
+  delete (shown as { quoteToken?: string }).quoteToken;
+  return shown;
+};
+
 export type StoreDirectoryTools = {
   find: (merchant: string) => Promise<unknown>;
   link: (merchant: string, email?: string) => Promise<unknown>;
@@ -109,7 +122,7 @@ export type StoreDirectoryTools = {
 };
 
 // One server serves both a single store's connection and the all-stores
-// connection. With `stores`, every store tool also takes a `shop` argument,
+// connection. With `stores`, every store tool also takes a `store` argument,
 // and `authorize` checks that the connection has linked that store.
 export function createCustomerReturnsMcpServer({
   authorize,
@@ -133,25 +146,31 @@ export function createCustomerReturnsMcpServer({
     { name: "Shopify customer returns", version: "0.5.0" },
     { instructions: returnsChatStyle },
   );
-  const shopSchema = z
+  // Assistants show these arguments to the customer before they approve a
+  // tool, so they are the words the customer used, not Shopify's IDs.
+  const storeSchema = z
     .string()
     .min(1)
     .max(255)
     .describe(
-      "The store's myshopify.com domain, from find_store or list_linked_stores",
+      'The store, in the customer\'s own words: its name or website, like "Testing" or "testing.com". Its myshopify.com domain works too.',
     );
-  const withShop = <T extends z.ZodRawShape>(shape: T) =>
-    (stores ? { ...shape, shop: shopSchema } : shape) as T & {
-      shop?: typeof shopSchema;
+  const withStore = <T extends z.ZodRawShape>(shape: T) =>
+    (stores ? { store: storeSchema, ...shape } : shape) as T & {
+      store?: typeof storeSchema;
     };
+  // A store name that fits no store, or more than one, stops here rather than
+  // reaching a store the customer never named.
+  const storeAccess = async (scope: AgentScope, input: { store?: string }) =>
+    authorize(scope, input.store ? await resolveStore(input.store) : undefined);
 
   if (stores) {
     server.registerTool(
       "find_store",
       {
-        title: "Find a store that uses Gooper.io",
+        title: "Find the store",
         description:
-          "Search Gooper.io's directory of stores by business name or website. If exactly one store matches, go ahead with it without asking, and mention its name naturally so the customer can correct you. If several match, ask which one they bought from in one short, friendly question listing each name and website. Each result's shop is what link_store and the other tools take.",
+          "Search Gooper.io's directory of stores by business name or website. If exactly one store matches, go ahead with it without asking, and mention its name naturally so the customer can correct you. If several match, ask which one they bought from in one short, friendly question listing each name and website. Pass the store's name or website to the other tools as store.",
         inputSchema: {
           merchant: z
             .string()
@@ -178,7 +197,7 @@ export function createCustomerReturnsMcpServer({
     server.registerTool(
       "list_linked_stores",
       {
-        title: "List linked stores",
+        title: "See which stores are connected",
         description:
           "Lists the stores this connection is linked to and whether each link is still active. Reconnect an inactive link with link_store.",
         inputSchema: {},
@@ -201,7 +220,7 @@ export function createCustomerReturnsMcpServer({
     server.registerTool(
       "link_store",
       {
-        title: "Link a store to this connection",
+        title: "Connect the store to this chat",
         description:
           "Connects a store so this connection can see the customer's orders there. If an email the customer already confirmed has orders at the store, it connects right away with nothing for them to do. With a different email they used at checkout, Gooper.io emails them a one-tap confirmation, no Shopify sign-in and no account needed, and returns a number for them to pick on the confirmation page. Without an email, it asks you to get one. Says so if the store is already connected, or if the store hasn't set up returns through assistants yet; there's no Shopify sign-in to offer instead. Never ask for passwords or sign-in codes in chat.",
         inputSchema: {
@@ -209,7 +228,7 @@ export function createCustomerReturnsMcpServer({
             .string()
             .min(1)
             .max(2048)
-            .describe("The store's myshopify.com domain or website from find_store"),
+            .describe("The store's name or website from find_store"),
           email: z
             .string()
             .max(254)
@@ -235,7 +254,7 @@ export function createCustomerReturnsMcpServer({
     server.registerTool(
       "list_confirmed_emails",
       {
-        title: "List confirmed emails",
+        title: "See the emails you've confirmed",
         description:
           "Shows the emails the customer confirmed for this connection, partly hidden. Gooper.io uses them only to find the customer's orders at stores that use Gooper.io, never for marketing. Use when the customer asks which emails Gooper.io has, or wants to remove one.",
         inputSchema: {},
@@ -258,7 +277,7 @@ export function createCustomerReturnsMcpServer({
     server.registerTool(
       "remove_confirmed_email",
       {
-        title: "Remove a confirmed email",
+        title: "Forget one of your emails",
         description:
           "Removes one confirmed email from this connection, along with any store it connected. Only when the customer asks to remove it. Use an id from list_confirmed_emails.",
         inputSchema: {
@@ -288,11 +307,11 @@ export function createCustomerReturnsMcpServer({
       {
         title:
           name === "get_return_session"
-            ? "Resume a customer return draft"
-            : "Check a customer return status",
+            ? "Pick up where you left off"
+            : "Check on your return",
         description:
           "Reads only the authenticated customer's latest Gooper.io draft, any known submission status, and each approved return's shipping: the store's return label link and tracking, and whether the customer can add their own tracking. Use after interruption or an uncertain retry. Never creates a return or refund.",
-        inputSchema: withShop({}),
+        inputSchema: withStore({}),
         annotations: {
           readOnlyHint: true,
           destructiveHint: false,
@@ -303,7 +322,7 @@ export function createCustomerReturnsMcpServer({
       },
       async (input) => {
         try {
-          const context = await authorize("returns:read", input.shop);
+          const context = await storeAccess("returns:read", input);
           if (!context.customerSubjectHash)
             throw new Error("This customer session cannot resume drafts.");
           const customer = {
@@ -311,8 +330,11 @@ export function createCustomerReturnsMcpServer({
             customerSubjectHash: context.customerSubjectHash,
             draftId: context.draftId,
           };
+          const session = await getReturnSession(customer);
           const result = {
-            ...(await getReturnSession(customer)),
+            ...withoutToken(session),
+            quoteId: session.quote?.quoteId ?? null,
+            quote: session.quote ? withoutToken(session.quote) : null,
             shipping: await returnShippingFor(customer),
           };
           return {
@@ -329,15 +351,15 @@ export function createCustomerReturnsMcpServer({
   server.registerTool(
     "find_returnable_items",
     {
-      title: "Find a customer's returnable purchases",
+      title: "Find what you can return",
       description:
         "Lists returnable items from the authenticated customer's own recent Shopify orders. Pick the item yourself: when one matches what the customer described, or it's their only returnable item, use it without asking. Ask one short question only when several items could match. Never ask for an order number, a reason or card details.",
-      inputSchema: withShop({
+      inputSchema: withStore({
         query: z
           .string()
           .max(120)
           .optional()
-          .describe("Optional product name or order-name search"),
+          .describe("Optional product name or order-number search"),
       }),
       annotations: {
         readOnlyHint: true,
@@ -350,7 +372,7 @@ export function createCustomerReturnsMcpServer({
     async (input) => {
       try {
         const { shop, customerToken, customerSubjectHash, draftId } =
-          await authorize("returns:read", input.shop);
+          await storeAccess("returns:read", input);
         const { orders } = await getReturnableOrders(shop, customerToken);
         if (customerSubjectHash)
           await notePurchaseLookup({ shop, customerSubjectHash, draftId });
@@ -401,23 +423,29 @@ export function createCustomerReturnsMcpServer({
   server.registerTool(
     "quote_return",
     {
-      title: "Quote a customer return",
+      title: "Check your refund amount",
       description:
-        "Checks the selected items, calculates the exact refund after any return fees, and saves a resumable quote. One quote can cover items from several of that store's orders: pass orders, or a single orderId with items. If submissionAvailable is false, explain kindly that the store reviews these returns itself, and stop. Otherwise show what's going back, any fees and the refund total, ask once, and call confirm_return after a clear yes.",
-      inputSchema: withShop({
+        "Checks the selected items, calculates the exact refund after any return fees, and saves a resumable quote. Name each thing going back in returning, with the product as the customer called it and the order number only when they gave one; one quote can cover items from several of that store's orders. A product name that fits two items, or an order that isn't the customer's, stops rather than guessing — ask the customer instead. If submissionAvailable is false, explain kindly that the store reviews these returns itself, and stop. Otherwise show what's going back, any fees and the refund total, ask once, and call confirm_return with this quoteId after a clear yes.",
+      inputSchema: withStore({
+        returning: returningSchema
+          .optional()
+          .describe("Each thing going back, in the customer's own words"),
+        // The portal and other ID-holding callers keep the exact form.
         orderId: z
           .string()
           .min(1)
           .optional()
-          .describe("One order's ID; or use orders for items from several orders"),
-        items: itemsSchema.optional(),
+          .describe("One order's Shopify ID, when you already have it"),
+        items: itemsSchema
+          .optional()
+          .describe("That order's line items by Shopify ID"),
         orders: z
           .array(z.object({ orderId: z.string().min(1), items: itemsSchema }))
           .min(1)
           .max(5)
           .optional()
           .describe(
-            "Items from up to five of this store's orders, quoted as one refund",
+            "Items from up to five of this store's orders by Shopify ID, quoted as one refund",
           ),
       }),
       annotations: {
@@ -431,8 +459,9 @@ export function createCustomerReturnsMcpServer({
     async (input) => {
       try {
         const { shop, customerToken, customerSubjectHash, draftId } =
-          await authorize("returns:quote", input.shop);
+          await storeAccess("returns:quote", input);
         const quote = await createReturnQuote(shop, customerToken, {
+          returning: input.returning,
           orderId: input.orderId,
           items: input.items,
           orders: input.orders,
@@ -440,22 +469,15 @@ export function createCustomerReturnsMcpServer({
         const draft = customerSubjectHash
           ? await saveReturnQuote({ shop, customerSubjectHash, draftId }, quote)
           : null;
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  ...(draft?.quote || quote),
-                  correlationId: draft?.id,
-                  ...chatQuoteNextStep(draft?.quote || quote),
-                },
-                null,
-                2,
-              ),
-            },
-          ],
-        };
+        const view = draft?.quote || quote;
+        return json({
+          ...withoutToken(view),
+          // Without a draft to hold the sealed token, it is the only way back
+          // to this quote, so it stays in the reply.
+          ...(draft ? {} : { quoteToken: view.quoteToken }),
+          correlationId: draft?.id,
+          ...chatQuoteNextStep(view),
+        });
       } catch (error) {
         return toolError(error, resourceMetadataUrl);
       }
@@ -465,16 +487,25 @@ export function createCustomerReturnsMcpServer({
   server.registerTool(
     "confirm_return",
     {
-      title: "Confirm and submit a customer return",
+      title: "Submit your return and refund",
       description:
-        "Submits the quoted return: opens a Shopify return for each order in the quote and refunds the original payment method, either immediately or after the store receives the items, as the quote's refundTiming states. Call it only after the customer says yes to these exact items and this refund total. Each order reports its own result, so one order failing never undoes another.",
-      inputSchema: withShop({
+        "Submits the quoted return: opens a Shopify return for each order in the quote and refunds the original payment method, either immediately or after the store receives the items, as the quote's refundTiming states. Pass the quoteId from quote_return. Call it only after the customer says yes to these exact items and this refund total. Each order reports its own result, so one order failing never undoes another.",
+      inputSchema: withStore({
+        quoteId: z
+          .string()
+          .min(1)
+          .max(64)
+          .optional()
+          .describe(
+            "The quoteId from quote_return; reuse it for retries of the same quote",
+          ),
         quoteToken: z
           .string()
           .min(1)
           .max(32_000)
+          .optional()
           .describe(
-            "The unmodified quoteToken returned by quote_return; reuse it for retries",
+            "Only when quote_return returned a quoteToken instead of a quoteId",
           ),
         customerNote: z.string().max(300).optional(),
         customerConfirmed: z
@@ -493,18 +524,34 @@ export function createCustomerReturnsMcpServer({
     },
     async (input) => {
       try {
-        const { shop, customerToken, customerSubjectHash } = await authorize(
+        const { shop, customerToken, customerSubjectHash } = await storeAccess(
           "returns:submit",
-          input.shop,
+          input,
         );
+        // The short id is only ever looked up inside this customer's own
+        // drafts, so it can never reach another customer's quote.
+        if (!input.quoteToken && !input.quoteId)
+          throw new Error(
+            "Name the quote to submit: pass the quoteId from quote_return.",
+          );
+        if (input.quoteId && !input.quoteToken && !customerSubjectHash)
+          throw new Error(
+            "This customer session keeps no saved quote, so confirm with the quoteToken quote_return returned.",
+          );
+        const quoteToken =
+          input.quoteToken ??
+          (await sealedQuoteFor(
+            { shop, customerSubjectHash: customerSubjectHash! },
+            input.quoteId!,
+          ));
         const result = await submitReturnQuote(shop, customerToken, {
-          quoteToken: input.quoteToken,
+          quoteToken,
           customerNote: input.customerNote,
           customerConfirmed: input.customerConfirmed,
         });
         if (customerSubjectHash)
           await markDraftSubmitted({ shop, customerSubjectHash }, result,
-            readBoundQuote(input.quoteToken, shop, customerSubjectHash).id);
+            readBoundQuote(quoteToken, shop, customerSubjectHash).id);
         return {
           content: [
             {
@@ -541,10 +588,10 @@ export function createCustomerReturnsMcpServer({
   server.registerTool(
     "add_return_tracking",
     {
-      title: "Add return tracking",
+      title: "Add your tracking number",
       description:
         "Records the tracking number for a return the authenticated customer is shipping back themselves. Use an agentReturnId from get_return_session or check_return_status shipping entries where canAddTracking is true, and only a tracking number the customer gave you; never invent one. Never overwrites tracking from the store's label and does not change the refund.",
-      inputSchema: withShop({
+      inputSchema: withStore({
         agentReturnId: z.string().min(1).max(64),
         trackingNumber: z
           .string()
@@ -567,9 +614,9 @@ export function createCustomerReturnsMcpServer({
     },
     async (input) => {
       try {
-        const { shop, customerSubjectHash } = await authorize(
+        const { shop, customerSubjectHash } = await storeAccess(
           "returns:submit",
-          input.shop,
+          input,
         );
         if (!customerSubjectHash)
           throw new Error("This customer session cannot update returns.");
