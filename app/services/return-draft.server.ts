@@ -136,6 +136,7 @@ export function restoreDraftQuote(draft: ReturnDraft, context: CustomerContext):
       ) as Quote["items"], expectedRefund: bound.expectedRefund,
       submissionAvailable: bound.submissionAvailable,
       refundTiming: bound.refundTiming,
+      quoteId: bound.id,
       quoteToken, expiresAt: draft.quoteExpiresAt.toISOString(),
       paymentMethod: snapshot.paymentMethod || "Original payment method.",
       returnFees: snapshot.returnFees || { restocking: null, returnShipping: null },
@@ -231,6 +232,25 @@ export async function getReturnSession(context: CustomerContext) {
           ? "Use find_returnable_items and quote_return to prepare a fresh quote. Review any previous submission attempts first."
           : "No active draft. Review submissions before starting again from the store.",
   };
+}
+
+// confirm_return takes the short quote id, so the sealed token the customer's
+// own draft holds is what authorizes the submission. Scoped to this customer
+// and store: another customer's quote id simply isn't found here.
+export async function sealedQuoteFor(context: CustomerContext, quoteId: string) {
+  const draft = await prisma.returnDraft.findFirst({
+    where: { ...owner(context), quoteId },
+    orderBy: { updatedAt: "desc" },
+  });
+  if (!draft)
+    throw new Error(
+      "That quote isn't one of this customer's. Quote the return again, then confirm the quote it returns.",
+    );
+  if (!draft.sealedQuoteToken)
+    throw new Error(
+      "That quote was already submitted. Use check_return_status to see what went through; never submit the same return twice.",
+    );
+  return unseal(draft.sealedQuoteToken, `return-draft:${draft.id}:${context.shop}`);
 }
 
 export async function markDraftSubmitted(context: CustomerContext, result: { status: string }, quoteId: string) {

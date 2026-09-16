@@ -189,6 +189,7 @@ test("return quotes persist as customer-bound resumable drafts without plaintext
       },
     ],
     expectedRefund: { amount: "14.00", currencyCode: "CAD" },
+    quoteId: "cc6a89ab-d600-44dd-b917-c1923aa16b44",
     quoteToken,
     expiresAt,
     paymentMethod: "Original payment method",

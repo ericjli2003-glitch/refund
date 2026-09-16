@@ -443,7 +443,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
         method: "tools/call",
         params: {
           name: "confirm_return",
-          arguments: { shop, customerConfirmed: true, quoteToken: "unused" },
+          arguments: { store: shop, customerConfirmed: true, quoteToken: "unused" },
         },
       });
       assert.equal(forbidden.status, 403);
@@ -797,14 +797,14 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
           pattern: "/mcp/stores",
         });
       assert.equal(
-        (await callTool(`Bearer rfa_${randomToken()}`, "get_return_session", { shop }))
+        (await callTool(`Bearer rfa_${randomToken()}`, "get_return_session", { store: shop }))
           .status,
         401,
       );
       assert.equal(
         (
           await callTool(`Bearer ${tokens.access_token}`, "confirm_return", {
-            shop,
+            store: shop,
             quoteToken: "unused",
             customerConfirmed: true,
           })
@@ -814,7 +814,7 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
       const unlinked = await callTool(
         `Bearer ${tokens.access_token}`,
         "get_return_session",
-        { shop },
+        { store: shop },
       );
       assert.equal(unlinked.status, 200);
       const unlinkedBody = await unlinked.json();
