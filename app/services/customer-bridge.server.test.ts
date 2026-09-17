@@ -534,8 +534,11 @@ test("a submittable quote always asks the customer once before anything moves", 
   const { chatQuoteNextStep } = await import("./return-quote.server");
   const submittable = chatQuoteNextStep({ submissionAvailable: true });
   assert.equal(submittable.needsConfirmation, true);
-  assert.match(submittable.nextStep, /ask once/);
-  assert.match(submittable.nextStep, /only after a clear yes/);
+  // One question, and the return is submitted only after a clear yes.
+  assert.match(submittable.nextStep, /Want me to go ahead\?/);
+  assert.match(submittable.nextStep, /one question/);
+  assert.match(submittable.nextStep, /After a clear yes, [^.]*call confirm_return/);
+  assert.match(submittable.nextStep, /Ask nothing else/);
   const estimate = chatQuoteNextStep({ submissionAvailable: false });
   assert.equal(estimate.needsConfirmation, false);
   assert.match(estimate.nextStep, /store reviews these returns itself/);

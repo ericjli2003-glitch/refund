@@ -5,6 +5,33 @@ when a decision below is resolved; do not let it drift into a changelog.
 
 Last reviewed: 2026-09-12, against `claude/project-state`.
 
+## Gooper-funded product work (2026-09-17)
+
+The user clarified that the intended new product fronts Gooper's money to the
+customer, then collects from the merchant only after receipt AND explicit
+inspection approval. The original-payment production implementation described
+below is unchanged. Its limitations are not a decision to abandon the funded
+product.
+
+A separate, persisted development-only simulator now exercises funding,
+inspection, partial acceptance, repayment, uncertain outcomes and a balanced
+simulation journal at `/app/funded-returns`. It requires
+`GOOPER_FUNDED_RETURNS_SANDBOX=1` and development/test mode, and fails closed in
+production. It contains synthetic data only and moves no money.
+
+Payments now pass through a provider abstraction with only a fake sandbox
+adapter: durable payment intents written with the case command, signed and
+deduplicated provider events, lookup-based reconciliation, and outcomes matched
+to the exact intent, attempt, amount and currency. PostgreSQL CHECK constraints
+allow only SANDBOX intents. No real provider is selected or connected, and
+customer recovery rights remain undecided. Existing Shopify refunds are
+unchanged.
+
+See [FUNDED_RETURNS_HANDOFF.md](FUNDED_RETURNS_HANDOFF.md) for the exact code,
+verification status, local setup and next implementation steps. The database
+tests pass against PostgreSQL 16; the authenticated embedded browser check is
+still outstanding because `shopify app dev` would rewrite the live app's URLs.
+
 ## Shopify App Store compliance status
 
 ### Requirements currently met
