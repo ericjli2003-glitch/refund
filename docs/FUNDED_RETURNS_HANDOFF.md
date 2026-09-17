@@ -91,6 +91,14 @@ Two layers, both development-only and synthetic.
     **same idempotency key**, capped at 5 submissions. NOT_FOUND for an accepted
     payment, or once the cap is reached → REVIEW. It never creates a new attempt
     or key. REVIEW intents are never looked up again.
+  - `app/services/funded-payments-worker.server.ts` + `scripts/funded-payments-worker.ts`
+    (`npm run funded:worker`): background dispatch/reconcile across all shops on an
+    interval, with counts of payments held for review, unresolved over 15 minutes and
+    queued over 5 minutes. Sandbox-gated; it exits immediately in production. The
+    merchant screen still dispatches inline for immediate feedback.
+- `app/services/funded-returns-admin.server.ts`: the screen's loader/action logic,
+  taking the admin authenticator as a parameter so tests can substitute it. The
+  route passes `authenticate.admin`. The sandbox gate runs before authentication.
 - `app/routes/webhooks.funded-sandbox-provider.tsx`: dev-only callback endpoint
   (404 outside the sandbox gate, 16KB cap, raw-body signature, 400 on rejection).
 - Prisma models `FundedPaymentIntent` (with `version` CAS column), `FundedPaymentEvent`,
@@ -100,7 +108,10 @@ Two layers, both development-only and synthetic.
 - Uninstall and shop redaction also delete these three tables' rows for the shop.
 - Tests: `app/funded-payments.test.ts` (matching, signatures, derived IDs, provider
   and webhook-route lockout) and `tests/funded-payment-intents.integration.ts`.
-  Both integration files run under `npm run test:funded-sandbox` (already in CI).
+  Plus `app/services/funded-returns-admin.server.test.ts` (gate/auth/method/origin
+  ordering, no database), `tests/funded-returns-admin.integration.ts` (real form
+  actions for two stores) and `tests/funded-payments-worker.integration.ts`.
+  All four integration files run under `npm run test:funded-sandbox` (already in CI).
 
 In this sandbox the route dispatches inline right after the intent commits. A
 production design would run dispatch/reconcile in a worker on a schedule. None
@@ -200,18 +211,18 @@ or `test` AND the flag; production returns 404 even with the flag set.
 
 ## Next implementation steps, in order
 
-1. Embedded happy path is verified (above). Still open: the non-default provider
-   scenarios and a second store in the admin, plus route-level tests for the admin
-   action's auth/origin. Those tests need an `authenticate.admin` seam or mock.
+1. Embedded happy path is verified (above), and the screen's actions now have
+   unit and database tests. Still open in the admin itself: the non-default
+   provider scenarios and a second store, both covered by tests instead.
 2. Review resolution: REVIEW intents currently have no resolution path. Design an
    explicit, audited operator action (who may resolve, with what evidence). Never
    auto-resolve, auto-write-off or auto-approve.
 3. Reversal accounting: a reversal is recorded but balances don't change. Define
    ledger entries for payout reversal after approval and collection reversal after
    settlement once the funding agreement says who bears them.
-4. Scheduled worker for `dispatchPaymentIntents`/`reconcilePaymentIntents` with
-   alerting on REVIEW and on aged UNKNOWN intents. Add metrics for
-   submission/lookup counts.
+4. The worker exists (`npm run funded:worker`) but nothing schedules or supervises
+   it, and "alerting" is log output. A real deployment needs a scheduler, a single
+   owner per intent across instances, and alerts that reach a person.
 5. Exposure controls in synthetic tests: merchant/customer/portfolio caps,
    insufficient capital, non-return and dispute review. Rejected amounts still
    remain exposed; no customer recovery or automatic write-off exists.
