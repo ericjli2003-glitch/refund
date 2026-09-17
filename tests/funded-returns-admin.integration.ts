@@ -35,19 +35,27 @@ async function submit(name: string, fields: Record<string, string>) {
   });
   return (await fundedReturnsAction(request, as(name))) as unknown as Result;
 }
+type View = {
+  cases: Array<{
+    id: string;
+    version: number;
+    state: { payout: string; collection: string; returnStatus: string };
+  }>;
+  payments: Array<{
+    caseId: string;
+    status: string;
+    operation: string;
+    amountMinor: number;
+  }>;
+  actionId: string;
+};
 async function load(name: string) {
   const result = await fundedReturnsLoader(
     new Request("https://app.example.test/app/funded-returns"),
     as(name),
   );
-  return (result as unknown as { data: Awaited<ReturnType<typeof loadShape>> }).data;
+  return (result as unknown as { data: View }).data;
 }
-// Only for typing the loader's data payload.
-const loadShape = async () => ({
-  cases: [] as Array<{ id: string; version: number; state: { payout: string; collection: string; returnStatus: string } }>,
-  payments: [] as Array<{ caseId: string; status: string; operation: string; amountMinor: number; events: unknown[] }>,
-  actionId: "",
-});
 const ok = (result: Result) => {
   assert.equal(result.data.error, null, result.data.error ?? "");
   assert.equal(result.init?.status ?? 200, 200);
