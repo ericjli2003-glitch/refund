@@ -11,6 +11,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import { describeRefundProgress } from "../refund-status";
 import { authenticate } from "../shopify.server";
+import { fundedSandboxEnabled } from "../services/funded-return-sandbox.server";
 import {
   canReceiveReturn,
   canRemoveReturn,
@@ -150,6 +151,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     orders: responseJson.data.orders.nodes,
+    fundedSandbox: fundedSandboxEnabled(),
     locations: responseJson.data.locations.nodes,
     collections,
     canReadProducts,
@@ -458,6 +460,7 @@ function statusTone(status: string | null) {
 export default function RefundDashboard() {
   const {
     orders,
+    fundedSandbox,
     locations,
     collections,
     canReadProducts,
@@ -602,6 +605,11 @@ export default function RefundDashboard() {
             <s-button href={returnPortalUrl} target="_blank" variant="primary">
               Open your return portal
             </s-button>
+            {fundedSandbox && (
+              <s-button href="/app/funded-returns">
+                Funded returns sandbox
+              </s-button>
+            )}
             {merchantProfileUrl && (
               <s-button href={merchantProfileUrl} target="_blank">
                 View your public return page

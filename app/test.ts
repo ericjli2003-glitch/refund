@@ -21,3 +21,5 @@ import "./services/consent-email.server.test";
 import "./services/connection-email.server.test";
 import "./services/return-reasons.server.test";
 import "./services/return-wording.server.test";
+import "./funded-return-sandbox.test";
+import "./funded-payments.test";

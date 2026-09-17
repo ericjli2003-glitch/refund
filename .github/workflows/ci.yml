@@ -43,6 +43,7 @@ jobs:
       - run: npx prisma migrate deploy
       - run: node scripts/test-grant-cascade.mjs
       - run: npm test
+      - run: npm run test:funded-sandbox
       - run: node --test scripts/configure-storefront.test.mjs
       - run: npm run storefront:check
       - run: npm run test:oauth

@@ -380,6 +380,87 @@ model WebhookReceipt {
   @@index([shop, processedAt])
 }
 
+// Synthetic records only. Never attach real orders/customers or payment details.
+// Snapshot and append-only simulation journal update together under version CAS.
+model FundedReturnSandbox {
+  shop      String
+  id        String
+  version   Int      @default(0)
+  snapshot  Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([shop, id])
+  @@index([shop, createdAt])
+}
+
+// Durable outbox for funded-return payments. Written in the same transaction as
+// the case command that requires it; submitted to a provider only after commit.
+// SQL CHECK constraints restrict environment to SANDBOX: no live rows can exist.
+model FundedPaymentIntent {
+  id                String    @id
+  version           Int       @default(0)
+  shop              String
+  caseId            String
+  operation         String
+  attempt           Int
+  amountMinor       Int
+  currency          String
+  environment       String    @default("SANDBOX")
+  provider          String
+  status            String    @default("QUEUED")
+  providerReference String?
+  submissions       Int       @default(0)
+  lookups           Int       @default(0)
+  leaseUntil        DateTime?
+  nextCheckAt       DateTime  @default(now())
+  reviewReason      String?
+  lastError         String?
+  resolvedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([shop, caseId, operation, attempt])
+  @@unique([provider, providerReference])
+  @@index([status, nextCheckAt])
+  @@index([shop, caseId])
+}
+
+// Every provider observation (webhook, submit response or lookup), deduplicated
+// by provider event ID, with how it was matched. Replays never re-apply.
+model FundedPaymentEvent {
+  provider        String
+  providerEventId String
+  source          String
+  shop            String?
+  intentId        String?
+  status          String
+  disposition     String
+  detail          String?
+  payload         Json
+  receivedAt      DateTime @default(now())
+
+  @@id([provider, providerEventId])
+  @@index([shop, intentId, receivedAt])
+}
+
+// The fake provider's own side of the wire. Only the sandbox adapter touches it.
+model FundedSandboxProviderPayment {
+  idempotencyKey String    @id
+  reference      String?   @unique
+  shop           String
+  operation      String
+  amountMinor    Int
+  currency       String
+  scenario       String
+  status         String    @default("PLANNED")
+  events         Json      @default("[]")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([shop, createdAt])
+}
+
 model PrivacyRequest {
   id                  String    @id
   shop                String
