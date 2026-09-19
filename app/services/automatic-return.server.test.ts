@@ -33,6 +33,14 @@ function mockDelegate(
   t.after(() => Reflect.set(target, name, original));
 }
 
+// Units Gooper funded on this order; empty unless a test says otherwise.
+function mockFunded(
+  t: TestContext,
+  funded: Array<{ lineItemId: string; quantity: number; shopifyReturnId: string | null }>,
+) {
+  mockDelegate(t, prisma.fundedEntitlement, "findMany", async () => funded);
+}
+
 type Handler = (variables: Record<string, unknown>) => unknown;
 
 // Routes each Admin API call by operation name and records the order.
@@ -158,6 +166,7 @@ function mockRecords(t: TestContext, record: Record<string, unknown> = {}) {
   mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
     returnLocationId: null,
   }));
+  mockFunded(t, []);
   mockDelegate(t, prisma.agentReturn, "findFirst", async () => stored);
   mockDelegate(t, prisma.agentReturn, "updateMany", async () => ({ count: 1 }));
   mockDelegate(
@@ -426,6 +435,7 @@ test("a request Shopify refuses outright is not submitted, and the same confirma
     maxAutoRefundAmount: "100.00",
     refundTiming: "IMMEDIATE",
   }));
+  mockFunded(t, []);
   let existing: Record<string, unknown> | null = null;
   mockDelegate(t, prisma.agentReturn, "findUnique", async () => existing);
   const created: Array<Record<string, unknown>> = [];
@@ -601,4 +611,112 @@ test("only a request Shopify never created a return for can be removed", async (
   });
   count = 0;
   await assert.rejects(removeUnsubmittedReturn(SHOP, "agent-return-1"), /never created a return/);
+});
+
+test("a return Gooper funded is never refunded to the original payment method", async (t) => {
+  mockRecords(t);
+  mockFunded(t, [{ lineItemId: LINE_ITEM, quantity: 1, shopifyReturnId: RETURN }]);
+  const shopify = fakeShopify({
+    ReturnDetailsForProcessing: details,
+    SuggestedReturnOutcome: outcome("12.60"),
+    ProcessAutomaticReturn: processed,
+  });
+  await assert.rejects(approvedReturn(shopify.admin, false), /Gooper funded this return.*No refund was issued/);
+  assert.deepEqual(shopify.names(), [], "Stopped before any Shopify call");
+});
+
+test("funded units not yet in a Shopify return block a refund of that line item", async (t) => {
+  mockRecords(t);
+  mockFunded(t, [{ lineItemId: LINE_ITEM, quantity: 1, shopifyReturnId: null }]);
+  const shopify = fakeShopify({ ProcessAutomaticReturn: processed });
+  await assert.rejects(approvedReturn(shopify.admin, true), /already funded some of these items/);
+  assert.deepEqual(shopify.names(), []);
+});
+
+test("funded units on another line item or return don't block this refund", async (t) => {
+  mockRecords(t);
+  mockFunded(t, [
+    { lineItemId: "gid://shopify/LineItem/99", quantity: 1, shopifyReturnId: null },
+    { lineItemId: LINE_ITEM, quantity: 1, shopifyReturnId: "gid://shopify/Return/77" },
+  ]);
+  const shopify = fakeShopify({
+    ReturnDetailsForProcessing: details,
+    SuggestedReturnOutcome: outcome("12.60"),
+    ProcessAutomaticReturn: processed,
+    OrderRefundsForReturn: () => ({ order: { refunds: [refund(RETURN)] } }),
+  });
+  await approvedReturn(shopify.admin, false);
+  assert.ok(shopify.names().includes("ProcessAutomaticReturn"));
+});
+
+test("a customer can't request a return of units Gooper already funded", async (t) => {
+  process.env.SHOPIFY_API_SECRET ||= "test-secret";
+  mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
+    automaticRefundsEnabled: true,
+    returnWindowDays: 30,
+    currencyCode: "CAD",
+    maxAutoRefundAmount: "100.00",
+    refundTiming: "IMMEDIATE",
+  }));
+  mockDelegate(t, prisma.agentReturn, "findUnique", async () => null);
+  let created = 0;
+  mockDelegate(t, prisma.agentReturn, "create", async () => {
+    created++;
+    return {};
+  });
+  // Two units are returnable in Shopify, but one is funded and not yet in a return.
+  mockFunded(t, [{ lineItemId: LINE_ITEM, quantity: 1, shopifyReturnId: null }]);
+  const queries: string[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: unknown, init?: RequestInit) => {
+    if (!init?.body)
+      return Response.json({
+        graphql_api: "https://shopify.com/1/customer/api/2026-07/graphql",
+      });
+    const { query } = JSON.parse(String(init.body));
+    queries.push(query);
+    if (query.includes("CustomerReturnableOrders"))
+      return Response.json({
+        data: {
+          customer: {
+            id: "gid://shopify/Customer/1",
+            orders: {
+              nodes: [
+                {
+                  id: ORDER,
+                  name: "#1001",
+                  processedAt: new Date().toISOString(),
+                  returnInformation: {
+                    nonReturnableSummary: null,
+                    returnableLineItems: {
+                      nodes: [{ lineItem: { id: LINE_ITEM }, quantity: 2 }],
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      });
+    throw new Error(`Unexpected request: ${query}`);
+  });
+  const submit = (quantity: number) =>
+    executeAutomaticReturn({
+      shop: "funded.myshopify.com",
+      customerToken: "customer-token",
+      orderId: ORDER,
+      items: [{ lineItemId: LINE_ITEM, quantity }],
+      idempotencyKey: `quote-${quantity}`,
+      expectedRefund: { amount: "14.00", currencyCode: "CAD" },
+      refundTiming: "IMMEDIATE",
+      lookupReturnReason: async () => REASON,
+    });
+  await assert.rejects(submit(2), /already funded/);
+  assert.equal(created, 0, "No return record was created");
+  assert.ok(
+    !queries.some((query) => /Calculate|RequestCustomerReturn/.test(query)),
+    "Shopify was never asked to calculate or create the return",
+  );
+  // The other, unfunded unit is still returnable the ordinary way: the funded
+  // check passes and the return proceeds to Shopify's calculation.
+  await assert.rejects(submit(1), /Unexpected request.*CalculateCustomerReturn/s);
 });
