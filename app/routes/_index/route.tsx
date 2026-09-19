@@ -1,8 +1,8 @@
 import type { LoaderFunctionArgs, MetaFunction } from "react-router";
-import { Form, redirect, useLoaderData } from "react-router";
+import { redirect } from "react-router";
 
+import { APP_STORE_URL } from "../../app-store";
 import { PublicShell } from "../../components/PublicShell";
-import { login } from "../../shopify.server";
 import publicStyles from "../../styles/public.module.css";
 
 import styles from "./styles.module.css";
@@ -23,12 +23,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     throw redirect(`/app?${url.searchParams.toString()}`);
   }
 
-  return { showForm: Boolean(login) };
+  return null;
 };
 
 export default function Index() {
-  const { showForm } = useLoaderData<typeof loader>();
-
   return (
     <PublicShell>
       <main>
@@ -50,33 +48,17 @@ export default function Index() {
             </div>
           </div>
 
-          {showForm && (
-            <div className={styles.installCard}>
-              <p className={publicStyles.eyebrow}>Merchant access</p>
-              <h2>Open Gooper.io</h2>
-              <p>Install Gooper.io to get your return portal. Your store identity and currency are set up automatically.</p>
-              <Form className={styles.form} method="post" action="/auth/login">
-                <label className={styles.label}>
-                  <span>Shop domain</span>
-                  <input
-                    className={styles.input}
-                    type="text"
-                    name="shop"
-                    inputMode="url"
-                    autoComplete="url"
-                    placeholder="your-store.myshopify.com"
-                    required
-                  />
-                </label>
-                <button className={styles.button} type="submit">
-                  Continue to Shopify
-                </button>
-              </Form>
-              <p className={styles.finePrint}>
-                Shopify handles installation. No separate Gooper.io account is needed. Adding tools to your storefront is optional and requires one theme activation.
-              </p>
-            </div>
-          )}
+          <div className={styles.installCard}>
+            <p className={publicStyles.eyebrow}>Merchant access</p>
+            <h2>Open Gooper.io</h2>
+            <p>Install Gooper.io to get your return portal. Your store identity and currency are set up automatically.</p>
+            <a className={styles.button} href={APP_STORE_URL}>
+              Install from the Shopify App Store
+            </a>
+            <p className={styles.finePrint}>
+              Shopify handles installation. No separate Gooper.io account is needed. Adding tools to your storefront is optional and requires one theme activation.
+            </p>
+          </div>
         </section>
 
         <section className={styles.section} aria-labelledby="how-it-works">
