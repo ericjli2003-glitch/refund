@@ -166,10 +166,26 @@ Two layers, both development-only and synthetic.
   too. Conflicts are for review only; nothing is recovered automatically. Units are
   reserved before a payout is requested, and released only while the payout is
   NOT_STARTED or FAILED.
-  Not yet done (stage 2): linking sandbox cases to real dev-store orders, creating
-  the Shopify return for funded units and tagging the order (Reshop's approach),
-  checking at quote time for an earlier customer message, and matching Shopify
-  `returns/*` webhooks to funded return IDs.
+- **Double-payment protection, stage 2** (`app/services/funded-shopify-return.server.ts`),
+  Reshop's approach:
+  - The sandbox screen can start a case from a real order line on a development
+    store. Gooper checks Shopify's returnable quantity, less units it has already
+    funded, and prices the units from the order (discounted unit price × quantity,
+    excluding tax and shipping). It then creates the case, reserves the units, and
+    creates an OPEN Shopify return with `returnCreate`: `notifyCustomer: false`,
+    Shopify's "Other" reason, split across fulfillments. Finally it tags the order
+    `gooper-funded` and `gooper-funded-open` with `tagsAdd`.
+  - The case ID is written into each return line's `returnReasonNote`, so a retry
+    after an ambiguous failure finds the existing return instead of creating a
+    second. If Shopify refuses, the units stay reserved and are still guarded, and
+    the screen offers a retry.
+  - `returns/*` webhooks: a funded return cancelled or declined outside Gooper
+    loses its return ID, so the guard subtracts its units again, and is flagged
+    CONFLICT. A close or process outside Gooper is flagged too.
+  - Not done: closing or disposing the Shopify return when the merchant approves
+    and repays (and the Shopify accounting treatment that implies), cancelling the
+    Shopify return when a payout is confirmed failed and units are released, and a
+    quote-time check for an earlier customer message.
 - `app/routes/webhooks.funded-sandbox-provider.tsx`: dev-only callback endpoint
   (404 outside the sandbox gate, 16KB cap, raw-body signature, 400 on rejection).
 - Prisma models `FundedPaymentIntent` (with `version` CAS column), `FundedPaymentEvent`,

@@ -2,6 +2,7 @@ import type { ActionFunctionArgs } from "react-router";
 
 import { authenticate } from "../shopify.server";
 import { processWebhookOnce } from "../services/webhook-reconciliation.server";
+import { flagFundedReturnChanges } from "../services/funded-shopify-return.server";
 
 const returnStatusByTopic: Record<string, string> = {
   RETURNS_REQUEST: "REQUESTED",
@@ -31,6 +32,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     topic: normalizedTopic,
     process: async (transaction) => {
       if (!returnId || !returnStatus) return;
+
+      // A Gooper-funded return changed outside Gooper: record it for review.
+      await flagFundedReturnChanges(transaction, shop, returnId, returnStatus);
 
       // A return waiting for its item that Shopify processes or closes outside
       // Gooper.io may already have been refunded there. Flag it so Retry refund

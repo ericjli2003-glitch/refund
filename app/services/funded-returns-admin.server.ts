@@ -2,6 +2,14 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { data } from "react-router";
 import { appOrigin } from "./customer-security.server";
+import type { AdminGraphql } from "./shopify-admin.server";
+import {
+  attachShopifyReturn,
+  fundedOrderCandidates,
+  startFundedCaseFromOrder,
+} from "./funded-shopify-return.server";
+import { FundedConflictError } from "./funded-entitlements.server";
+import prisma from "../db.server";
 import {
   createFundedSandbox,
   listFundedSandboxes,
@@ -34,15 +42,35 @@ import {
 // The sandbox gate always runs first: production answers 404 before any auth.
 export type AuthenticateAdmin = (
   request: Request,
-) => Promise<{ session: { shop: string } }>;
+) => Promise<{ session: { shop: string }; admin?: AdminGraphql }>;
 
 export async function fundedReturnsLoader(
   request: Request,
   authenticateAdmin: AuthenticateAdmin,
 ) {
   requireFundedSandbox();
-  const { session } = await authenticateAdmin(request);
+  const { session, admin } = await authenticateAdmin(request);
   const cases = await listFundedSandboxes(session.shop);
+  // Real orders are optional context; the sandbox works without them.
+  let orders: Awaited<ReturnType<typeof fundedOrderCandidates>> = [];
+  let ordersError: string | null = null;
+  if (admin)
+    try {
+      orders = await fundedOrderCandidates(admin);
+    } catch (error) {
+      ordersError = error instanceof Error ? error.message : "Shopify could not list orders.";
+    }
+  const funded = await prisma.fundedEntitlement.findMany({
+    where: { shop: session.shop, caseId: { in: cases.map((row) => row.id) } },
+    select: {
+      caseId: true,
+      lineItemId: true,
+      quantity: true,
+      status: true,
+      shopifyReturnId: true,
+      conflictReason: true,
+    },
+  });
   return data(
     {
       cases,
@@ -50,6 +78,9 @@ export async function fundedReturnsLoader(
         session.shop,
         cases.map((row) => row.id),
       ),
+      orders,
+      ordersError,
+      funded,
       actionId: randomUUID(),
     },
     { headers: { "Cache-Control": "no-store" } },
@@ -77,7 +108,7 @@ export async function fundedReturnsAction(
   authenticateAdmin: AuthenticateAdmin,
 ) {
   requireFundedSandbox();
-  const { session } = await authenticateAdmin(request);
+  const { session, admin } = await authenticateAdmin(request);
   if (request.method !== "POST")
     throw new Response("Method not allowed", { status: 405 });
   if (request.headers.get("Origin") !== appOrigin())
@@ -87,7 +118,26 @@ export async function fundedReturnsAction(
   const intent = String(form.get("intent") ?? "");
   try {
     let notice: string | null = null;
-    if (intent === "deliver") {
+    if (intent === "fromOrder" || intent === "attachReturn") {
+      if (!admin) throw new FundedConflictError("Shopify isn't connected for this request.");
+      if (intent === "fromOrder") {
+        const started = await startFundedCaseFromOrder({
+          admin,
+          shop,
+          orderId: z.string().parse(form.get("orderId")),
+          lineItemId: z.string().parse(form.get("lineItemId")),
+          quantity: z.coerce.number().int().positive().parse(form.get("quantity")),
+        });
+        notice = `Started a funded case for this order. Shopify return ${started.returnId} holds the funded units, and the order is tagged gooper-funded.`;
+      } else {
+        const returnId = await attachShopifyReturn({
+          admin,
+          shop,
+          caseId: z.string().uuid().parse(form.get("id")),
+        });
+        notice = `Shopify return ${returnId} holds the funded units.`;
+      }
+    } else if (intent === "deliver") {
       notice = await deliver(await releaseSandboxEvents(shop));
     } else if (intent === "replay") {
       notice = await deliver(await replaySandboxEvents(shop));
@@ -147,6 +197,7 @@ export async function fundedReturnsAction(
   } catch (error) {
     if (
       error instanceof SandboxError ||
+      error instanceof FundedConflictError ||
       error instanceof ProviderEventRejected ||
       error instanceof z.ZodError
     ) {
