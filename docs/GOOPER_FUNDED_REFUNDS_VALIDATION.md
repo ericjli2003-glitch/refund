@@ -1,8 +1,10 @@
 # Gooper-funded refunds: validation and launch package
 
 Prepared September 16, 2026. Planning document, not platform approval, legal advice,
-or an authorization to move money. Canada and the US are research targets; the
-first launch market, legal entity and payout provider still need to be selected.
+or an authorization to move money. **Update 2026-09-18:** Canada is the first
+launch market (CAD), the merchant pays the per-return fee, and pricing is set; see
+the Decisions section of FUNDED_RETURNS_HANDOFF.md. The US follows later. The legal
+entity and payout provider still need to be selected.
 No outreach has been sent and no production refund behavior has been changed.
 
 ## 1. The product we are validating
@@ -241,6 +243,11 @@ That is base outstanding principal in one currency, before stressed delays,
 non-returns, fraud, collection failures, fees, provider reserves and operating
 cash. Model CAD and USD separately. Longer approval delays directly increase
 funding needs. The payout partner does not eliminate Gooper's balance-sheet risk.
+
+Chosen merchant pricing (2026-09-18): Starter $49 + 5% per funded return,
+Growth $199 + 4%, each with a $2 minimum per return, 60-day trial for early
+supporters. On a $50 return that is $2.50 (Starter) or $2.00 (Growth) of fee
+revenue before any of the costs below.
 
 Calculate expected contribution per funded return:
 
