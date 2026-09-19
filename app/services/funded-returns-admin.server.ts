@@ -6,6 +6,7 @@ import type { AdminGraphql } from "./shopify-admin.server";
 import {
   attachShopifyReturn,
   fundedOrderCandidates,
+  releaseFundedCase,
   startFundedCaseFromOrder,
 } from "./funded-shopify-return.server";
 import { FundedConflictError } from "./funded-entitlements.server";
@@ -118,7 +119,7 @@ export async function fundedReturnsAction(
   const intent = String(form.get("intent") ?? "");
   try {
     let notice: string | null = null;
-    if (intent === "fromOrder" || intent === "attachReturn") {
+    if (intent === "fromOrder" || intent === "attachReturn" || intent === "releaseOrder") {
       if (!admin) throw new FundedConflictError("Shopify isn't connected for this request.");
       if (intent === "fromOrder") {
         const started = await startFundedCaseFromOrder({
@@ -129,6 +130,15 @@ export async function fundedReturnsAction(
           quantity: z.coerce.number().int().positive().parse(form.get("quantity")),
         });
         notice = `Started a funded case for this order. Shopify return ${started.returnId} holds the funded units, and the order is tagged gooper-funded.`;
+      } else if (intent === "releaseOrder") {
+        const result = await releaseFundedCase({
+          admin,
+          shop,
+          caseId: z.string().uuid().parse(form.get("id")),
+        });
+        notice = result.problems.length
+          ? `Released ${result.released} item(s), but Shopify didn't cancel the return (${result.problems.join("; ")}). Cancel it in Shopify admin.`
+          : `Released ${result.released} item(s) and cancelled the Shopify return.`;
       } else {
         const returnId = await attachShopifyReturn({
           admin,

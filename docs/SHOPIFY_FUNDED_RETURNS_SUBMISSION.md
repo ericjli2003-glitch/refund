@@ -16,18 +16,21 @@ follows that list:
 
 | # | Shopify asked for | Where | Status |
 | --- | --- | --- | --- |
-| 1 | Customer agreement | §8 | **Lawyer** — term sheet ready |
-| 2 | Merchant agreement | §8 | **Lawyer** — term sheet ready |
+| 1 | Customer agreement | §8 | Term sheet ready; full agreement after Shopify's determination |
+| 2 | Merchant agreement | §8 | Term sheet ready; full agreement after Shopify's determination |
 | 3 | Fund-flow diagram | §3 | Ready |
 | 4 | Reimbursement timing | §4 | Ready, with **proposed** deadlines for Eric to confirm |
 | 5 | Underwriting and collections process | §5, §6 | **Proposed** rules for Eric to confirm |
-| 6 | Disclosures | §8 | **Lawyer** — required points listed |
-| 7 | Licensing analysis | §8 | **Lawyer** — questions listed |
+| 6 | Disclosures | §8 | Required points listed; final wording after Shopify's determination |
+| 7 | Licensing analysis | §8 | Questions listed; analysis after Shopify's determination (an early, narrow opinion is optional) |
 | 8 | Proposed app or partner distribution route | §9 | Ready |
 
-**Submit only when every row says Ready.** A submission missing the agreements or
-the licensing analysis will likely come back asking for them. It also concerns the
-existing Gooper.io listing, so it's better submitted once, complete.
+**Submit for a determination now; finalize the legal documents afterwards.**
+Shopify's decision is about the model, not finished contracts, and drafting final
+agreements first risks paying for them twice if Shopify wants the structure
+changed. Send the term sheets and say plainly that the full agreements, disclosures
+and licensing analysis will be written to match Shopify's determination. If
+Shopify asks for more, that answer tells the lawyer exactly what to produce.
 
 Items marked **[PROVIDER]** depend on which payments provider signs on.
 
@@ -63,8 +66,21 @@ Items marked **[PROVIDER]** depend on which payments provider signs on.
 > We have not enabled any live payouts. The flow runs only in a development sandbox
 > with a simulated payments provider. We'd like App Review's determination, and any
 > required agreement or approval route, before launching. We have attached the
-> fund-flow, timing, underwriting, collections, customer and merchant agreements,
-> disclosures and our licensing analysis.
+> fund flow, timing, underwriting and collections rules, how double payment is
+> prevented, and term sheets for the customer and merchant agreements. The full
+> agreements, disclosures and our Canadian licensing analysis will be finalized to
+> match your determination.
+>
+> Our questions:
+> 1. Is this model permitted, and which requirements apply (1.1.15, 1.1.16, 1.2)?
+> 2. Is an update to our existing app the right route, or is a separate agreement
+>    or program required?
+> 3. Is it acceptable for the merchant's repayment of approved principal to be
+>    collected by pre-authorized debit under our merchant agreement, with our plan
+>    and per-return fee charged through Shopify app billing?
+> 4. How should the funded Shopify return be closed after repayment, so the
+>    merchant's records show the item returned without a Shopify refund and without
+>    distorting sales and tax reporting?
 
 ## 2. Who is involved
 
@@ -138,15 +154,21 @@ exist in the code.
   verified customer and is within the merchant's return window. *(Enforced today
   for ordinary refunds; to be applied to funded returns when customers can start
   them. The sandbox starts funded cases from the merchant side.)*
-- **Currency:** CAD. *(The sandbox accepts CAD and USD today; CAD-only is to be
-  enforced at launch.)*
-- **Per-return cap:** $150 while piloting.
-- **Per-merchant cap:** a maximum of unrepaid funded returns per merchant; new
-  funding pauses when it's reached.
-- **Portfolio cap:** total outstanding across all merchants, set by Gooper's
-  committed capital.
-- **Customer:** one open funded return at a time while piloting.
-- **Kill switch:** Gooper can stop all new funded returns immediately.
+- **Currency:** CAD. *(Enforced for funded returns on real orders; the synthetic
+  sandbox samples also allow USD.)*
+- **Per-return cap:** $150 while piloting. *(Enforced at payout request.)*
+- **Per-merchant cap:** $1,500 of unrepaid funded returns per merchant, counting
+  payouts in flight and anything not yet repaid; new payouts stop when it's
+  reached. *(Enforced.)*
+- **Portfolio cap:** $14,000 unrepaid across all merchants, per currency, to be set
+  from Gooper's committed capital. *(Enforced.)*
+- **Customer:** one open funded return at a time while piloting. *(To be enforced
+  once customers can start funded returns.)*
+- **Kill switch:** `GOOPER_FUNDED_PAUSED=1` stops all new payouts immediately.
+  *(Enforced.)*
+
+The cap amounts are proposals awaiting Eric's confirmation. Each is a setting,
+so changing them needs no code change.
 
 Customer protections already built:
 
@@ -264,13 +286,23 @@ pays them and why; to merchants, fees, timing and their obligations.
 
 ## 10. Before submitting — Eric's checklist
 
+Before submitting for a determination:
+
 - [ ] Confirm the proposed items: 7-day ship window, 3-business-day inspection
-      deadline, $150 per-return cap, per-merchant and portfolio caps, one open
-      funded return per customer.
+      deadline, $150 per-return, $1,500 per-merchant and $14,000 portfolio caps,
+      one open funded return per customer.
 - [ ] Confirm the pricing details: monthly, CAD, what the trial waives.
-- [ ] Lawyer delivers both agreements, disclosures and the licensing analysis.
-- [ ] Payments provider confirms the use case, payout timing and debit collection
-      in writing.
-- [ ] Update §4 with the provider's real timings, and fill every **[PROVIDER]**.
-- [ ] Attach the agreements and this document to the submission.
-- [ ] Submit the app update, describing the feature exactly as in §1.
+- [ ] Submit through Partner Dashboard → Apps → Gooper.io → Distribution, or ask
+      Partner Support (citing the Wolf chat) to open an App Review case if the app
+      is already published. Paste §1 and attach this document.
+
+In parallel:
+
+- [ ] Contact payments providers for Interac e-Transfer payouts and pre-authorized
+      debit collection; ask about the use case, fees, timing and a sandbox.
+
+After Shopify's determination:
+
+- [ ] Lawyer drafts the agreements, disclosures and licensing analysis to match it.
+- [ ] Provider confirms in writing; update §4 timings and fill every **[PROVIDER]**.
+- [ ] Complete any approval or agreement Shopify requires, then pilot.

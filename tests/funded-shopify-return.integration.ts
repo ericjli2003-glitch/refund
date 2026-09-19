@@ -4,13 +4,21 @@ import prisma from "../app/db.server";
 import type { AdminGraphql } from "../app/services/shopify-admin.server";
 import {
   attachShopifyReturn,
+  releaseFundedCase,
   flagFundedReturnChanges,
   FUNDED_OPEN_TAG,
   FUNDED_TAG,
   startFundedCaseFromOrder,
 } from "../app/services/funded-shopify-return.server";
-import { assertNotFunded } from "../app/services/funded-entitlements.server";
-import { listFundedSandboxes } from "../app/services/funded-return-sandbox.server";
+import {
+  assertNotFunded,
+  releaseFundedUnits,
+} from "../app/services/funded-entitlements.server";
+import {
+  listFundedSandboxes,
+  updateFundedSandbox,
+} from "../app/services/funded-return-sandbox.server";
+import { requestSandboxPayment } from "../app/services/funded-payment-intents.server";
 
 const database = new URL(process.env.DATABASE_URL || "");
 assert.ok(
@@ -37,6 +45,7 @@ function fakeStore() {
     { id: FULFILLED_B, quantity: 1 },
   ];
   let failCreate: "userError" | "throw" | null = null;
+  let failCancel = false;
   const admin: AdminGraphql = {
     async graphql(query, options) {
       const variables = options?.variables ?? {};
@@ -109,6 +118,14 @@ function fakeStore() {
         return json({ returnCreate: { return: { id, status: "OPEN" }, userErrors: [] } });
       }
       if (name === "TagFundedOrder") return json({ tagsAdd: { userErrors: [] } });
+      if (name === "UntagFundedOrder") return json({ tagsRemove: { userErrors: [] } });
+      if (name === "CancelFundedReturn") {
+        const target = returns.find((entry) => entry.id === variables.id);
+        if (!target || failCancel)
+          return json({ returnCancel: { return: null, userErrors: [{ field: null, message: "Return already inspected" }] } });
+        target.status = "CANCELED";
+        return json({ returnCancel: { return: { id: target.id, status: "CANCELED" }, userErrors: [] } });
+      }
       throw new Error(`Unexpected Shopify operation ${name}`);
     },
   };
@@ -119,6 +136,9 @@ function fakeStore() {
     count: (name: string) => calls.filter((call) => call.name === name).length,
     failNextCreate: (mode: "userError" | "throw" | null) => {
       failCreate = mode;
+    },
+    failCancels: (value: boolean) => {
+      failCancel = value;
     },
   };
 }
@@ -251,7 +271,104 @@ try {
     await assertNotFunded({ shop, orderId: ORDER, items: [{ lineItemId: SHIRT, quantity: 1 }], returnable: new Map([[SHIRT, 2]]) });
   }
 
-  // 5. Production refuses before touching Shopify.
+  // 5. Races: two cases funding the same last unit at once, and two attaches
+  //    for one case at once. Exactly one wins; Shopify gets one return.
+  {
+    const shop = newShop();
+    const store = fakeStore();
+    const results = await Promise.allSettled([
+      startFundedCaseFromOrder({ admin: store.admin, shop, orderId: ORDER, lineItemId: SHIRT, quantity: 2 }),
+      startFundedCaseFromOrder({ admin: store.admin, shop, orderId: ORDER, lineItemId: SHIRT, quantity: 2 }),
+    ]);
+    assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+    const funded = await prisma.fundedEntitlement.aggregate({
+      where: { shop, status: "ACTIVE" },
+      _sum: { quantity: true },
+    });
+    assert.equal(funded._sum.quantity, 2, "Never more units funded than Shopify allows");
+    assert.equal(store.count("CreateFundedReturn"), 1);
+  }
+  {
+    const shop = newShop();
+    const store = fakeStore();
+    store.failNextCreate("userError");
+    await assert.rejects(
+      startFundedCaseFromOrder({ admin: store.admin, shop, orderId: ORDER, lineItemId: SHIRT, quantity: 1 }),
+    );
+    store.failNextCreate(null);
+    const [row] = await listFundedSandboxes(shop);
+    const created = store.count("CreateFundedReturn");
+    const ids = await Promise.all([
+      attachShopifyReturn({ admin: store.admin, shop, caseId: row.id }),
+      attachShopifyReturn({ admin: store.admin, shop, caseId: row.id }),
+      attachShopifyReturn({ admin: store.admin, shop, caseId: row.id }),
+    ]);
+    assert.equal(new Set(ids).size, 1);
+    assert.equal(store.count("CreateFundedReturn") - created, 1, "One Shopify return for concurrent attaches");
+  }
+
+  // 6b. Release with no payout: units released first, then the Shopify return
+  //     is cancelled and the open tag removed. Never after a payout.
+  {
+    const shop = newShop();
+    const store = fakeStore();
+    const { caseId, returnId } = await startFundedCaseFromOrder({
+      admin: store.admin, shop, orderId: ORDER, lineItemId: SHIRT, quantity: 1,
+    });
+    const result = await releaseFundedCase({ admin: store.admin, shop, caseId });
+    assert.deepEqual(result, { released: 1, cancelled: 1, problems: [] });
+    assert.equal(store.returns.find((entry) => entry.id === returnId)?.status, "CANCELED");
+    assert.deepEqual(
+      store.calls.find((call) => call.name === "UntagFundedOrder")!.variables,
+      { id: ORDER, tags: [FUNDED_OPEN_TAG] },
+    );
+    const [units] = await prisma.fundedEntitlement.findMany({ where: { shop, caseId } });
+    assert.equal(units.status, "RELEASED");
+    // The cancel webhook that follows doesn't turn released units into a conflict.
+    assert.equal(
+      await prisma.$transaction((tx) => flagFundedReturnChanges(tx, shop, returnId, "CANCELLED")),
+      0,
+    );
+    await assert.rejects(releaseFundedCase({ admin: store.admin, shop, caseId }), /no reserved items/);
+  }
+  {
+    const shop = newShop();
+    const store = fakeStore();
+    const { caseId } = await startFundedCaseFromOrder({
+      admin: store.admin, shop, orderId: ORDER, lineItemId: SHIRT, quantity: 1,
+    });
+    store.failCancels(true);
+    const result = await releaseFundedCase({ admin: store.admin, shop, caseId });
+    assert.equal(result.released, 1);
+    assert.match(result.problems[0], /already inspected/, "Reported, units still released");
+    const paid = await startFundedCaseFromOrder({
+      admin: store.admin, shop, orderId: ORDER, lineItemId: SHIRT, quantity: 1,
+    });
+    await updateFundedSandbox(shop, paid.caseId, 0, { id: randomUUID(), action: "APPROVE_RISK" });
+    await requestSandboxPayment({ shop, caseId: paid.caseId, version: 1, commandId: randomUUID(), operation: "payout" });
+    await assert.rejects(
+      releaseFundedCase({ admin: store.admin, shop, caseId: paid.caseId }),
+      /no payout succeeded or is still unresolved/,
+    );
+    assert.equal(store.count("CancelFundedReturn"), 1, "No cancel attempted for a paid case");
+  }
+
+  // 6. A linked case can't pay out once its units are released.
+  {
+    const shop = newShop();
+    const store = fakeStore();
+    const { caseId } = await startFundedCaseFromOrder({
+      admin: store.admin, shop, orderId: ORDER, lineItemId: SHIRT, quantity: 1,
+    });
+    await updateFundedSandbox(shop, caseId, 0, { id: randomUUID(), action: "APPROVE_RISK" });
+    assert.equal(await releaseFundedUnits(shop, caseId), 1);
+    await assert.rejects(
+      requestSandboxPayment({ shop, caseId, version: 1, commandId: randomUUID(), operation: "payout" }),
+      /aren't reserved/,
+    );
+  }
+
+  // 7. Production refuses before touching Shopify.
   {
     const store = fakeStore();
     process.env.NODE_ENV = "production";
@@ -270,6 +387,7 @@ try {
   process.env.NODE_ENV = "test";
   for (const shop of shops) {
     await prisma.fundedEntitlement.deleteMany({ where: { shop } });
+    await prisma.fundedPaymentIntent.deleteMany({ where: { shop } });
     await prisma.fundedReturnSandbox.deleteMany({ where: { shop } });
   }
   await prisma.$disconnect();

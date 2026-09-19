@@ -265,7 +265,7 @@ export default function FundedReturnsSandboxView({
           ) : (
             !ordersError && (
               <s-paragraph color="subdued">
-                No CAD or USD orders found on this store.
+                No CAD orders found on this store.
               </s-paragraph>
             )
           )}
@@ -335,6 +335,17 @@ export default function FundedReturnsSandboxView({
                     Retry creating the Shopify return
                   </s-button>
                 )}
+                {caseFunded.some((units) => units.status === "ACTIVE") &&
+                  (state.payout === "NOT_STARTED" || state.payout === "FAILED") && (
+                    <s-button
+                      disabled={busy}
+                      onClick={() =>
+                        selected && onSubmit({ intent: "releaseOrder", id: selected.id })
+                      }
+                    >
+                      Release items and cancel the Shopify return
+                    </s-button>
+                  )}
               </s-stack>
             </s-section>
           )}

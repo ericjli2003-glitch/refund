@@ -462,8 +462,8 @@ model FundedEntitlement {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  @@unique([shop, caseId, lineItemId])
   @@index([shop, orderId, status])
-  @@index([shop, caseId])
   @@index([shop, shopifyReturnId])
 }
 
