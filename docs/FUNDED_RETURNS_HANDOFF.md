@@ -149,6 +149,27 @@ Two layers, both development-only and synthetic.
 - `app/services/funded-returns-admin.server.ts`: the screen's loader/action logic,
   taking the admin authenticator as a parameter so tests can substitute it. The
   route passes `authenticate.admin`. The sandbox gate runs before authentication.
+- **Double-payment protection, stage 1** (`app/services/funded-entitlements.server.ts`,
+  model `FundedEntitlement`, migration `20260918090000_funded_entitlements`):
+  records which order line-item units Gooper funded (order and line item GIDs,
+  quantity, optional Shopify return ID). The live original-payment refund engine
+  now checks it in two places. `executeAutomaticReturn` refuses before asking
+  Shopify for a return when requested units exceed Shopify's returnable quantity
+  minus funded units not yet in a Shopify return. `processApprovedReturn`, the only
+  place money moves, refuses a return Gooper funded or line items with unreserved
+  funded units, before any Shopify call. The check fails closed. In production it
+  always finds nothing, because rows are sandbox-only (CHECK constraint), so live
+  behaviour is unchanged.
+  `refunds/create` marks ACTIVE funded units CONFLICT when any Shopify refund
+  touches that line item, including one issued from Shopify admin, which the app
+  can't block. It's conservative: another unit of the same line item is flagged
+  too. Conflicts are for review only; nothing is recovered automatically. Units are
+  reserved before a payout is requested, and released only while the payout is
+  NOT_STARTED or FAILED.
+  Not yet done (stage 2): linking sandbox cases to real dev-store orders, creating
+  the Shopify return for funded units and tagging the order (Reshop's approach),
+  checking at quote time for an earlier customer message, and matching Shopify
+  `returns/*` webhooks to funded return IDs.
 - `app/routes/webhooks.funded-sandbox-provider.tsx`: dev-only callback endpoint
   (404 outside the sandbox gate, 16KB cap, raw-body signature, 400 on rejection).
 - Prisma models `FundedPaymentIntent` (with `version` CAS column), `FundedPaymentEvent`,
@@ -276,10 +297,10 @@ or `test` AND the flag; production returns 404 even with the flag set.
 5. Exposure controls in synthetic tests: merchant/customer/portfolio caps,
    insufficient capital, non-return and dispute review. Rejected amounts still
    remain exposed; no customer recovery or automatic write-off exists.
-6. Define the funding agreement and settlement relationship before attaching real
-   orders. A separate funded entitlement must prevent overlap with the
-   original-processor refund engine, including externally initiated refunds and
-   partial quantities. Existing code does NOT solve live double-payment risk.
+6. Double-payment protection stage 2 (see above). Stage 1 guards the refund
+   engine and flags outside refunds; refunds issued directly in Shopify admin still
+   can't be prevented, only detected. Attaching real orders beyond dev stores still
+   waits for the funding agreement.
 7. After the user selects a provider/use case, write a real adapter against its
    **sandbox** only, implementing the same interface. Map its idempotency, lookup,
    webhook signature and reversal semantics, and prove them with the same

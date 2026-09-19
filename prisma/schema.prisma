@@ -444,6 +444,29 @@ model FundedPaymentEvent {
   @@index([shop, intentId, receivedAt])
 }
 
+// Order line-item units Gooper has funded. The original-payment refund engine
+// must never refund these units, and a Shopify refund touching them elsewhere is
+// recorded as a conflict. SQL constraints allow SANDBOX rows only for now.
+model FundedEntitlement {
+  id              String   @id
+  version         Int      @default(0)
+  shop            String
+  caseId          String
+  orderId         String
+  lineItemId      String
+  quantity        Int
+  environment     String   @default("SANDBOX")
+  status          String   @default("ACTIVE")
+  shopifyReturnId String?
+  conflictReason  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([shop, orderId, status])
+  @@index([shop, caseId])
+  @@index([shop, shopifyReturnId])
+}
+
 // The fake provider's own side of the wire. Only the sandbox adapter touches it.
 model FundedSandboxProviderPayment {
   idempotencyKey String    @id

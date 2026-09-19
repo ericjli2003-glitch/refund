@@ -3,6 +3,7 @@ import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import { processWebhookOnce } from "../services/webhook-reconciliation.server";
 import { refundPaymentStatus } from "../refund-status";
+import { flagFundedRefundConflicts } from "../services/funded-entitlements.server";
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { payload, shop, topic, webhookId } =
@@ -25,6 +26,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     shop,
     topic: String(topic),
     process: async (transaction) => {
+      // Before anything else: a refund of units Gooper funded is a possible
+      // double payment, whoever issued it. Recorded for review only.
+      await flagFundedRefundConflicts(transaction, shop, payload, refundId);
       if (!refundId) return;
       await transaction.agentReturn.updateMany({
         where: {
