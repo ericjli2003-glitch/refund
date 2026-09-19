@@ -2,8 +2,11 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import prisma from "../db.server";
 import { createFundedSandbox, requireFundedSandbox } from "./funded-return-sandbox.server";
+import type { Prisma } from "@prisma/client";
 import {
   FundedConflictError,
+  lockFunding,
+  releaseFundedUnits,
   reserveFundedUnits,
   reservedFundedUnits,
 } from "./funded-entitlements.server";
@@ -108,6 +111,23 @@ const RETURN_CREATE = `#graphql
   }
 `;
 
+const RETURN_CANCEL = `#graphql
+  mutation CancelFundedReturn($id: ID!) {
+    returnCancel(id: $id) {
+      return { id status }
+      userErrors { field message }
+    }
+  }
+`;
+
+const TAGS_REMOVE = `#graphql
+  mutation UntagFundedOrder($id: ID!, $tags: [String!]!) {
+    tagsRemove(id: $id, tags: $tags) {
+      userErrors { field message }
+    }
+  }
+`;
+
 const TAGS_ADD = `#graphql
   mutation TagFundedOrder($id: ID!, $tags: [String!]!) {
     tagsAdd(id: $id, tags: $tags) {
@@ -160,7 +180,7 @@ export async function fundedOrderCandidates(admin: AdminGraphql) {
     };
   }>(admin, RECENT_ORDERS_QUERY, {}, "Shopify could not list recent orders.");
   return data.orders.nodes
-    .filter((order) => ["CAD", "USD"].includes(order.presentmentCurrencyCode))
+    .filter((order) => order.presentmentCurrencyCode === "CAD")
     .map((order) => ({
       id: order.id,
       name: order.name,
@@ -185,7 +205,22 @@ export async function attachShopifyReturn({
   caseId: string;
 }) {
   requireFundedSandbox();
-  const units = await prisma.fundedEntitlement.findMany({
+  // One attach at a time per case, held across the Shopify calls, so two
+  // concurrent attempts can't each create a return.
+  return prisma.$transaction(
+    (transaction) => attachUnderLock(transaction, admin, shop, caseId),
+    { timeout: 30_000, maxWait: 30_000 },
+  );
+}
+
+async function attachUnderLock(
+  transaction: Prisma.TransactionClient,
+  admin: AdminGraphql,
+  shop: string,
+  caseId: string,
+) {
+  await lockFunding(transaction, shop, `attach:${caseId}`);
+  const units = await transaction.fundedEntitlement.findMany({
     where: { shop, caseId, status: "ACTIVE" },
   });
   if (!units.length)
@@ -248,7 +283,7 @@ export async function attachShopifyReturn({
     returnId = returnCreate.return.id;
   }
 
-  await prisma.fundedEntitlement.updateMany({
+  await transaction.fundedEntitlement.updateMany({
     where: { shop, caseId, status: "ACTIVE", shopifyReturnId: null },
     data: { shopifyReturnId: returnId, version: { increment: 1 } },
   });
@@ -290,11 +325,12 @@ export async function startFundedCaseFromOrder(input: {
   const { order, returnable } = await readOrder(input.admin, orderId);
   const line = order.lineItems.nodes.find((candidate) => candidate.id === lineItemId);
   if (!line) throw new FundedConflictError("That item isn't on this order.");
+  // Canada first: funded returns on real orders are CAD only.
   const currency = z
-    .enum(["CAD", "USD"])
+    .literal("CAD")
     .safeParse(line.discountedUnitPriceAfterAllDiscountsSet.presentmentMoney.currencyCode);
   if (!currency.success)
-    throw new FundedConflictError("The sandbox only supports CAD and USD orders.");
+    throw new FundedConflictError("Funded returns are available for CAD orders only.");
   const available = (returnable.get(lineItemId) ?? []).reduce(
     (sum, entry) => sum + entry.quantity,
     0,
@@ -312,13 +348,72 @@ export async function startFundedCaseFromOrder(input: {
     throw new FundedConflictError("Sandbox cases must be between $0.01 and $1,000.");
 
   const caseId = randomUUID();
+  // Units first, re-checked against a fresh Shopify read under the order lock;
+  // the case record exists only once its units are safely reserved.
+  await reserveFundedUnits({
+    shop,
+    caseId,
+    orderId,
+    items: [{ lineItemId, quantity }],
+    readReturnable: async () => {
+      const fresh = await readOrder(input.admin, orderId);
+      return new Map(
+        [...fresh.returnable].map(([id, lines]) => [
+          id,
+          lines.reduce((sum, entry) => sum + entry.quantity, 0),
+        ]),
+      );
+    },
+  });
   await createFundedSandbox(shop, caseId, currency.data, {
     amountMinor,
     order: { orderId, orderName: order.name, lineItemId, title: line.title, quantity },
   });
-  await reserveFundedUnits({ shop, caseId, orderId, items: [{ lineItemId, quantity }] });
   const returnId = await attachShopifyReturn({ admin: input.admin, shop, caseId });
   return { caseId, returnId };
+}
+
+// Gives funded units back when no Gooper money went out (no payout requested,
+// or the payout is confirmed failed). The units are released in Gooper's
+// records first; only then is the Shopify return cancelled. If the cancel
+// fails, Shopify still holds the units, which can't cause a double payment,
+// and the merchant is told to cancel the return in Shopify.
+export async function releaseFundedCase({
+  admin,
+  shop,
+  caseId,
+}: {
+  admin: AdminGraphql;
+  shop: string;
+  caseId: string;
+}) {
+  requireFundedSandbox();
+  const units = await prisma.fundedEntitlement.findMany({
+    where: { shop, caseId, status: "ACTIVE" },
+  });
+  const released = await releaseFundedUnits(shop, caseId);
+  if (!released) throw new FundedConflictError("This case has no reserved items to release.");
+  const returnIds = [...new Set(units.map((unit) => unit.shopifyReturnId).filter(Boolean))] as string[];
+  const problems: string[] = [];
+  for (const id of returnIds) {
+    try {
+      const { returnCancel } = await adminData<{
+        returnCancel: { userErrors: Array<{ message: string }> };
+      }>(admin, RETURN_CANCEL, { id }, "Shopify could not cancel the return.");
+      if (returnCancel.userErrors.length)
+        problems.push(`${id}: ${userErrorText(returnCancel.userErrors)}`);
+    } catch (error) {
+      problems.push(`${id}: ${error instanceof Error ? error.message : "cancel failed"}`);
+    }
+  }
+  if (units[0])
+    await adminData<{ tagsRemove: { userErrors: Array<{ message: string }> } }>(
+      admin,
+      TAGS_REMOVE,
+      { id: units[0].orderId, tags: [FUNDED_OPEN_TAG] },
+      "Shopify could not update the order tags.",
+    ).catch(() => undefined);
+  return { released, cancelled: returnIds.length - problems.length, problems };
 }
 
 // returns/* webhook. A funded return cancelled or declined outside Gooper makes
@@ -326,7 +421,7 @@ export async function startFundedCaseFromOrder(input: {
 // the refund guard and are flagged for review. Any close or process is also
 // outside Gooper today, since Gooper never closes funded returns yet.
 export async function flagFundedReturnChanges(
-  transaction: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  transaction: Prisma.TransactionClient,
   shop: string,
   returnId: string,
   returnStatus: string,

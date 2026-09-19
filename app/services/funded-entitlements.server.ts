@@ -99,6 +99,16 @@ export async function assertNotFunded({
   if (reason) throw new FundedConflictError(`${reason} No refund was issued.`);
 }
 
+// Serializes funding decisions for one order (or one case) across processes.
+// The lock lasts until the surrounding transaction ends.
+export async function lockFunding(
+  transaction: Prisma.TransactionClient,
+  shop: string,
+  key: string,
+) {
+  await transaction.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`funded:${shop}:${key}`}, 0))`;
+}
+
 // Reserves funded units for a sandbox case. Must happen before the payout is
 // requested, so there is never a moment when the customer has been paid by
 // Gooper and the units are still refundable the ordinary way.
@@ -107,6 +117,10 @@ export async function reserveFundedUnits(input: {
   caseId: string;
   orderId: string;
   items: Array<{ lineItemId: string; quantity: number }>;
+  // Reads Shopify's current returnable quantity per line item. Called while
+  // holding the order lock, so two cases can never both fund the same units:
+  // a stale read taken before the lock could miss the other case's return.
+  readReturnable?: () => Promise<Map<string, number>>;
 }) {
   requireFundedSandbox();
   const { shop, caseId, orderId, items } = z
@@ -128,11 +142,29 @@ export async function reserveFundedUnits(input: {
   if (new Set(items.map((item) => item.lineItemId)).size !== items.length)
     throw new FundedConflictError("Each line item can appear only once.");
   return prisma.$transaction(async (transaction) => {
+    await lockFunding(transaction, shop, orderId);
+    await lockFunding(transaction, shop, caseId);
+    const returnable = input.readReturnable ? await input.readReturnable() : undefined;
     const existing = await transaction.fundedEntitlement.count({
       where: { shop, caseId, status: { in: RESERVING } },
     });
     if (existing)
       throw new FundedConflictError("This case already has funded items.");
+    if (returnable) {
+      // Explicit, unlike the refund guard: every requested unit must still be
+      // returnable in Shopify after subtracting funded units that don't yet
+      // have a Shopify return (units with one are already excluded by Shopify).
+      const funded = await reservedFundedUnits(shop, orderId, transaction);
+      for (const item of items) {
+        const pending = funded
+          .filter((units) => units.lineItemId === item.lineItemId && !units.shopifyReturnId)
+          .reduce((sum, units) => sum + units.quantity, 0);
+        if (item.quantity > (returnable.get(item.lineItemId) ?? 0) - pending)
+          throw new FundedConflictError(
+            "Those units aren't returnable in Shopify, or Gooper already funded them.",
+          );
+      }
+    }
     await transaction.fundedEntitlement.createMany({
       data: items.map((item) => ({
         id: randomUUID(),
@@ -146,7 +178,7 @@ export async function reserveFundedUnits(input: {
     return transaction.fundedEntitlement.findMany({
       where: { shop, caseId, status: "ACTIVE" },
     });
-  });
+  }, { timeout: 30_000, maxWait: 30_000 });
 }
 
 // Releases reserved units only when no Gooper money went out: the case never
@@ -154,6 +186,8 @@ export async function reserveFundedUnits(input: {
 export async function releaseFundedUnits(shop: string, caseId: string) {
   requireFundedSandbox();
   return prisma.$transaction(async (transaction) => {
+    // Same lock as a payout request, so a payout can't start mid-release.
+    await lockFunding(transaction, shop, caseId);
     const row = await transaction.fundedReturnSandbox.findUnique({
       where: { shop_id: { shop, id: caseId } },
     });

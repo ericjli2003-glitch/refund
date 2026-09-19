@@ -76,6 +76,49 @@ try {
     returnable: new Map([[SHIRT, 2]]),
   });
 
+  // Reserving is checked against a fresh Shopify read: units already held by a
+  // Shopify return are gone from Shopify's returnable quantity, and pending
+  // funded units are subtracted, so nothing can be funded twice.
+  {
+    const heldCase = randomUUID();
+    await reserveFundedUnits({ shop, caseId: heldCase, orderId: ORDER, items: [{ lineItemId: HAT, quantity: 1 }] });
+    await prisma.fundedEntitlement.updateMany({
+      where: { shop, caseId: heldCase },
+      data: { shopifyReturnId: "gid://shopify/Return/8801" },
+    });
+    for (const [returnable, quantity] of [[0, 1], [1, 2]] as const)
+      await assert.rejects(
+        reserveFundedUnits({
+          shop,
+          caseId: randomUUID(),
+          orderId: ORDER,
+          items: [{ lineItemId: HAT, quantity }],
+          readReturnable: async () => new Map([[HAT, returnable]]),
+        }),
+        /aren't returnable/,
+      );
+    const pendingCase = randomUUID();
+    await reserveFundedUnits({
+      shop,
+      caseId: pendingCase,
+      orderId: ORDER,
+      items: [{ lineItemId: HAT, quantity: 1 }],
+      readReturnable: async () => new Map([[HAT, 2]]),
+    });
+    await assert.rejects(
+      reserveFundedUnits({
+        shop,
+        caseId: randomUUID(),
+        orderId: ORDER,
+        items: [{ lineItemId: HAT, quantity: 2 }],
+        readReturnable: async () => new Map([[HAT, 2]]),
+      }),
+      /aren't returnable/,
+      "A pending funded unit without a Shopify return is subtracted",
+    );
+    await prisma.fundedEntitlement.deleteMany({ where: { shop, caseId: { in: [heldCase, pendingCase] } } });
+  }
+
   // Released only while no payout went out; never after one succeeded.
   assert.equal(await releaseFundedUnits(shop, caseId), 1);
   assert.equal((await reservedFundedUnits(shop, ORDER)).length, 0);

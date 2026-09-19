@@ -186,6 +186,34 @@ Two layers, both development-only and synthetic.
     and repays (and the Shopify accounting treatment that implies), cancelling the
     Shopify return when a payout is confirmed failed and units are released, and a
     quote-time check for an earlier customer message.
+- **Hardening and completion (2026-09-19):**
+  - *Race fixes.* Funding decisions are serialized per order and per case with
+    PostgreSQL advisory transaction locks (`lockFunding`). Reservation re-reads
+    Shopify's returnable quantity under the order lock and requires every
+    requested unit to fit within it, after subtracting funded units without a
+    Shopify return. A stale read before the lock, plus the refund guard's
+    behavior of skipping units that already have a return, had let two concurrent
+    cases fund the same unit. A unique index on (shop, case, line item) is the
+    backstop. Creating the Shopify return holds a per-case lock across the Shopify
+    calls (30-second transaction). Payout requests and releases share the case
+    lock, and a case tied to a real order can't request a payout unless its units
+    are reserved. The sandbox provider webhook refuses bodies over 16KB before
+    reading them.
+  - *Release.* `releaseFundedCase` releases units, only while no payout succeeded
+    or is unresolved, then cancels the Shopify return (`returnCancel`) and removes
+    the `gooper-funded-open` tag. The order is deliberate: if the cancel fails,
+    Shopify still holds the units and the merchant is told.
+  - *Funding limits* (`app/services/funded-limits.server.ts`), checked at payout
+    request under a shared lock: `GOOPER_FUNDED_PAUSED`, per-return
+    (`GOOPER_FUNDED_MAX_PER_RETURN_CENTS`, default 15000), per-merchant
+    (`..._PER_MERCHANT_CENTS`, 150000) and portfolio (`..._PORTFOLIO_CENTS`,
+    1400000), per currency. Defaults are proposals pending the founder's
+    confirmation.
+  - Real-order funded cases are CAD only. The customer quote refuses items Gooper
+    already funded, with a plain message.
+  - The unit suite no longer needs a database.
+  - Scaling notes for later: Shopify calls held inside a DB transaction, and the
+    portfolio check scanning all cases, are fine for a pilot but not at volume.
 - `app/routes/webhooks.funded-sandbox-provider.tsx`: dev-only callback endpoint
   (404 outside the sandbox gate, 16KB cap, raw-body signature, 400 on rejection).
 - Prisma models `FundedPaymentIntent` (with `version` CAS column), `FundedPaymentEvent`,

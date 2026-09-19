@@ -348,6 +348,7 @@ test("changed quote stops before any return record or Shopify mutation", async (
     maxAutoRefundAmount: "100.00",
   }));
   mockDelegate(t, prisma.agentReturn, "findUnique", async () => null);
+  mockDelegate(t, prisma.fundedEntitlement, "findMany", async () => []);
   const write = mockDelegate(t, prisma.agentReturn, "create", async () => {
     throw new Error("Must not write");
   });
@@ -431,6 +432,8 @@ test("quotes use Shopify shop money for policy limits without changing customer 
     currencyCode: "USD",
     maxAutoRefundAmount: limit,
   }));
+  let funded: Array<{ lineItemId: string; quantity: number; shopifyReturnId: string | null }> = [];
+  mockDelegate(t, prisma.fundedEntitlement, "findMany", async () => funded);
   const input = {
     orderId: "gid://shopify/Order/1",
     items: [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1 }],
@@ -495,6 +498,13 @@ test("quotes use Shopify shop money for policy limits without changing customer 
       });
     },
   );
+  // Units Gooper funded with no Shopify return yet leave nothing to quote.
+  funded = [{ lineItemId: "gid://shopify/LineItem/1", quantity: 1, shopifyReturnId: null }];
+  await assert.rejects(
+    createReturnQuote(shop, "test-token", input),
+    /already refunded to you through Gooper/,
+  );
+  funded = [];
   const quote = await createReturnQuote(shop, "test-token", input);
   assert.deepEqual(quote.expectedRefund, {
     amount: "14.00",

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as z from "zod/v4";
 import prisma from "../db.server";
+import { fundedConflict, reservedFundedUnits } from "./funded-entitlements.server";
 import { describeRefundProgress } from "../refund-status";
 import {
   calculateReturn,
@@ -235,6 +236,17 @@ export async function createReturnQuote(
           `An item or quantity chosen from order ${order.name} is not currently returnable.`,
         );
     }
+    // Items Gooper already paid this customer for can't be refunded again.
+    if (
+      fundedConflict({
+        items: selection.items,
+        funded: await reservedFundedUnits(shop, order.id),
+        returnable: new Map(available.map((entry) => [entry.lineItem.id, entry.quantity])),
+      })
+    )
+      throw new Error(
+        `Some of the items chosen from order ${order.name} were already refunded to you through Gooper, so they can't be refunded again.`,
+      );
     const calculation = await calculateReturn(
       shop,
       customerToken,

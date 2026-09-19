@@ -29,6 +29,8 @@ import {
   type SubmitResult,
 } from "./funded-payment-provider.server";
 import { sandboxPaymentProvider } from "./funded-sandbox-provider.server";
+import { lockFunding } from "./funded-entitlements.server";
+import { fundingLimitProblem } from "./funded-limits.server";
 
 type Transaction = Prisma.TransactionClient;
 type Intent = Awaited<
@@ -115,12 +117,26 @@ export async function requestSandboxPayment(input: {
     .parse(input);
   const intentId = derivedId("funded-intent", shop, caseId, commandId);
   await prisma.$transaction(async (transaction) => {
+    // Serialized with releasing the case's funded units.
+    await lockFunding(transaction, shop, caseId);
     const row = await transaction.fundedReturnSandbox.findUnique({
       where: { shop_id: { shop, id: caseId } },
     });
     if (!row) throw new SandboxError("Sample return not found for this store.");
     const state = sandboxStateSchema.parse(row.snapshot);
     if (state.events.some((event) => event.command.id === commandId)) return;
+    // A case tied to a real order pays out only while its units are reserved,
+    // so the ordinary refund flow can't also pay for them.
+    if (
+      operation === "payout" &&
+      state.order &&
+      !(await transaction.fundedEntitlement.count({
+        where: { shop, caseId, status: "ACTIVE" },
+      }))
+    )
+      throw new SandboxError(
+        "This case's order items aren't reserved, so no payout can be requested.",
+      );
     // A held payout says nothing about whether approved principal is owed,
     // so a hold only blocks further requests of the same kind.
     const held = await transaction.fundedPaymentIntent.count({
@@ -131,6 +147,15 @@ export async function requestSandboxPayment(input: {
         `A ${operation} for this sample needs review before another request.`,
       );
     const payment = { ...sandboxNextPayment(state, operation), intentId };
+    if (operation === "payout") {
+      const overLimit = await fundingLimitProblem(
+        transaction,
+        shop,
+        payment.amountMinor,
+        payment.currency,
+      );
+      if (overLimit) throw new SandboxError(`${overLimit} No payout was requested.`);
+    }
     await applyCaseCommand(transaction, shop, caseId, version, {
       id: commandId,
       action: operation === "payout" ? "REQUEST_PAYOUT" : "REQUEST_COLLECTION",

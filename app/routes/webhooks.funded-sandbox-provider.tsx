@@ -13,6 +13,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   requireFundedSandbox();
   if (request.method !== "POST")
     return new Response("Method not allowed", { status: 405 });
+  // Refuse oversized bodies before reading them into memory.
+  if (Number(request.headers.get("content-length") ?? 0) > 16_000)
+    return new Response("Payload too large", { status: 413 });
   const rawBody = await request.text();
   if (rawBody.length > 16_000)
     return new Response("Payload too large", { status: 413 });
