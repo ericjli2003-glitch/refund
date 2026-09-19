@@ -1,6 +1,6 @@
 # Gooper-funded returns — implementation handoff
 
-Updated September 17, 2026. This file is the entry point for continuing the work.
+Updated September 18, 2026. This file is the entry point for continuing the work.
 
 ## User intent
 
@@ -14,6 +14,56 @@ Do not activate real payouts/debits, alter live refund behavior or claim product
 readiness. Don't invent customer debit authority, financing terms, fees or a loss
 allocation, and don't automatically approve returns. Ask the user before
 connecting a real provider (even its sandbox), deploying, or pushing.
+
+## Decisions (user, 2026-09-18)
+
+These are the user's commercial and strategic decisions. They are not legal advice
+and have not been reviewed by counsel.
+
+- **Launch market: Canada first**, starting with Canadian merchants and CAD. The
+  founder is in Canada. The US follows later and needs its own legal review.
+- **Pricing (merchant-facing):**
+
+  | Plan | Subscription | Per funded return |
+  | --- | --- | --- |
+  | Starter | $49 | 5% of the refund, minimum $2 |
+  | Growth | $199 | 4% of the refund, minimum $2 |
+
+  Early supporters get a 60-day trial. Still to confirm: the billing period
+  (assumed monthly), whether the trial waives the per-return fee as well as the
+  subscription, and the currency (assumed CAD).
+- **The merchant pays the percentage fee**, deducted from or added to what they
+  reimburse Gooper. The customer receives the full refund amount; nothing is taken
+  off the payout.
+- **Customer repayment amount:** if a customer keeps the item or otherwise breaches
+  the return terms, what they owe is the full original refund amount. This follows
+  Reshop's rule. The right to demand it, and how it would be collected, still depend
+  on a customer agreement accepted before payout, reviewed by counsel. Until then
+  no code may charge a customer.
+- **Working legal structure (recommended, pending Canadian counsel):** Gooper buys
+  the customer's refund claim against the merchant (a purchase of the receivable,
+  as Reshop does), not a loan. Conditions that support it:
+  - customer liability limited to breach of their own return obligations, never
+    the merchant's failure to pay;
+  - a merchant agreement that accepts the assignment, agrees to pay Gooper rather
+    than the customer, and sets the receipt and inspection terms (it also serves as
+    written notice of the assignment);
+  - payouts and merchant collection only through a licensed payment partner, with
+    merchant collection by pre-authorized debit under a signed business PAD agreement.
+  Counsel should confirm assignment formalities, Bank of Canada registration under
+  the Retail Payment Activities Act, FINTRAC scope, and provincial consumer
+  protection. Quebec deserves separate review (consumer protection and French
+  language requirements) before onboarding Quebec merchants or customers.
+
+Reshop's model, for comparison (public terms and retailer docs, read 2026-09-17):
+it buys the claim and pays the customer immediately, minus a fee that depends on
+the payout method. The retailer pays Reshop. The customer must return the item
+within 7 days, and owes the full original refund plus an unreturned-item charge
+(the lower of $10 or 10%) on breach. Reshop has no recourse against the retailer.
+Retailers accept at first scan, on delivery, or after inspection, with automatic
+acceptance 3 business days after delivery. Orders are tagged `reshop-return-open`
+and `reshop-returned` to prevent duplicate returns. Gooper deliberately keeps
+explicit merchant approval and has no timed auto-accept.
 
 Read AGENTS.md and docs/PROJECT_STATE.md before editing. This repository is nested
 under a ChatGPT project mirror; its parent's sources/ directory is read-only.

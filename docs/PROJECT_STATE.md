@@ -27,6 +27,10 @@ allow only SANDBOX intents. No real provider is selected or connected, and
 customer recovery rights remain undecided. Existing Shopify refunds are
 unchanged.
 
+Decided 2026-09-18: Canada first (CAD), merchant-paid pricing (Starter $49 + 5%,
+Growth $199 + 4%, $2 minimum, 60-day early-supporter trial), and a working legal
+structure of buying the customer's refund claim, pending Canadian counsel.
+
 See [FUNDED_RETURNS_HANDOFF.md](FUNDED_RETURNS_HANDOFF.md) for the exact code,
 verification status, local setup and next implementation steps. The database
 tests pass against PostgreSQL 16; the authenticated embedded browser check is
