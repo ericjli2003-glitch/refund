@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 
 import prisma from "../db.server";
+import { assertNotFunded } from "./funded-entitlements.server";
 import { refundPaymentStatus } from "../refund-status";
 import {
   CustomerAccountApiError,
@@ -427,6 +428,8 @@ export async function processApprovedReturn({
   confirmed: Money;
   dispose: boolean;
 }) {
+  // The only place money moves; rechecked here for every path that reaches it.
+  await assertNotFunded({ shop, orderId, items, returnId });
   const returnProcessLineItems = await returnLineItemsFor({
     admin,
     shop,
@@ -936,6 +939,9 @@ export async function executeAutomaticReturn({
       );
     }
   }
+  // Units Gooper already paid the customer for must not also be refunded to
+  // the original payment method. Checked before Shopify is asked for a return.
+  await assertNotFunded({ shop, orderId, items, returnable });
 
   const calculation = await calculateReturn(
     shop,
