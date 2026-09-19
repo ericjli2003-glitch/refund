@@ -26,9 +26,10 @@ export async function createFundedSandbox(
   shop: string,
   id: string,
   currency: "CAD" | "USD",
+  options: Parameters<typeof createSandboxState>[2] = {},
 ) {
   requireFundedSandbox();
-  const state = createSandboxState(id, currency);
+  const state = createSandboxState(id, currency, options);
   const row = await prisma.fundedReturnSandbox.upsert({
     where: { shop_id: { shop, id } },
     create: { shop, id, snapshot: state },

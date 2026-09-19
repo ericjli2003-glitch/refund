@@ -55,9 +55,28 @@ export type SandboxPaymentView = {
   }>;
 };
 
+export type FundedOrderCandidate = {
+  id: string;
+  name: string;
+  currency: string;
+  lineItems: Array<{ id: string; title: string; quantity: number }>;
+};
+
+export type FundedUnitsView = {
+  caseId: string;
+  lineItemId: string;
+  quantity: number;
+  status: string;
+  shopifyReturnId: string | null;
+  conflictReason: string | null;
+};
+
 export type FundedSandboxViewProps = {
   cases: Array<{ id: string; version: number; state: SandboxState }>;
   payments: SandboxPaymentView[];
+  orders?: FundedOrderCandidate[];
+  ordersError?: string | null;
+  funded?: FundedUnitsView[];
   actionId: string;
   error?: string | null;
   notice?: string | null;
@@ -68,12 +87,21 @@ export type FundedSandboxViewProps = {
 export default function FundedReturnsSandboxView({
   cases,
   payments,
+  orders = [],
+  ordersError = null,
+  funded = [],
   actionId,
   error,
   notice,
   busy,
   onSubmit,
 }: FundedSandboxViewProps) {
+  const [orderId, setOrderId] = useState(orders[0]?.id ?? "");
+  const order = orders.find((candidate) => candidate.id === orderId) ?? orders[0];
+  const [lineItemId, setLineItemId] = useState("");
+  const lineItem =
+    order?.lineItems.find((line) => line.id === lineItemId) ?? order?.lineItems[0];
+  const [orderQuantity, setOrderQuantity] = useState("1");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [payoutScenario, setPayoutScenario] = useState<Scenario>("SUCCEED");
   const [collectionScenario, setCollectionScenario] =
@@ -101,6 +129,7 @@ export default function FundedReturnsSandboxView({
         : {}),
     });
   };
+  const caseFunded = funded.filter((units) => units.caseId === selected?.id);
   const casePayments = payments.filter(
     (payment) => payment.caseId === selected?.id,
   );
@@ -177,6 +206,69 @@ export default function FundedReturnsSandboxView({
               </s-button>
             ))}
           </s-stack>
+          <s-paragraph color="subdued">
+            Or start from a real order on this development store. Gooper
+            reserves the units, creates an open Shopify return for them (the
+            customer isn&apos;t notified) and tags the order gooper-funded, so
+            the ordinary refund flow can&apos;t pay for them twice.
+          </s-paragraph>
+          {ordersError && <s-banner tone="warning">{ordersError}</s-banner>}
+          {order && lineItem ? (
+            <s-stack direction="block" gap="small">
+              <s-select
+                label="Order"
+                value={order.id}
+                disabled={busy}
+                onChange={(event) => {
+                  setOrderId(event.currentTarget.value);
+                  setLineItemId("");
+                }}
+              >
+                {orders.map((candidate) => (
+                  <s-option key={candidate.id} value={candidate.id}>
+                    {candidate.name} · {candidate.currency}
+                  </s-option>
+                ))}
+              </s-select>
+              <s-select
+                label="Item"
+                value={lineItem.id}
+                disabled={busy}
+                onChange={(event) => setLineItemId(event.currentTarget.value)}
+              >
+                {order.lineItems.map((line) => (
+                  <s-option key={line.id} value={line.id}>
+                    {line.title} (ordered {line.quantity})
+                  </s-option>
+                ))}
+              </s-select>
+              <s-text-field
+                label="Quantity to fund"
+                value={orderQuantity}
+                disabled={busy}
+                onInput={(event) => setOrderQuantity(event.currentTarget.value)}
+              />
+              <s-button
+                disabled={busy}
+                onClick={() =>
+                  onSubmit({
+                    intent: "fromOrder",
+                    orderId: order.id,
+                    lineItemId: lineItem.id,
+                    quantity: orderQuantity,
+                  })
+                }
+              >
+                Start funded case from this order
+              </s-button>
+            </s-stack>
+          ) : (
+            !ordersError && (
+              <s-paragraph color="subdued">
+                No CAD or USD orders found on this store.
+              </s-paragraph>
+            )
+          )}
           {cases.length > 0 && (
             <s-select
               label="Recent sample returns"
@@ -189,8 +281,11 @@ export default function FundedReturnsSandboxView({
             >
               {cases.map((row) => (
                 <s-option key={row.id} value={row.id}>
-                  {row.state.currency} 50.00 · {row.id.slice(0, 8)} ·{" "}
-                  {row.state.returnStatus}
+                  {row.state.order
+                    ? `${row.state.order.orderName} · ${row.state.order.title}`
+                    : `${row.state.currency} sample`}{" "}
+                  · {(row.state.amountMinor / 100).toFixed(2)} ·{" "}
+                  {row.id.slice(0, 8)} · {row.state.returnStatus}
                 </s-option>
               ))}
             </s-select>
@@ -200,6 +295,49 @@ export default function FundedReturnsSandboxView({
 
       {state && balances && (
         <>
+          {state.order && (
+            <s-section heading="Linked Shopify order">
+              <s-stack direction="block" gap="small">
+                <s-paragraph>
+                  {state.order.orderName}: {state.order.quantity} ×{" "}
+                  {state.order.title}. The ordinary refund flow refuses these
+                  units while Gooper holds them.
+                </s-paragraph>
+                {caseFunded.map((units) => (
+                  <s-paragraph key={units.lineItemId + units.status}>
+                    <s-badge
+                      tone={
+                        units.status === "ACTIVE"
+                          ? "success"
+                          : units.status === "CONFLICT"
+                            ? "critical"
+                            : "neutral"
+                      }
+                    >
+                      {units.status}
+                    </s-badge>{" "}
+                    {units.quantity} unit(s) ·{" "}
+                    {units.shopifyReturnId
+                      ? `Shopify return ${units.shopifyReturnId}`
+                      : "No Shopify return yet"}
+                    {units.conflictReason ? ` · ${units.conflictReason}` : ""}
+                  </s-paragraph>
+                ))}
+                {caseFunded.some(
+                  (units) => units.status === "ACTIVE" && !units.shopifyReturnId,
+                ) && (
+                  <s-button
+                    disabled={busy}
+                    onClick={() =>
+                      selected && onSubmit({ intent: "attachReturn", id: selected.id })
+                    }
+                  >
+                    Retry creating the Shopify return
+                  </s-button>
+                )}
+              </s-stack>
+            </s-section>
+          )}
           <s-section heading="1. Gooper funds the customer">
             <s-stack direction="block" gap="base">
               <s-paragraph>

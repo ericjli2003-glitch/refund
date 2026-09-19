@@ -108,6 +108,17 @@ export const sandboxStateSchema = z.object({
   ]),
   collectionAttempt: z.number().int().nonnegative(),
   collectionIntentId: z.string().uuid().nullable().default(null),
+  // Set only for a case started from a real development-store order line.
+  order: z
+    .object({
+      orderId: z.string().regex(/^gid:\/\/shopify\/Order\/\d+$/),
+      orderName: z.string().max(100),
+      lineItemId: z.string().regex(/^gid:\/\/shopify\/LineItem\/\d+$/),
+      title: z.string().max(255),
+      quantity: z.number().int().positive().max(1000),
+    })
+    .nullable()
+    .default(null),
   events: z
     .array(
       z.object({
@@ -126,16 +137,19 @@ function requireState(condition: boolean, message: string): asserts condition {
   if (!condition) throw new SandboxError(message);
 }
 
+export type SandboxOrderLink = NonNullable<SandboxState["order"]>;
+
 export function createSandboxState(
   id: string,
   currency: "CAD" | "USD",
+  { amountMinor = 5000, order = null }: { amountMinor?: number; order?: SandboxOrderLink | null } = {},
 ): SandboxState {
   return sandboxStateSchema.parse({
     schemaVersion: 1,
     mode: "SANDBOX",
     id,
     currency,
-    amountMinor: 5000,
+    amountMinor,
     risk: "PENDING",
     payout: "NOT_STARTED",
     payoutAttempt: 0,
@@ -145,6 +159,7 @@ export function createSandboxState(
     collection: "NOT_DUE",
     collectionAttempt: 0,
     collectionIntentId: null,
+    order,
     events: [],
   });
 }
