@@ -68,35 +68,10 @@
   line-height: 1.55;
 }
 
-.form,
-.label {
-  display: grid;
-  gap: 0.65rem;
-}
-
-.label span {
-  color: #3b1d0a;
-  font-size: 0.86rem;
-  font-weight: 600;
-}
-
-.input {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #b0703f;
-  border-radius: 0.7rem;
-  padding: 0.86rem 0.95rem;
-  color: #3b1d0a;
-  background: #ffffff;
-  font: inherit;
-}
-
-.input:focus {
-  outline: 3px solid rgb(194 65 12 / 30%);
-  border-color: #c2410c;
-}
-
 .button {
+  display: block;
+  text-align: center;
+  text-decoration: none;
   border: 0;
   border-radius: 0.7rem;
   padding: 0.9rem 1rem;
