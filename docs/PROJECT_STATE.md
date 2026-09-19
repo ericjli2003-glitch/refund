@@ -27,8 +27,11 @@ allow only SANDBOX intents. No real provider is selected or connected, and
 customer recovery rights remain undecided. Existing Shopify refunds are
 unchanged.
 
-Decided 2026-09-18: Canada first (CAD), merchant-paid pricing (Starter $49 + 5%,
-Growth $199 + 4%, $2 minimum, 60-day early-supporter trial), and a working legal
+Decided 2026-09-18/19: Canada first (CAD), merchant-paid pricing (Starter $49 + 5%,
+Growth $199 + 4%, $2 minimum, CAD, monthly, 60-day early-supporter trial waiving
+the subscription only), pilot limits ($150 per return, $3,000 per merchant,
+$14,000 total, one open return per customer, 7-day ship window, 3-business-day
+inspection with no auto-approval), and a working legal
 structure of buying the customer's refund claim, pending Canadian counsel.
 
 See [FUNDED_RETURNS_HANDOFF.md](FUNDED_RETURNS_HANDOFF.md) for the exact code,

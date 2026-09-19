@@ -19,8 +19,8 @@ follows that list:
 | 1 | Customer agreement | §8 | Term sheet ready; full agreement after Shopify's determination |
 | 2 | Merchant agreement | §8 | Term sheet ready; full agreement after Shopify's determination |
 | 3 | Fund-flow diagram | §3 | Ready |
-| 4 | Reimbursement timing | §4 | Ready, with **proposed** deadlines for Eric to confirm |
-| 5 | Underwriting and collections process | §5, §6 | **Proposed** rules for Eric to confirm |
+| 4 | Reimbursement timing | §4 | Ready; provider timings to fill in |
+| 5 | Underwriting and collections process | §5, §6 | Ready |
 | 6 | Disclosures | §8 | Required points listed; final wording after Shopify's determination |
 | 7 | Licensing analysis | §8 | Questions listed; analysis after Shopify's determination (an early, narrow opinion is optional) |
 | 8 | Proposed app or partner distribution route | §9 | Ready |
@@ -137,12 +137,12 @@ Money in plain words:
 | --- | --- | --- |
 | Customer payout sent | Right after eligibility passes and the Shopify return is created | Ready |
 | Payout arrives | Per provider; Interac e-Transfer usually within minutes, but we won't promise a time until the provider confirms one **[PROVIDER]** | Provider |
-| Customer ships item | Within **7 days** of payout (Reshop uses 7) | **Proposed** |
-| Merchant inspection | Within **3 business days** of the item arriving. **No automatic approval.** A missed deadline triggers reminders and pauses new funded returns for that merchant; it never creates a debt | **Proposed** |
+| Customer ships item | Within **7 days** of payout | Decided |
+| Merchant inspection | Within **3 business days** of the item arriving. **No automatic approval.** A missed deadline triggers reminders and pauses new funded returns for that merchant; it never creates a debt | Decided |
 | Merchant repayment | Pre-authorized debit initiated on approval, with the notice the debit agreement requires | **[PROVIDER]**, lawyer |
 | Repayment settles | Per provider and Payments Canada rules, typically a few business days | **[PROVIDER]** |
 
-## 5. Underwriting — who gets a funded return (proposed v1)
+## 5. Underwriting — who gets a funded return (pilot rules)
 
 A return is funded only when all of these hold. Items marked "enforced" already
 exist in the code.
@@ -157,18 +157,18 @@ exist in the code.
 - **Currency:** CAD. *(Enforced for funded returns on real orders; the synthetic
   sandbox samples also allow USD.)*
 - **Per-return cap:** $150 while piloting. *(Enforced at payout request.)*
-- **Per-merchant cap:** $1,500 of unrepaid funded returns per merchant, counting
+- **Per-merchant cap:** $3,000 of unrepaid funded returns per merchant, counting
   payouts in flight and anything not yet repaid; new payouts stop when it's
   reached. *(Enforced.)*
-- **Portfolio cap:** $14,000 unrepaid across all merchants, per currency, to be set
-  from Gooper's committed capital. *(Enforced.)*
+- **Portfolio cap:** $14,000 unrepaid across all merchants, per currency.
+  *(Enforced.)*
 - **Customer:** one open funded return at a time while piloting. *(To be enforced
   once customers can start funded returns.)*
 - **Kill switch:** `GOOPER_FUNDED_PAUSED=1` stops all new payouts immediately.
   *(Enforced.)*
 
-The cap amounts are proposals awaiting Eric's confirmation. Each is a setting,
-so changing them needs no code change.
+These limits were set by Eric on September 19, 2026. Each is a setting, so
+changing them needs no code change.
 
 Customer protections already built:
 
@@ -227,9 +227,10 @@ decisions already made:
 - **Structure:** Gooper buys the customer's refund claim against the merchant (a
   purchase of the receivable, not a loan).
 - **Customer fee:** none. The customer receives the full refund amount.
-- **Merchant pricing:** Starter $49 plus 5% per funded return; Growth $199 plus 4%;
-  each with a $2 minimum per return. 60-day trial for early supporters. (To confirm:
-  monthly billing, CAD, whether the trial also waives the per-return fee.)
+- **Merchant pricing (CAD, billed monthly through Shopify app billing):** Starter
+  $49 plus 5% per funded return; Growth $199 plus 4%; each with a $2 minimum per
+  return. Early supporters get a 60-day trial that waives the subscription only;
+  per-return fees still apply.
 - **Customer breach:** the customer owes the full original refund amount.
 - **Non-recourse:** Gooper can't pursue the customer for the merchant's failure to
   pay.
@@ -288,10 +289,10 @@ pays them and why; to merchants, fees, timing and their obligations.
 
 Before submitting for a determination:
 
-- [ ] Confirm the proposed items: 7-day ship window, 3-business-day inspection
-      deadline, $150 per-return, $1,500 per-merchant and $14,000 portfolio caps,
-      one open funded return per customer.
-- [ ] Confirm the pricing details: monthly, CAD, what the trial waives.
+- [x] Rules and limits set: 7-day ship window, 3-business-day inspection deadline,
+      $150 per return, $3,000 per merchant, $14,000 in total, one open funded
+      return per customer.
+- [x] Pricing set: monthly, CAD, trial waives the subscription only.
 - [ ] Submit through Partner Dashboard → Apps → Gooper.io → Distribution, or ask
       Partner Support (citing the Wolf chat) to open an App Review case if the app
       is already published. Paste §1 and attach this document.

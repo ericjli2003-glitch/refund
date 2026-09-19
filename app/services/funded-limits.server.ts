@@ -3,8 +3,9 @@ import { sandboxBalances, sandboxStateSchema } from "../funded-return-sandbox";
 import { lockFunding } from "./funded-entitlements.server";
 
 // Funding limits, checked when a payout is requested: the only moment Gooper's
-// money leaves. Defaults are the proposed pilot numbers pending the founder's
-// confirmation, and can be overridden per environment. All amounts are cents.
+// money leaves. Defaults are the founder's pilot limits (confirmed 2026-09-19):
+// $150 per return, $3,000 per merchant, $14,000 in total. Each can be
+// overridden per environment. All amounts are cents.
 export type FundingLimits = {
   paused: boolean;
   perReturnMinor: number;
@@ -24,7 +25,7 @@ export function fundingLimits(environment = process.env): FundingLimits {
   return {
     paused: environment.GOOPER_FUNDED_PAUSED === "1",
     perReturnMinor: cents(environment.GOOPER_FUNDED_MAX_PER_RETURN_CENTS, 15_000),
-    perMerchantMinor: cents(environment.GOOPER_FUNDED_MAX_PER_MERCHANT_CENTS, 150_000),
+    perMerchantMinor: cents(environment.GOOPER_FUNDED_MAX_PER_MERCHANT_CENTS, 300_000),
     portfolioMinor: cents(environment.GOOPER_FUNDED_MAX_PORTFOLIO_CENTS, 1_400_000),
   };
 }

@@ -38,7 +38,7 @@ try {
   assert.deepEqual(fundingLimits({}), {
     paused: false,
     perReturnMinor: 15_000,
-    perMerchantMinor: 150_000,
+    perMerchantMinor: 300_000,
     portfolioMinor: 1_400_000,
   });
   assert.throws(() => fundingLimits({ GOOPER_FUNDED_MAX_PER_RETURN_CENTS: "12.5" }));
