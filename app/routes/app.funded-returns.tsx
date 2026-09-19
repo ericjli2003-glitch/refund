@@ -24,7 +24,8 @@ export const action = ({ request }: ActionFunctionArgs) =>
   fundedReturnsAction(request, authenticate.admin);
 
 export default function FundedReturnsSandbox() {
-  const { cases, payments, actionId } = useLoaderData<typeof loader>();
+  const { cases, payments, orders, ordersError, funded, actionId } =
+    useLoaderData<typeof loader>();
   const result = useActionData<typeof action>();
   const submit = useSubmit();
   const navigation = useNavigation();
@@ -32,6 +33,9 @@ export default function FundedReturnsSandbox() {
     <FundedReturnsSandboxView
       cases={cases}
       payments={payments}
+      orders={orders}
+      ordersError={ordersError}
+      funded={funded}
       actionId={actionId}
       error={result?.error}
       notice={result?.notice}
