@@ -29,11 +29,20 @@ and have not been reviewed by counsel.
   | Starter | $49 | 5% of the refund, minimum $2 |
   | Growth | $199 | 4% of the refund, minimum $2 |
 
-  Early supporters get a 60-day trial. Still to confirm: the billing period
-  (assumed monthly), whether the trial waives the per-return fee as well as the
-  subscription, and the currency (assumed CAD).
-- **The merchant pays the percentage fee**, deducted from or added to what they
-  reimburse Gooper. The customer receives the full refund amount; nothing is taken
+  Prices are in CAD and billed monthly. Early supporters get a 60-day trial that
+  waives the subscription only; per-return fees still apply. Plan and per-return
+  fees go through Shopify's app billing (check that it can charge in CAD when
+  billing is built; otherwise set an equivalent USD price).
+- **Pilot rules and limits (set 2026-09-19):** the customer ships within 7 days
+  of payout. The merchant inspects within 3 business days of arrival, with no
+  automatic approval; a missed deadline triggers reminders and pauses new funded
+  returns for that merchant. Limits: $150 per return, $3,000 unrepaid per
+  merchant, $14,000 unrepaid in total, and one open funded return per customer.
+  The three caps and a kill switch are enforced at payout request. The ship
+  window, inspection deadline and per-customer rule are enforced once the
+  customer flow and merchant onboarding exist.
+- **The merchant pays the percentage fee**, charged separately through Shopify
+  app billing, never deducted from what they repay Gooper. The customer receives the full refund amount; nothing is taken
   off the payout.
 - **Customer repayment amount:** if a customer keeps the item or otherwise breaches
   the return terms, what they owe is the full original refund amount. This follows
@@ -206,9 +215,8 @@ Two layers, both development-only and synthetic.
   - *Funding limits* (`app/services/funded-limits.server.ts`), checked at payout
     request under a shared lock: `GOOPER_FUNDED_PAUSED`, per-return
     (`GOOPER_FUNDED_MAX_PER_RETURN_CENTS`, default 15000), per-merchant
-    (`..._PER_MERCHANT_CENTS`, 150000) and portfolio (`..._PORTFOLIO_CENTS`,
-    1400000), per currency. Defaults are proposals pending the founder's
-    confirmation.
+    (`..._PER_MERCHANT_CENTS`, 300000) and portfolio (`..._PORTFOLIO_CENTS`,
+    1400000), per currency. Defaults are the founder's pilot limits.
   - Real-order funded cases are CAD only. The customer quote refuses items Gooper
     already funded, with a plain message.
   - The unit suite no longer needs a database.

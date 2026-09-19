@@ -244,9 +244,9 @@ non-returns, fraud, collection failures, fees, provider reserves and operating
 cash. Model CAD and USD separately. Longer approval delays directly increase
 funding needs. The payout partner does not eliminate Gooper's balance-sheet risk.
 
-Chosen merchant pricing (2026-09-18): Starter $49 + 5% per funded return,
-Growth $199 + 4%, each with a $2 minimum per return, 60-day trial for early
-supporters. On a $50 return that is $2.50 (Starter) or $2.00 (Growth) of fee
+Chosen merchant pricing (2026-09-18/19): Starter $49 + 5% per funded return,
+Growth $199 + 4%, each with a $2 minimum per return, in CAD, billed monthly, with a
+60-day subscription-only trial for early supporters. On a $50 return that is $2.50 (Starter) or $2.00 (Growth) of fee
 revenue before any of the costs below.
 
 Calculate expected contribution per funded return:
