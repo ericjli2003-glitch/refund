@@ -166,12 +166,27 @@ defect — the repository's test suite is the right place for it.
 
 ## 5. Backups and recovery
 
-Render's managed Postgres provides automated encrypted backups and
-point-in-time recovery. Recovery is performed from the Render dashboard.
+`refund-db` runs on a paid Render Postgres plan (0.1 CPU / 256 MB, 15 GB
+storage) in the Oregon (US West) region. Render encrypts the database and its
+backups at rest.
 
-`[CONFIRM: retention window of the current Render Postgres plan, and the date
-of the last restore test.]` A backup that has never been restored is not a
-verified backup; test a restore at least annually and record the date here.
+**Point-in-time recovery covers the past 3 days.** Recovery is performed from
+the database's Recovery page in the Render dashboard. On-demand logical
+exports can be created from the same page and are retained for at least 7
+days.
+
+Three days is short. A fault introduced and not noticed within that window —
+a bad migration, a gradual corruption, a deletion nobody reports — is not
+recoverable from point-in-time recovery. Two ways to widen it, either of which
+is worth doing before the app carries real merchant volume: upgrade to a Pro
+workspace for a 7-day window, or create a logical export on a schedule and
+keep it somewhere outside Render.
+
+A backup that has never been restored is not a verified backup. Test a restore
+at least annually, and record the date and result in the security records
+repository named in §6.
+
+`[CONFIRM: date of the first restore test.]`
 
 ---
 
