@@ -2,15 +2,14 @@ import type { MetaFunction } from "react-router";
 import { useLoaderData } from "react-router";
 
 import { PublicShell } from "../components/PublicShell";
+import { isEmailAddress } from "../services/email.server";
 import styles from "../styles/public.module.css";
 
 export const meta: MetaFunction = () => [{ title: "Support | Gooper.io" }];
 
 export const loader = async () => {
   const configured = process.env.PUBLIC_SUPPORT_EMAIL?.trim() ?? "";
-  const supportEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configured)
-    ? configured
-    : null;
+  const supportEmail = isEmailAddress(configured) ? configured : null;
 
   return { supportEmail };
 };
