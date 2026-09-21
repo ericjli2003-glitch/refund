@@ -21,10 +21,9 @@ export async function loader({ params }: LoaderFunctionArgs) {
   if (!merchant?.discoveryPublished)
     throw new Response("Store not published.", { status: 404 });
   const origin = appOrigin();
-  const displayName =
-    shop === "testing-bl7vdfur.myshopify.com"
-      ? "Testing Storefront"
-      : merchant.name;
+  // Always the store's own name as Shopify reports it. A public profile must
+  // not show a store under any other label.
+  const displayName = merchant.name;
   return data(
     {
       merchant,
@@ -100,23 +99,10 @@ export default function MerchantReturns() {
             Start a return
           </a>
         </p>
-        <h2>
-          {merchant.shop === "testing-bl7vdfur.myshopify.com"
-            ? "Return a snowboard from Testing Storefront"
-            : `Return a purchase from ${displayName}`}
-        </h2>
-        {merchant.shop === "testing-bl7vdfur.myshopify.com" ? (
-          <p>
-            You can ask your assistant: “I want to return my snowboard from
-            Testing Storefront.” This page identifies the Testing Shopify store
-            above and provides its Gooper.io return service.
-          </p>
-        ) : (
-          <p>
-            Tell your assistant which item you want to return from {displayName}
-            .
-          </p>
-        )}
+        <h2>{`Return a purchase from ${displayName}`}</h2>
+        <p>
+          Tell your assistant which item you want to return from {displayName}.
+        </p>
         {(guidance.returnPolicyUrl || guidance.returnInstructions) && (
           <section aria-label={`${displayName} return policy`}>
             <h2>{displayName}&apos;s return policy</h2>

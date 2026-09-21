@@ -99,15 +99,9 @@ export async function syncMerchantDirectory(
     throw new Error("Could not verify the merchant's website with Shopify.");
   const primaryDomain = merchantHost(info.primaryDomain.host);
   const normalized = normalizeMerchantName(info.name);
-  const aliases = [
-    ...new Set([
-      normalized,
-      `${normalized} storefront`,
-      ...(shop === "testing-bl7vdfur.myshopify.com"
-        ? ["testing", "testing storefront"]
-        : []),
-    ]),
-  ];
+  // Aliases are derived from the store's verified Shopify name only. Never
+  // hand-written for a particular shop.
+  const aliases = [...new Set([normalized, `${normalized} storefront`])];
   const data = {
     primaryDomain,
     name: info.name,
