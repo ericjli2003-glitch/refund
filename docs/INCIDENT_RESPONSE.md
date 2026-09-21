@@ -186,7 +186,16 @@ A backup that has never been restored is not a verified backup. Test a restore
 at least annually, and record the date and result in the security records
 repository named in §6.
 
-`[CONFIRM: date of the first restore test.]`
+| Restore test | Result |
+| --- | --- |
+| 2026-09-20 | **Passed.** Restored `refund-db` to the latest available point as `refund-db-copy` (Service ID `dpg-daoag3mk1f9s73ba46n0-a`, distinct from production's `dpg-dad4l9ajnfac73eduilg-a`). Queried by the copy's own hostname: `MerchantDirectory` 1 row, `Session` 1 row, `ReturnDraft` 5 rows. The copy held both `refund_2` and `refund_3`, placing its restore point after `refund_3` was created and before `refund_2` was deleted, so recovery restored to the moment requested, database users included. Copy deleted after verification. |
+
+**Next due: 2027-09-20.**
+
+When running a restore test, confirm the restored instance appears in the
+dashboard and query it by its own hostname before recording anything. An
+earlier attempt the same day queried production by mistake and was withdrawn
+rather than recorded.
 
 ---
 
@@ -251,7 +260,7 @@ Tracked openly so they are not mistaken for controls that exist.
 | Gap | Status |
 | --- | --- |
 | **Access logging coverage.** `PersonalDataAccess` records the boundaries listed in §4.3. Paths outside those, including scheduled return processing, are not yet recorded. | Partial — extend as new surfaces are added |
-| **Restore testing.** No recorded test restore from a Render backup. | Open |
+| **Recovery window.** Point-in-time recovery reaches back only 3 days, so a fault not noticed inside that window is unrecoverable. | Open — see §5 for the two ways to widen it |
 | **Third-party security audit.** None performed. | Open, not currently required |
 
 ---
