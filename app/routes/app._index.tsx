@@ -1024,13 +1024,30 @@ export default function RefundDashboard() {
         </form>
       </s-section>
 
-      <s-section heading="Add return assistance to your storefront (optional)">
+      <s-section heading="Add a return button to your storefront (optional)">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
-            Your hosted portal already works. To also offer return tools
-            directly on your storefront, Shopify requires you to activate the
-            theme embed and save once.
+            Your return portal already works without this. Turning it on adds a
+            “Start a return” button to the bottom-right corner of every page of
+            your store, plus return details that AI shopping assistants can
+            read. It works with every Shopify theme, including older ones.
           </s-paragraph>
+          <s-unordered-list>
+            <s-list-item>
+              <s-text type="strong">Turn it on:</s-text> click the button below.
+              Your theme editor opens with it switched on. Click Save.
+            </s-list-item>
+            <s-list-item>
+              <s-text type="strong">Hide the button, keep AI assistant support:</s-text>{" "}
+              in the theme editor, open App embeds → AI return assistance and
+              untick Show the return button.
+            </s-list-item>
+            <s-list-item>
+              <s-text type="strong">Turn it off completely:</s-text> go to Online
+              Store → Themes → Customize → App embeds, switch off AI return
+              assistance, then Save. Uninstalling Gooper.io also removes it.
+            </s-list-item>
+          </s-unordered-list>
           <s-box>
             <s-button
               href={siteToolsActivationUrl}
@@ -1039,7 +1056,7 @@ export default function RefundDashboard() {
             >
               {storefrontActive
                 ? "Manage storefront assistance"
-                : "Activate in theme and save"}
+                : "Activate in theme editor"}
             </s-button>
           </s-box>
           {storefrontActive && (
