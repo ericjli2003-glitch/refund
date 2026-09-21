@@ -18,6 +18,7 @@ import "./services/return-shipping.server.test";
 import "./services/verified-customer-returns.server.test";
 import "./services/email-verification.server.test";
 import "./services/consent-email.server.test";
+import "./services/email.server.test";
 import "./services/connection-email.server.test";
 import "./services/return-reasons.server.test";
 import "./services/return-wording.server.test";
