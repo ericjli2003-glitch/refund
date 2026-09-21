@@ -82,7 +82,7 @@ export default function Stores() {
               name="q"
               defaultValue={query}
               maxLength={120}
-              placeholder="Testing Storefront"
+              placeholder="The store's name"
             />
           </label>{" "}
           <button type="submit">Find store</button>

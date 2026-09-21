@@ -71,7 +71,7 @@ export default function StartReturn() {
               type="text"
               required
               maxLength={2048}
-              placeholder="Testing Storefront or store.example.com"
+              placeholder="The store's name or store.example.com"
               autoComplete="off"
             />
           </label>
