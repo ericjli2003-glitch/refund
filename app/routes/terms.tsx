@@ -76,6 +76,15 @@ export default function Terms() {
           automatically.
         </p>
         <p>
+          Personal data processed by Gooper.io is stored in the United States.
+          A merchant established outside the United States, including in the
+          United Kingdom or the European Economic Area, should treat its use
+          of Gooper.io as involving a transfer of personal data to the United
+          States and satisfy itself that it has a lawful basis for that
+          transfer. Gooper.io will enter into the standard contractual clauses
+          or an equivalent transfer mechanism on request.
+        </p>
+        <p>
           Gooper.io will notify the affected merchant without undue delay after
           becoming aware of a personal data breach affecting that
           merchant&apos;s customers, and will provide the information the
