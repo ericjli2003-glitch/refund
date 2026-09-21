@@ -19,6 +19,7 @@ import {
   listAgentGrants,
   revokeAgentGrant,
 } from "../services/agent-access.server";
+import { recordAccess } from "../services/access-log.server";
 import {
   getReturnSession,
   markDraftSubmitted,
@@ -85,6 +86,14 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
     if (body.operation === "list") {
       const { orders } = await getReturnableOrders(shop, session.customerToken);
+      await recordAccess({
+        shop,
+        actor: "CUSTOMER",
+        source: "PORTAL",
+        action: "READ_CUSTOMER_ORDERS",
+        subjectHash: customer.customerSubjectHash,
+        recordCount: orders.length,
+      });
       await notePurchaseLookup(customer);
       return Response.json(
         {

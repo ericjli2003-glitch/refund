@@ -109,9 +109,21 @@ Act to stop ongoing exposure before investigating in depth:
 Determine what data was involved, whose, how much, over what window, and
 whether it was actually accessed or merely exposed. Use Render service and
 Postgres logs, Render audit logs for infrastructure changes, GitHub audit
-logs, and Shopify webhook receipts (`WebhookReceipt`). Note explicitly that
-application-level read access to personal data is **not** currently logged —
-see §8.
+logs, and Shopify webhook receipts (`WebhookReceipt`).
+
+Application-level access to personal data is recorded in `PersonalDataAccess`.
+Query it by `shop` and `occurredAt` to see everything reached in a window, or
+by `customerSubjectHash` to see everything reached for one person. Each row
+names the actor (`CUSTOMER`, `MERCHANT`, `SYSTEM`), the source (`PORTAL`,
+`ASSISTANT`, `ADMIN`, `JOB`), the action, the Shopify order or return
+involved, and how many records the access covered. Rows hold no email, name or
+amount, so the log can be read during an incident without widening exposure.
+
+Coverage is the boundaries where the actor is known: customer order reads
+through the portal and through an assistant, the merchant dashboard's order
+read, and a merchant exporting a privacy request. Access reached by other
+paths is not represented, so absence of a row is not proof that nothing was
+read.
 
 ### 4.4 Notify
 Notification is the incident lead's decision and cannot be deferred past the
@@ -163,6 +175,13 @@ verified backup; test a restore at least annually and record the date here.
 
 ---
 
+The access log in `PersonalDataAccess` is retained for 365 days and swept by
+the same maintenance schedule as other expiring data. A customer redaction
+request clears the identifier on those rows but keeps the rows, so the record
+of what was reached survives without pointing at a person.
+
+---
+
 ## 6. Records
 
 Keep one record per incident, retained at least two years, containing:
@@ -206,7 +225,7 @@ Tracked openly so they are not mistaken for controls that exist.
 
 | Gap | Status |
 | --- | --- |
-| **Application-level access logging.** No audit table records reads of personal data, so §4.3 cannot reconstruct who viewed what in the app. Render and GitHub audit logs cover infrastructure actions only. | Open — required before answering "yes" to Shopify's access-logging question |
+| **Access logging coverage.** `PersonalDataAccess` records the boundaries listed in §4.3. Paths outside those, including scheduled return processing, are not yet recorded. | Partial — extend as new surfaces are added |
 | **Restore testing.** No recorded test restore from a Render backup. | Open |
 | **Third-party security audit.** None performed. | Open, not currently required |
 

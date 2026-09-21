@@ -1,6 +1,7 @@
 import type { LoaderFunctionArgs } from "react-router";
 
 import prisma from "../db.server";
+import { recordAccess } from "../services/access-log.server";
 import { authenticate } from "../shopify.server";
 
 export const loader = async ({ request, params }: LoaderFunctionArgs) => {
@@ -11,6 +12,16 @@ export const loader = async ({ request, params }: LoaderFunctionArgs) => {
   if (!privacyRequest) {
     throw new Response("Privacy request not found.", { status: 404 });
   }
+
+  await recordAccess({
+    shop: session.shop,
+    actor: "MERCHANT",
+    source: "ADMIN",
+    action: "EXPORT_PRIVACY_REQUEST",
+    subjectHash: privacyRequest.customerSubjectHash,
+    resource: privacyRequest.id,
+    recordCount: 1,
+  });
 
   const safeRequestId = privacyRequest.id.replace(/[^a-zA-Z0-9-]/g, "");
 

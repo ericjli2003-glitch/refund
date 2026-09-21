@@ -25,6 +25,7 @@ import {
   merchantProfilePath,
 } from "../services/merchant-directory.server";
 import { appOrigin } from "../services/customer-security.server";
+import { recordAccess } from "../services/access-log.server";
 import { hasScope } from "../services/shopify-admin.server";
 import {
   FINAL_SALE_COLLECTION_LIMIT,
@@ -148,6 +149,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }),
       publicReturnGuidance(session.shop),
     ]);
+
+  await recordAccess({
+    shop: session.shop,
+    actor: "MERCHANT",
+    source: "ADMIN",
+    action: "READ_SHOP_ORDERS",
+    recordCount: responseJson.data.orders.nodes.length,
+  });
 
   return {
     orders: responseJson.data.orders.nodes,

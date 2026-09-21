@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 
+import { recordAccess } from "./services/access-log.server";
 import { getReturnableOrders } from "./services/automatic-return.server";
 import { CustomerAccountApiError } from "./services/customer-account.server";
 import {
@@ -374,6 +375,14 @@ export function createCustomerReturnsMcpServer({
         const { shop, customerToken, customerSubjectHash, draftId } =
           await storeAccess("returns:read", input);
         const { orders } = await getReturnableOrders(shop, customerToken);
+        await recordAccess({
+          shop,
+          actor: "CUSTOMER",
+          source: "ASSISTANT",
+          action: "READ_CUSTOMER_ORDERS",
+          subjectHash: customerSubjectHash,
+          recordCount: orders.length,
+        });
         if (customerSubjectHash)
           await notePurchaseLookup({ shop, customerSubjectHash, draftId });
         const normalizedQuery = input.query?.trim().toLowerCase();
