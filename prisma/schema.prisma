@@ -34,11 +34,11 @@ model Session {
 }
 
 model StorePolicy {
-  shop                    String   @id
-  automaticRefundsEnabled Boolean  @default(false)
-  returnWindowDays        Int      @default(30)
-  maxAutoRefundAmount     String   @default("100.00")
-  currencyCode            String   @default("USD")
+  shop                    String    @id
+  automaticRefundsEnabled Boolean   @default(false)
+  returnWindowDays        Int       @default(30)
+  maxAutoRefundAmount     String    @default("100.00")
+  currencyCode            String    @default("USD")
   // Null means restock to the location that fulfilled the order.
   // A value overrides that for merchants routing returns elsewhere.
   returnLocationId        String?
@@ -47,7 +47,7 @@ model StorePolicy {
   returnPolicyUrl         String?
   // IMMEDIATE refunds on customer confirmation; ON_RECEIPT waits until the
   // merchant marks the returned item received.
-  refundTiming            String   @default("IMMEDIATE")
+  refundTiming            String    @default("IMMEDIATE")
   // Customers' store links keep working after their Shopify sign-in ends, once
   // the merchant confirms the return rules below. Shopify's Admin API doesn't
   // apply the store's own return rules, so Refund applies these instead.
@@ -59,19 +59,19 @@ model StorePolicy {
   // Set when a signed-in customer's quote shows Shopify applying a fee or
   // final-sale rule these settings lack. Verified links pause until reviewed.
   returnRulesMismatch     String?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 }
 
 // Populated only from the authenticated Shopify Admin API.
 model MerchantDirectory {
-  shop          String   @id
-  primaryDomain String   @unique
-  name          String
-  aliases       String[] @default([])
+  shop               String   @id
+  primaryDomain      String   @unique
+  name               String
+  aliases            String[] @default([])
   // Listed by default; the merchant can hide the store from the directory.
-  discoveryPublished Boolean @default(true)
-  verifiedAt    DateTime @default(now())
+  discoveryPublished Boolean  @default(true)
+  verifiedAt         DateTime @default(now())
 }
 
 // Shared across HTTP replicas. No raw IP addresses are persisted.
@@ -135,13 +135,13 @@ model CustomerReturnSession {
 // Each intake keeps a stable reference, including before verification. Credentials
 // remain encrypted at rest and are only returned to that verified customer.
 model ReturnDraft {
-  id                  String   @id @default(uuid())
+  id                  String    @id @default(uuid())
   shop                String
   customerSubjectHash String?
-  intakeKeyHash       String?  @unique
+  intakeKeyHash       String?   @unique
   inputHash           String?
   sealedHints         String?
-  stage               String   @default("PURCHASES_FOUND")
+  stage               String    @default("PURCHASES_FOUND")
   orderId             String?
   orderName           String?
   selectedItems       Json?
@@ -150,8 +150,8 @@ model ReturnDraft {
   quoteId             String?
   quoteExpiresAt      DateTime?
   expiresAt           DateTime
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([shop, customerSubjectHash, updatedAt])
   @@index([expiresAt])
@@ -346,13 +346,13 @@ model AgentStoreLinkRequest {
 }
 
 model AgentReturn {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   shop                String
   orderId             String
   orderName           String?
   returnId            String?
   refundId            String?
-  status              String   @default("IN_PROGRESS")
+  status              String    @default("IN_PROGRESS")
   returnStatus        String?
   refundStatus        String?
   amount              String?
@@ -364,8 +364,8 @@ model AgentReturn {
   // The store's refund timing when the customer confirmed; null before it existed.
   refundTiming        String?
   itemReceivedAt      DateTime?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@unique([shop, idempotencyKey])
   @@index([shop, status, createdAt])
@@ -469,17 +469,17 @@ model FundedEntitlement {
 
 // The fake provider's own side of the wire. Only the sandbox adapter touches it.
 model FundedSandboxProviderPayment {
-  idempotencyKey String    @id
-  reference      String?   @unique
+  idempotencyKey String   @id
+  reference      String?  @unique
   shop           String
   operation      String
   amountMinor    Int
   currency       String
   scenario       String
-  status         String    @default("PLANNED")
-  events         Json      @default("[]")
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  status         String   @default("PLANNED")
+  events         Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([shop, createdAt])
 }
@@ -495,4 +495,34 @@ model PrivacyRequest {
   completedAt         DateTime?
 
   @@index([shop, status, createdAt])
+}
+
+// Who read or acted on a customer's personal data, and when. Shopify's
+// protected customer data requirements ask for access to personal data to be
+// logged; this is that record.
+//
+// A row never contains personal data itself. The person whose data was reached
+// appears only as customerSubjectHash, the same keyed hash used everywhere
+// else, so a redaction request matches these rows too. Order and return
+// identifiers are kept because reconstructing an incident needs them.
+model PersonalDataAccess {
+  id                  String   @id @default(uuid())
+  occurredAt          DateTime @default(now())
+  shop                String
+  // CUSTOMER reading their own data, MERCHANT in the embedded admin, or
+  // SYSTEM for scheduled and webhook-driven work with no human present.
+  actor               String
+  // PORTAL, ASSISTANT, ADMIN or JOB.
+  source              String
+  action              String
+  // Null once redacted, which keeps the timeline without the identifier.
+  customerSubjectHash String?
+  // Shopify GID of the order or return reached, when the action names one.
+  resource            String?
+  recordCount         Int      @default(0)
+  expiresAt           DateTime
+
+  @@index([shop, occurredAt])
+  @@index([customerSubjectHash, occurredAt])
+  @@index([expiresAt])
 }

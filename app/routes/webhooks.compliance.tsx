@@ -73,6 +73,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       prisma.privacyRequest.deleteMany({
         where: { shop, customerSubjectHash },
       }),
+      // The access log keeps its rows so the record of who reached this
+      // customer's data survives, with the identifier removed so the rows no
+      // longer point at a person.
+      prisma.personalDataAccess.updateMany({
+        where: { shop, customerSubjectHash },
+        data: { customerSubjectHash: null },
+      }),
     ]);
   }
 
