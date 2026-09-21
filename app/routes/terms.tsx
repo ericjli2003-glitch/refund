@@ -11,7 +11,7 @@ export default function Terms() {
       <main className={styles.legal}>
         <p className={styles.eyebrow}>Legal</p>
         <h1>Terms of service</h1>
-        <p className={styles.updated}>Effective September 3, 2026</p>
+        <p className={styles.updated}>Effective September 20, 2026</p>
 
         <p>
           These terms govern a merchant&apos;s use of Gooper.io, a Shopify app that
@@ -34,6 +34,61 @@ export default function Terms() {
           Merchants can disable automatic refunds or change the return window
           and maximum automatic amount in the embedded app. Merchants should
           review activity and resolve records marked as needing attention.
+        </p>
+
+        <h2>Data protection</h2>
+        <p>
+          This section governs personal data that Gooper.io processes on a
+          merchant&apos;s behalf, and applies in addition to our privacy policy.
+          For the personal data of the merchant&apos;s customers, the merchant is
+          the controller and Gooper.io is the processor. Gooper.io processes that
+          data only to provide the return and refund functionality the merchant
+          has enabled, on the merchant&apos;s documented instructions, which are
+          given through the app&apos;s settings and these terms. Gooper.io does not
+          sell personal data, use it for advertising, or use it to train models.
+        </p>
+        <p>
+          The data processed is limited to what the return flow requires:
+          customer email addresses, a keyed hash of the customer identifier,
+          order, line-item, return and refund records, and technical records
+          needed for security and deduplication. Gooper.io does not request or
+          store customer names, telephone numbers, or postal addresses.
+          Processing continues for as long as the app is installed, and the
+          categories of data subject are the merchant&apos;s customers who begin a
+          return.
+        </p>
+        <p>
+          Gooper.io engages the following sub-processors: Shopify, which hosts
+          the underlying order and return records; our hosting and database
+          provider; and our transactional email provider, which delivers return
+          and store-link confirmations. We remain responsible for their
+          performance of this section, and will give merchants notice of a
+          change through the app or this page before a new sub-processor begins
+          processing.
+        </p>
+        <p>
+          Gooper.io maintains technical and organizational measures appropriate
+          to the risk, including encryption of personal data in transit and at
+          rest, storage of customer identifiers and credentials as hashes rather
+          than plain values, access limited to personnel who require it,
+          multi-factor authentication on accounts with production access, and
+          defined retention periods after which records are deleted
+          automatically.
+        </p>
+        <p>
+          Gooper.io will notify the affected merchant without undue delay after
+          becoming aware of a personal data breach affecting that
+          merchant&apos;s customers, and will provide the information the
+          merchant reasonably needs to meet its own notification obligations.
+        </p>
+        <p>
+          Gooper.io supports Shopify&apos;s mandatory customer data request,
+          customer redaction, and shop redaction webhooks, and will assist the
+          merchant in responding to requests from data subjects and supervisory
+          authorities. Personal data is deleted or returned when the app is
+          uninstalled, except where law requires it to be retained. On
+          reasonable request, Gooper.io will make available the information
+          necessary to demonstrate compliance with this section.
         </p>
 
         <h2>Acceptable use</h2>

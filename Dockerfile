@@ -14,6 +14,10 @@ COPY prisma ./prisma
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/build ./build
 COPY scripts/merchant-opportunities.mjs ./scripts/merchant-opportunities.mjs
+# The production entrypoint and the TLS normalization it applies before running
+# migrations and starting the server.
+COPY scripts/start-production.mjs ./scripts/start-production.mjs
+COPY app/database-url.mjs ./app/database-url.mjs
 
 EXPOSE 3000
 USER node
