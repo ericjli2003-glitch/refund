@@ -7,6 +7,8 @@ import {
   cleanReturnPolicyUrl,
   guidanceMarkdown,
   merchantAgentsTemplateSection,
+  returnInstructionsSentence,
+  submittedReturnShipping,
   type ReturnGuidance,
 } from "./return-guidance.server";
 
@@ -87,4 +89,47 @@ test("the theme template section keeps agents placeholders but strips Liquid fro
   assert.equal((section.match(/\}\}/g) || []).length, 3);
   assert.doesNotMatch(section, /\{%|%\}/);
   assert.throws(() => merchantAgentsTemplateSection(NONE, "//evil.test"));
+});
+
+test("the store's own return instructions are passed on, labeled as the store's", () => {
+  assert.equal(
+    returnInstructionsSentence("Post to 1 Main St within 14 days."),
+    " The store's instructions: Post to 1 Main St within 14 days.",
+  );
+  // A merchant who set nothing still leaves the customer with a next step.
+  for (const empty of [null, undefined, ""]) {
+    assert.equal(
+      returnInstructionsSentence(empty),
+      " Follow the store's return-shipping instructions.",
+    );
+  }
+});
+
+test("a submitted return tells the customer to ship, how, and where the label comes from", () => {
+  const guidance = {
+    automaticReturnWindowDays: 30,
+    refundTiming: "IMMEDIATE" as const,
+    returnInstructions: "Post to 1 Main St within 14 days.",
+    returnPolicyUrl: "https://example.com/policy",
+  };
+  const said = submittedReturnShipping(guidance);
+
+  assert.match(said, /send the item back/);
+  // The same wording the quote used, so the two cannot drift apart.
+  assert.ok(said.includes(returnInstructionsSentence(guidance.returnInstructions)));
+  assert.match(said, /label and tracking/);
+  assert.match(said, /Return policy: https:\/\/example\.com\/policy/);
+});
+
+test("a store with no instructions or policy page still gets a usable sentence", () => {
+  const said = submittedReturnShipping({
+    automaticReturnWindowDays: null,
+    refundTiming: null,
+    returnInstructions: null,
+    returnPolicyUrl: null,
+  });
+  assert.match(said, /send the item back/);
+  assert.match(said, /Follow the store's return-shipping instructions/);
+  // Nothing dangles where a policy link would be.
+  assert.equal(said.includes("Return policy:"), false);
 });

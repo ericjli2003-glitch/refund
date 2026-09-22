@@ -31,6 +31,7 @@ import { resolveStore, returningSchema } from "./services/return-wording.server"
 import type { CustomerAccess } from "./services/verified-customer-returns.server";
 import { returnsChatStyle } from "./services/chat-style.server";
 import { gooperMcpIcons } from "./mcp-icons.server";
+import { publicReturnGuidance, submittedReturnShipping } from "./services/return-guidance.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -582,6 +583,11 @@ export function createCustomerReturnsMcpServer({
                   refundStatus: result.refundStatus,
                   paymentMethod: result.paymentMethod,
                   message: result.message,
+                  // Null when no return was opened, so nobody is told to ship
+                  // an item back for a submission that failed.
+                  returnShipping: result.orders.some((order) => order.returnId)
+                    ? submittedReturnShipping(await publicReturnGuidance(shop))
+                    : null,
                 },
                 null,
                 2,
