@@ -25,7 +25,6 @@ import {
   merchantProfilePath,
 } from "../services/merchant-directory.server";
 import { appOrigin } from "../services/customer-security.server";
-import { recordAccess } from "../services/access-log.server";
 import { hasScope } from "../services/shopify-admin.server";
 import {
   FINAL_SALE_COLLECTION_LIMIT,
@@ -39,21 +38,10 @@ import {
   publicReturnGuidance,
 } from "../services/return-guidance.server";
 
-const DASHBOARD_ORDER_LIMIT = 25;
 
 type Money = {
   amount: string;
   currencyCode: string;
-};
-
-type DashboardOrder = {
-  id: string;
-  legacyResourceId: string;
-  name: string;
-  createdAt: string;
-  displayFinancialStatus: string | null;
-  currentTotalPriceSet: { shopMoney: Money };
-  totalRefundedSet: { shopMoney: Money };
 };
 
 type ShopLocation = { id: string; name: string };
@@ -62,9 +50,6 @@ type OrdersQueryResponse = {
   data?: {
     shop: { currencyCode: string };
     locations: { nodes: ShopLocation[] };
-    orders: {
-      nodes: DashboardOrder[];
-    };
   };
   errors?: Array<{ message: string }>;
 };
@@ -73,43 +58,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const merchant = await provisionMerchant(session.shop, admin);
   const url = new URL(request.url);
-  const query = url.searchParams.get("query")?.trim() ?? "";
 
   const response = await admin.graphql(
     `#graphql
-      query RefundDashboardOrders($first: Int!, $query: String) {
+      query RefundDashboardData {
         shop { currencyCode }
         locations(first: 50, includeInactive: false) {
           nodes { id name }
         }
-        orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
-          nodes {
-            id
-            legacyResourceId
-            name
-            createdAt
-            displayFinancialStatus
-            currentTotalPriceSet {
-              shopMoney {
-                amount
-                currencyCode
-              }
-            }
-            totalRefundedSet {
-              shopMoney {
-                amount
-                currencyCode
-              }
-            }
-          }
-        }
       }`,
-    {
-      variables: {
-        first: DASHBOARD_ORDER_LIMIT,
-        query: query || null,
-      },
-    },
   );
 
   const responseJson = (await response.json()) as OrdersQueryResponse;
@@ -150,22 +107,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       publicReturnGuidance(session.shop),
     ]);
 
-  await recordAccess({
-    shop: session.shop,
-    actor: "MERCHANT",
-    source: "ADMIN",
-    action: "READ_SHOP_ORDERS",
-    recordCount: responseJson.data.orders.nodes.length,
-  });
-
   return {
-    orders: responseJson.data.orders.nodes,
     fundedSandbox: fundedSandboxEnabled(),
     locations: responseJson.data.locations.nodes,
     collections,
     canReadProducts,
     finalSaleCollectionLimit: FINAL_SALE_COLLECTION_LIMIT,
-    query,
     saved: url.searchParams.get("saved") === "true",
     retried: url.searchParams.get("retried") === "true",
     received: url.searchParams.get("received") === "true",
@@ -436,45 +383,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function formatStatus(status: string | null) {
-  if (!status) return "Unknown";
-
-  return status
-    .toLowerCase()
-    .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function statusTone(status: string | null) {
-  switch (status) {
-    case "PAID":
-      return "success" as const;
-    case "PARTIALLY_REFUNDED":
-      return "caution" as const;
-    case "REFUNDED":
-      return "info" as const;
-    case "PENDING":
-    case "AUTHORIZED":
-    case "PARTIALLY_PAID":
-      return "warning" as const;
-    case "EXPIRED":
-    case "VOIDED":
-      return "critical" as const;
-    default:
-      return "auto" as const;
-  }
-}
-
 export default function RefundDashboard() {
   const {
-    orders,
     fundedSandbox,
     locations,
     collections,
     canReadProducts,
     finalSaleCollectionLimit,
-    query,
     saved,
     retried,
     received,
@@ -525,7 +440,6 @@ export default function RefundDashboard() {
       window.removeEventListener("focus", check);
     };
   }, [bridge]);
-  const [search, setSearch] = useState(query);
   const [automaticRefundsEnabled, setAutomaticRefundsEnabled] = useState(
     policy.automaticRefundsEnabled,
   );
@@ -558,9 +472,6 @@ export default function RefundDashboard() {
     policy.returnPolicyUrl ?? "",
   );
   const [copyStatus, setCopyStatus] = useState("");
-  const refundedOrders = orders.filter(
-    (order) => Number(order.totalRefundedSet.shopMoney.amount) > 0,
-  ).length;
 
   async function copyTemplate() {
     try {
@@ -598,7 +509,7 @@ export default function RefundDashboard() {
   );
 
   return (
-    <s-page heading="Refunds" inlineSize="large">
+    <s-page heading="Gooper.io" inlineSize="large">
       <s-button slot="primary-action" href="shopify:admin/orders">
         View all orders
       </s-button>
@@ -625,33 +536,7 @@ export default function RefundDashboard() {
               </s-button>
             )}
           </s-stack>
-          <s-paragraph color="subdued">
-            Customer sign-in uses Shopify customer accounts. The store identity
-            and currency are configured automatically. Automatic refund payments
-            are an optional setting below.
-          </s-paragraph>
         </s-stack>
-      </s-section>
-
-      <s-section>
-        <s-grid
-          gridTemplateColumns="@container (inline-size <= 600px) 1fr, 1fr auto 1fr"
-          gap="base"
-        >
-          <s-box padding="small-400">
-            <s-stack direction="block" gap="small-200">
-              <s-text color="subdued">Orders shown</s-text>
-              <s-heading>{orders.length}</s-heading>
-            </s-stack>
-          </s-box>
-          <s-divider direction="block" />
-          <s-box padding="small-400">
-            <s-stack direction="block" gap="small-200">
-              <s-text color="subdued">With refunds</s-text>
-              <s-heading>{refundedOrders}</s-heading>
-            </s-stack>
-          </s-box>
-        </s-grid>
       </s-section>
 
       {saved && (
@@ -662,13 +547,13 @@ export default function RefundDashboard() {
 
       {retried && (
         <s-banner heading="Retry finished" tone="info">
-          Check the return&apos;s status under Recent customer-agent returns.
+          Check the return&apos;s status under Recent returns.
         </s-banner>
       )}
 
       {received && (
         <s-banner heading="Return marked received" tone="success">
-          Check the return&apos;s status under Recent customer-agent returns.
+          Check the return&apos;s status under Recent returns.
         </s-banner>
       )}
 
@@ -685,6 +570,108 @@ export default function RefundDashboard() {
             : "Your store is hidden from Gooper.io's store directory."}
         </s-banner>
       )}
+
+      <s-section heading="Recent returns" padding="none">
+        {agentReturns.length === 0 ? (
+          <s-box padding="large">
+            <s-paragraph color="subdued">
+              No customer-agent return requests have been received yet.
+            </s-paragraph>
+          </s-box>
+        ) : (
+          <s-table>
+            <s-table-header-row>
+              <s-table-header listSlot="primary">Order</s-table-header>
+              <s-table-header listSlot="secondary">Requested</s-table-header>
+              <s-table-header listSlot="labeled">Status</s-table-header>
+              <s-table-header listSlot="labeled" format="currency">
+                Refund
+              </s-table-header>
+            </s-table-header-row>
+            <s-table-body>
+              {agentReturns.map((agentReturn) => (
+                <s-table-row key={agentReturn.id}>
+                  <s-table-cell>
+                    {agentReturn.orderName ?? agentReturn.orderId}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {formatDate(agentReturn.createdAt.toString())}
+                  </s-table-cell>
+                  <s-table-cell>
+                    <s-badge
+                      tone={
+                        agentReturn.status !== "NEEDS_ATTENTION" && agentReturn.refundStatus === "SUCCESS"
+                          ? "success"
+                          : agentReturn.status === "NEEDS_ATTENTION"
+                            ? "critical"
+                            : agentReturn.status === "NOT_SUBMITTED"
+                              ? "warning"
+                              : "info"
+                      }
+                    >
+                      {describeRefundProgress(agentReturn).title}
+                    </s-badge>
+                    {agentReturn.itemReceivedAt && (
+                      <s-paragraph color="subdued">
+                        Item received{" "}
+                        {formatDate(agentReturn.itemReceivedAt.toString())}
+                      </s-paragraph>
+                    )}
+                    {agentReturn.failureReason && (
+                      <s-paragraph>{agentReturn.failureReason}</s-paragraph>
+                    )}
+                    {agentReturn.returnId && !agentReturn.itemReceivedAt && (
+                      <s-link
+                        href={`shopify:admin/orders/${agentReturn.orderId.split("/").pop()}`}
+                      >
+                        Add a return label or tracking in Shopify
+                      </s-link>
+                    )}
+                    {agentReturn.removable &&
+                      returnAction(
+                        "removeReturn",
+                        agentReturn.id,
+                        agentReturn.status === "NOT_SUBMITTED"
+                          ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
+                          : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
+                        "Remove",
+                      )}
+                    {agentReturn.retryable &&
+                      returnAction(
+                        "retryReturn",
+                        agentReturn.id,
+                        "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
+                        "Retry refund",
+                      )}
+                    {agentReturn.receivable &&
+                      (agentReturn.refundTiming === "ON_RECEIPT"
+                        ? returnAction(
+                            "receiveReturn",
+                            agentReturn.id,
+                            "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
+                            "Mark received and refund",
+                          )
+                        : returnAction(
+                            "receiveReturn",
+                            agentReturn.id,
+                            "The refund was already issued. Once the item is back, this restocks it in Shopify.",
+                            "Mark received and restock",
+                          ))}
+                  </s-table-cell>
+                  <s-table-cell>
+                    {agentReturn.amount && agentReturn.currencyCode
+                      ? formatMoney({
+                          amount: agentReturn.amount,
+                          currencyCode: agentReturn.currencyCode,
+                        })
+                      : "—"}
+                  </s-table-cell>
+                </s-table-row>
+              ))}
+            </s-table-body>
+          </s-table>
+        )}
+      </s-section>
 
       <s-section heading="Store directory listing">
         <form
@@ -877,9 +864,7 @@ export default function RefundDashboard() {
               Immediate refunds reach customers before you receive or inspect
               the item, so your store carries the risk if it never comes back.
               Refunds on receipt approve the return at confirmation, then refund
-              and restock when you mark the item received below. Either way the
-              refund goes only to the original payment method, and items are
-              restocked when you mark them received.
+              and restock when you mark the item received below.
             </s-paragraph>
             <s-paragraph color="subdued">
               Leave the restock location on the fulfilling location unless you
@@ -1068,17 +1053,11 @@ export default function RefundDashboard() {
       <s-section heading="Returns section for your store's agents.md (optional)">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
-            Gooper.io&apos;s app proxy already serves a current return guide at
-            /apps/refund/agents.md, including the guidance above. If your theme
-            publishes its own agents.md template, add this Returns section to it
-            so assistants reading your main store guide find returns too. Theme
-            templates can&apos;t read app settings, so paste it again after you
-            change your return guidance, and replace /apps/refund if you
-            customized the app proxy path.
+            Gooper.io already serves a current return guide at
+            /apps/refund/agents.md. Only if your theme publishes its own
+            agents.md, copy this Returns section into it, and copy it again
+            whenever you change your return guidance.
           </s-paragraph>
-          <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-            {agentsTemplateSection}
-          </pre>
           <s-stack direction="inline" gap="base" alignItems="center">
             <s-button onClick={() => void copyTemplate()}>
               Copy Returns section
@@ -1088,194 +1067,6 @@ export default function RefundDashboard() {
         </s-stack>
       </s-section>
 
-      <s-section heading="Recent orders" padding="none">
-        <s-box padding="base">
-          <form
-            method="get"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit(event.currentTarget);
-            }}
-          >
-            <s-grid gridTemplateColumns="1fr auto" gap="base" alignItems="end">
-              <s-search-field
-                label="Search orders"
-                labelAccessibilityVisibility="exclusive"
-                name="query"
-                placeholder="Order number or Shopify search query"
-                value={search}
-                onChange={(event) => setSearch(event.currentTarget.value)}
-              ></s-search-field>
-              <s-button type="submit" variant="primary">
-                Search
-              </s-button>
-            </s-grid>
-          </form>
-        </s-box>
-
-        {orders.length === 0 ? (
-          <s-box padding="large">
-            <s-stack direction="block" gap="base" alignItems="center">
-              <s-heading>No orders found</s-heading>
-              <s-paragraph color="subdued">
-                Try another order number or clear the search to see recent
-                orders.
-              </s-paragraph>
-              {query && <s-button href="/app">Clear search</s-button>}
-            </s-stack>
-          </s-box>
-        ) : (
-          <s-table>
-            <s-table-header-row>
-              <s-table-header listSlot="primary">Order</s-table-header>
-              <s-table-header listSlot="secondary">Date</s-table-header>
-              <s-table-header listSlot="labeled">Payment</s-table-header>
-              <s-table-header listSlot="labeled" format="currency">
-                Total
-              </s-table-header>
-              <s-table-header listSlot="labeled" format="currency">
-                Refunded
-              </s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              {orders.map((order) => (
-                <s-table-row key={order.id}>
-                  <s-table-cell>
-                    <s-link
-                      href={`shopify:admin/orders/${order.legacyResourceId}`}
-                    >
-                      {order.name}
-                    </s-link>
-                  </s-table-cell>
-                  <s-table-cell>{formatDate(order.createdAt)}</s-table-cell>
-                  <s-table-cell>
-                    <s-badge tone={statusTone(order.displayFinancialStatus)}>
-                      {formatStatus(order.displayFinancialStatus)}
-                    </s-badge>
-                  </s-table-cell>
-                  <s-table-cell>
-                    {formatMoney(order.currentTotalPriceSet.shopMoney)}
-                  </s-table-cell>
-                  <s-table-cell>
-                    {formatMoney(order.totalRefundedSet.shopMoney)}
-                  </s-table-cell>
-                </s-table-row>
-              ))}
-            </s-table-body>
-          </s-table>
-        )}
-      </s-section>
-
-      <s-section heading="Recent customer-agent returns" padding="none">
-        {agentReturns.length === 0 ? (
-          <s-box padding="large">
-            <s-paragraph color="subdued">
-              No customer-agent return requests have been received yet.
-            </s-paragraph>
-          </s-box>
-        ) : (
-          <s-table>
-            <s-table-header-row>
-              <s-table-header listSlot="primary">Order</s-table-header>
-              <s-table-header listSlot="secondary">Requested</s-table-header>
-              <s-table-header listSlot="labeled">Status</s-table-header>
-              <s-table-header listSlot="labeled" format="currency">
-                Refund
-              </s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              {agentReturns.map((agentReturn) => (
-                <s-table-row key={agentReturn.id}>
-                  <s-table-cell>
-                    {agentReturn.orderName ?? agentReturn.orderId}
-                  </s-table-cell>
-                  <s-table-cell>
-                    {formatDate(agentReturn.createdAt.toString())}
-                  </s-table-cell>
-                  <s-table-cell>
-                    <s-badge
-                      tone={
-                        agentReturn.status !== "NEEDS_ATTENTION" && agentReturn.refundStatus === "SUCCESS"
-                          ? "success"
-                          : agentReturn.status === "NEEDS_ATTENTION"
-                            ? "critical"
-                            : agentReturn.status === "NOT_SUBMITTED"
-                              ? "warning"
-                              : "info"
-                      }
-                    >
-                      {describeRefundProgress(agentReturn).title}
-                    </s-badge>
-                    {agentReturn.itemReceivedAt && (
-                      <s-paragraph color="subdued">
-                        Item received{" "}
-                        {formatDate(agentReturn.itemReceivedAt.toString())}
-                      </s-paragraph>
-                    )}
-                    {agentReturn.failureReason && (
-                      <s-paragraph>{agentReturn.failureReason}</s-paragraph>
-                    )}
-                    {agentReturn.returnId && !agentReturn.itemReceivedAt && (
-                      <s-link
-                        href={`shopify:admin/orders/${agentReturn.orderId.split("/").pop()}`}
-                      >
-                        Add a return label or tracking in Shopify
-                      </s-link>
-                    )}
-                    {agentReturn.removable &&
-                      returnAction(
-                        "removeReturn",
-                        agentReturn.id,
-                        agentReturn.status === "NOT_SUBMITTED"
-                          ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
-                          : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
-                        "Remove",
-                      )}
-                    {agentReturn.retryable &&
-                      returnAction(
-                        "retryReturn",
-                        agentReturn.id,
-                        "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
-                        "Retry refund",
-                      )}
-                    {agentReturn.receivable &&
-                      (agentReturn.refundTiming === "ON_RECEIPT"
-                        ? returnAction(
-                            "receiveReturn",
-                            agentReturn.id,
-                            "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
-                            "Mark received and refund",
-                          )
-                        : returnAction(
-                            "receiveReturn",
-                            agentReturn.id,
-                            "The refund was already issued. Once the item is back, this restocks it in Shopify.",
-                            "Mark received and restock",
-                          ))}
-                  </s-table-cell>
-                  <s-table-cell>
-                    {agentReturn.amount && agentReturn.currencyCode
-                      ? formatMoney({
-                          amount: agentReturn.amount,
-                          currencyCode: agentReturn.currencyCode,
-                        })
-                      : "—"}
-                  </s-table-cell>
-                </s-table-row>
-              ))}
-            </s-table-body>
-          </s-table>
-        )}
-      </s-section>
-
-      <s-section slot="aside" heading="What is automatic">
-        <s-unordered-list>
-          <s-list-item>Customer and order ownership verification</s-list-item>
-          <s-list-item>Shopify return eligibility and amount check</s-list-item>
-          <s-list-item>Return approval and refund submission</s-list-item>
-          <s-list-item>Restocking when you mark items received</s-list-item>
-        </s-unordered-list>
-      </s-section>
     </s-page>
   );
 }

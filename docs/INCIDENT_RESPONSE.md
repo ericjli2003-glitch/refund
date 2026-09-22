@@ -120,10 +120,10 @@ involved, and how many records the access covered. Rows hold no email, name or
 amount, so the log can be read during an incident without widening exposure.
 
 Coverage is the boundaries where the actor is known: customer order reads
-through the portal and through an assistant, the merchant dashboard's order
-read, and a merchant exporting a privacy request. Access reached by other
-paths is not represented, so absence of a row is not proof that nothing was
-read.
+through the portal and through an assistant, and a merchant exporting a
+privacy request. The merchant dashboard no longer reads orders at all, so it
+no longer has an entry. Access reached by other paths is not represented, so
+absence of a row is not proof that nothing was read.
 
 ### 4.4 Notify
 Notification is the incident lead's decision and cannot be deferred past the
