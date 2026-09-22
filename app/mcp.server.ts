@@ -30,6 +30,7 @@ import {
 import { resolveStore, returningSchema } from "./services/return-wording.server";
 import type { CustomerAccess } from "./services/verified-customer-returns.server";
 import { returnsChatStyle } from "./services/chat-style.server";
+import { gooperMcpIcons } from "./mcp-icons.server";
 
 const itemSchema = z.object({
   lineItemId: z
@@ -144,7 +145,7 @@ export function createCustomerReturnsMcpServer({
   stores?: StoreDirectoryTools;
 }) {
   const server = new McpServer(
-    { name: "Shopify customer returns", version: "0.5.0" },
+    { name: "Shopify customer returns", version: "0.5.0", icons: gooperMcpIcons() },
     { instructions: returnsChatStyle },
   );
   // Assistants show these arguments to the customer before they approve a
