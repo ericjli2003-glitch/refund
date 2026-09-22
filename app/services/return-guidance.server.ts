@@ -84,6 +84,31 @@ export async function publicReturnGuidance(
   };
 }
 
+// What the customer is told about shipping the item back. The quote says this
+// before they confirm; submitted returns repeat it, so the closing message does
+// not depend on the assistant remembering the quote. Merchant text is labeled
+// as the store's words, never as instructions to the assistant.
+export function returnInstructionsSentence(
+  returnInstructions: string | null | undefined,
+) {
+  return returnInstructions
+    ? ` The store's instructions: ${returnInstructions}`
+    : " Follow the store's return-shipping instructions.";
+}
+
+// Said once the return exists: what to do with the item, where a label comes
+// from, and the store's policy page when it set one.
+export function submittedReturnShipping(guidance: ReturnGuidance) {
+  return (
+    "The return is open, so send the item back." +
+    returnInstructionsSentence(guidance.returnInstructions) +
+    " The store may add a return shipping label in Shopify; ask to check this return's status later for the label and tracking." +
+    (guidance.returnPolicyUrl
+      ? ` Return policy: ${guidance.returnPolicyUrl}`
+      : "")
+  );
+}
+
 // Quoted, and labeled as the merchant's words, so an assistant cannot read it
 // as rules that relax customer verification or explicit confirmation.
 export function guidanceMarkdown(guidance: ReturnGuidance) {

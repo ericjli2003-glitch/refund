@@ -21,6 +21,7 @@ import {
   verifyQuoteSignature,
 } from "./customer-security.server";
 import { resolveReturning, returningSchema } from "./return-wording.server";
+import { returnInstructionsSentence } from "./return-guidance.server";
 
 // A basket holds items from a few of the customer's orders at one store.
 // Shopify opens a return per order, so each order keeps its own quote, refund
@@ -309,9 +310,7 @@ export async function createReturnQuote(
     subject: customerIdentityHash(customerId),
     expiresAt: Date.now() + QUOTE_LIFETIME_MS,
   };
-  const instructions = policy?.returnInstructions
-    ? ` The store's instructions: ${policy.returnInstructions}`
-    : " Follow the store's return-shipping instructions.";
+  const instructions = returnInstructionsSentence(policy?.returnInstructions);
   const orderViews = priced.map((entry) => ({
     orderId: entry.order.id,
     orderName: entry.order.name,
