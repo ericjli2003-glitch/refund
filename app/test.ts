@@ -3,6 +3,7 @@ import "./services/shopify-inputs.server.test";
 import "./services/return-processing.server.test";
 import "./refund-status.test";
 import "./mcp.server.test";
+import "./mcp-icons.server.test";
 import "./services/customer-bridge.server.test";
 import "./services/return-intake.server.test";
 import "./services/agent-access.server.test";

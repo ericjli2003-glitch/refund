@@ -6,12 +6,13 @@ import {
   intakeSchema,
   startReturnIntake,
 } from "./services/return-intake.server";
+import { gooperMcpIcons } from "./mcp-icons.server";
 
 // Only the authenticated app-proxy handler may supply a bound shop. Never take
 // this value from JSON-RPC arguments or an unsigned query parameter.
 export function createIntakeMcpServer(shop?: string) {
   const server = new McpServer(
-    { name: "Gooper.io merchant return intake", version: "0.3.0" },
+    { name: "Gooper.io merchant return intake", version: "0.3.0", icons: gooperMcpIcons() },
     { instructions: returnsChatStyle },
   );
   // A merchant-bound proxy endpoint already knows its store; only the global
