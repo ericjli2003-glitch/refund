@@ -5,7 +5,9 @@ import { pruneExpiredCustomerAccess } from "./agent-access.server";
 import { syncMerchantDirectory } from "./merchant-directory.server";
 import { prunePublicRateLimits } from "./public-rate-limit.server";
 
-async function refreshShop(shop: string) {
+// One shop's directory row, brought back in line with Shopify. Shared by the
+// six-hourly sweep and by the shop/update webhook.
+export async function refreshShop(shop: string) {
   const { unauthenticated } = await import("../shopify.server");
   const { admin } = await unauthenticated.admin(shop);
   await syncMerchantDirectory(shop, admin);
@@ -101,4 +103,19 @@ export function startMerchantMaintenance() {
     stopped = true;
     clearTimeout(timer);
   };
+}
+
+
+// Shopify sends shop/update when a merchant changes their store's details,
+// including its name. Without it a rename is invisible to store search until
+// the next sweep, up to six hours later, or until the merchant opens the app.
+// Errors are left to propagate so Shopify retries; the sweep is the backstop.
+export async function shopUpdateWebhookAction(
+  request: Request,
+  authenticateWebhook: (request: Request) => Promise<{ shop: string; topic: string }>,
+  refresh = refreshShop,
+) {
+  const { shop, topic } = await authenticateWebhook(request);
+  if (topic === "SHOP_UPDATE") await refresh(shop);
+  return new Response();
 }

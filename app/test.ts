@@ -16,6 +16,7 @@ import "./services/access-log.server.test";
 import "./services/return-guidance.server.test";
 import "./services/automatic-return.server.test";
 import "./services/merchant-lookup.server.test";
+import "./services/merchant-maintenance.server.test";
 import "./services/return-shipping.server.test";
 import "./services/verified-customer-returns.server.test";
 import "./services/email-verification.server.test";
