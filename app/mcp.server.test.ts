@@ -25,6 +25,10 @@ test("the MCP server advertises a guarded discovery, quote, confirm flow", async
   await server.connect(serverTransport);
   await client.connect(clientTransport);
 
+  // Assistants show this name beside the connector. It names Gooper.io, not
+  // Shopify, so the tool isn't mistaken for one of Shopify's own.
+  assert.equal(client.getServerVersion()?.name, "Gooper.io returns");
+
   const { tools } = await client.listTools();
   assert.deepEqual(
     tools.map((tool) => tool.name),
