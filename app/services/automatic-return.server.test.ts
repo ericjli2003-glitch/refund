@@ -132,6 +132,11 @@ const refundsAfterProcessing = () => {
 const processed = () => ({
   returnProcess: { return: { id: RETURN, status: "CLOSED" }, userErrors: [] },
 });
+// returnProcess's response for any other outcome. An immediate refund carries
+// no dispositions, so Shopify leaves the return OPEN until the item is received.
+const processedAs = (value: string, id = RETURN) => () => ({
+  returnProcess: { return: { id, status: value }, userErrors: [] },
+});
 const status = (value: string) => () => ({
   return: { status: value, order: { id: ORDER } },
 });
@@ -225,12 +230,13 @@ test("processing refunds the fee-net amount, restocks returned items, and record
   });
 });
 
-test("an immediate refund before the item ships back disposes nothing", async (t) => {
-  mockRecords(t);
+test("an immediate refund disposes nothing and records the refund while the return stays open", async (t) => {
+  const updates = mockRecords(t);
   const shopify = fakeShopify({
     ReturnDetailsForProcessing: details,
     SuggestedReturnOutcome: outcome("12.60"),
-    ProcessAutomaticReturn: processed,
+    // What Shopify returns for a refund with no dispositions: still open.
+    ProcessAutomaticReturn: processedAs("OPEN"),
     OrderRefundsForReturn: () => ({ order: { refunds: [refund(RETURN)] } }),
   });
   await approvedReturn(shopify.admin, false);
@@ -238,6 +244,47 @@ test("an immediate refund before the item ships back disposes nothing", async (t
   assert.deepEqual(input.returnLineItems, [
     { id: RETURN_LINE_ITEM, quantity: 1, dispositions: [] },
   ]);
+  // The refund succeeded, so it is recorded, not flagged for attention.
+  assert.deepEqual(updates.at(-1), {
+    refundId: REFUND,
+    returnStatus: "PROCESSED",
+    status: "REFUND_SUBMITTED",
+    refundStatus: "SUCCESS",
+    failureReason: null,
+  });
+});
+
+test("a refund on receipt still requires Shopify to close the return", async (t) => {
+  const updates = mockRecords(t);
+  const shopify = fakeShopify({
+    ReturnDetailsForProcessing: details,
+    SuggestedReturnOutcome: outcome("12.60"),
+    // Disposing in the same call should close the return; OPEN means it didn't.
+    ProcessAutomaticReturn: processedAs("OPEN"),
+    OrderRefundsForReturn: () => ({ order: { refunds: [refund(RETURN)] } }),
+  });
+  await assert.rejects(
+    approvedReturn(shopify.admin, true),
+    /Shopify did not confirm that this return was processed/,
+  );
+  assert.equal(shopify.names().includes("OrderRefundsForReturn"), false);
+  assert.equal(updates.some((update) => "refundId" in update), false);
+});
+
+test("an immediate refund still rejects a response for a different return", async (t) => {
+  const updates = mockRecords(t);
+  const shopify = fakeShopify({
+    ReturnDetailsForProcessing: details,
+    SuggestedReturnOutcome: outcome("12.60"),
+    ProcessAutomaticReturn: processedAs("OPEN", "gid://shopify/Return/999"),
+    OrderRefundsForReturn: () => ({ order: { refunds: [refund(RETURN)] } }),
+  });
+  await assert.rejects(
+    approvedReturn(shopify.admin, false),
+    /Shopify did not confirm that this return was processed/,
+  );
+  assert.equal(shopify.names().includes("OrderRefundsForReturn"), false);
+  assert.equal(updates.some((update) => "refundId" in update), false);
 });
 
 test("a refund amount that ignores return fees, or an invoice outcome, stops before returnProcess", async (t) => {

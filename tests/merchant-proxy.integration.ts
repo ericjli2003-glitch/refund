@@ -306,7 +306,9 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
         return Response.json({
           data: {
             returnProcess: {
-              return: { id: returnId, status: "CLOSED" },
+              // An immediate refund (the default timing) carries no
+              // dispositions, so Shopify leaves the return open.
+              return: { id: returnId, status: "OPEN" },
               userErrors: [],
             },
           },
