@@ -497,9 +497,14 @@ export async function processApprovedReturn({
     "Shopify could not process the return.",
   );
   throwOnUserErrors(returnProcess.userErrors, "Shopify could not process the return");
+  // Refunding on receipt disposes the items in the same call, so Shopify closes
+  // the return. An immediate refund carries no dispositions by design (decision
+  // 6 in docs/PROJECT_STATE.md): the return stays open until the item is
+  // received and disposed, so requiring CLOSED would flag a refund that
+  // succeeded. Whether money moved is read from Shopify's refund record below.
   if (
     returnProcess.return?.id !== returnId ||
-    returnProcess.return.status !== "CLOSED"
+    (dispose && returnProcess.return.status !== "CLOSED")
   )
     throw new Error(
       "Shopify did not confirm that this return was processed. No refund was confirmed submitted.",
