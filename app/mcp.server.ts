@@ -145,7 +145,7 @@ export function createCustomerReturnsMcpServer({
   stores?: StoreDirectoryTools;
 }) {
   const server = new McpServer(
-    { name: "Shopify customer returns", version: "0.5.0", icons: gooperMcpIcons() },
+    { name: "Gooper.io returns", version: "0.5.0", icons: gooperMcpIcons() },
     { instructions: returnsChatStyle },
   );
   // Assistants show these arguments to the customer before they approve a
