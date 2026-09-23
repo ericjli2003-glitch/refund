@@ -463,6 +463,56 @@ function Explainer({
   );
 }
 
+function ReturnAutomationOverview({
+  automaticRefundsEnabled,
+  refundTiming,
+  verifiedStoreLinks,
+  returnWindowDays,
+}: {
+  automaticRefundsEnabled: boolean;
+  refundTiming: string;
+  verifiedStoreLinks: boolean;
+  returnWindowDays: string;
+}) {
+  return (
+    <>
+      <s-paragraph color="subdued">
+        Review how Gooper.io handles eligible returns. Expand the editor only
+        when you need to change the policy.
+      </s-paragraph>
+      <s-grid
+        gridTemplateColumns="repeat(auto-fit, minmax(160px, 1fr))"
+        gap="base"
+      >
+        <s-stack direction="block" gap="small-200">
+          <s-text type="strong">Automatic refunds</s-text>
+          <s-badge tone={automaticRefundsEnabled ? "success" : "warning"}>
+            {automaticRefundsEnabled ? "Enabled" : "Quotes only"}
+          </s-badge>
+        </s-stack>
+        <s-stack direction="block" gap="small-200">
+          <s-text type="strong">Refund timing</s-text>
+          <s-text color="subdued">
+            {refundTiming === "ON_RECEIPT"
+              ? "After the item is received"
+              : "When the customer confirms"}
+          </s-text>
+        </s-stack>
+        <s-stack direction="block" gap="small-200">
+          <s-text type="strong">Assistant returns</s-text>
+          <s-badge tone={verifiedStoreLinks ? "success" : "warning"}>
+            {verifiedStoreLinks ? "Enabled" : "Paused"}
+          </s-badge>
+        </s-stack>
+        <s-stack direction="block" gap="small-200">
+          <s-text type="strong">Return window</s-text>
+          <s-text color="subdued">{returnWindowDays} days</s-text>
+        </s-stack>
+      </s-grid>
+    </>
+  );
+}
+
 export default function RefundDashboard() {
   const {
     fundedSandbox,
@@ -612,6 +662,7 @@ export default function RefundDashboard() {
       <style>{`
         .gooper-explainer > summary { list-style: none; }
         .gooper-explainer > summary::-webkit-details-marker { display: none; }
+        .gooper-policy-editor > summary { cursor: pointer; }
       `}</style>
       <s-button slot="primary-action" href="shopify:admin/orders">
         View all orders
@@ -933,9 +984,20 @@ export default function RefundDashboard() {
         </s-banner>
       )}
 
-
-      <s-section heading="Automatic refund payments (optional)">
-        <form
+      <s-section heading="Return automation">
+        <s-stack direction="block" gap="base">
+          <ReturnAutomationOverview
+            automaticRefundsEnabled={automaticRefundsEnabled}
+            refundTiming={refundTiming}
+            verifiedStoreLinks={verifiedStoreLinks}
+            returnWindowDays={returnWindowDays}
+          />
+          <details className="gooper-policy-editor">
+            <summary>
+              <s-text type="strong">Edit automation and return policy</s-text>
+            </summary>
+            <s-box paddingBlockStart="base">
+              <form
           method="post"
           onSubmit={(event) => {
             event.preventDefault();
@@ -1190,7 +1252,10 @@ export default function RefundDashboard() {
               </s-badge>
             </s-stack>
           </s-stack>
-        </form>
+              </form>
+            </s-box>
+          </details>
+        </s-stack>
       </s-section>
 
       <s-section slot="aside" heading="Add a return button to your storefront (optional)">
