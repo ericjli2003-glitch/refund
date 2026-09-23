@@ -70,6 +70,53 @@ export function merchantHost(value: string) {
   return url.hostname;
 }
 
+// How long a store keeps answering to a name it has been renamed away from. A
+// customer who bought before the rename searches for the name on their receipt,
+// which is the old one; a store that answered to an old name forever would
+// collide with whoever is called that now.
+export const FORMER_NAME_RETENTION_MS = 180 * 86_400_000;
+
+// Only a map of retired name -> ISO date survives a read. Anything else in the
+// column is treated as absent rather than trusted.
+function readFormerAliases(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(
+      ([alias, retiredAt]) =>
+        typeof alias === "string" &&
+        typeof retiredAt === "string" &&
+        !Number.isNaN(Date.parse(retiredAt)),
+    ),
+  ) as Record<string, string>;
+}
+
+// Names the store has now, plus names it used to have and has not yet outlived.
+export function mergeFormerAliases(
+  current: string[],
+  storedAliases: string[],
+  storedFormerAliases: unknown,
+  now = new Date(),
+) {
+  const live = new Set(current);
+  const former = readFormerAliases(storedFormerAliases);
+  // A name that has just stopped being current starts its retention now. A name
+  // already retired keeps its original date, so renaming twice cannot extend it.
+  for (const alias of storedAliases)
+    if (!live.has(alias) && !former[alias]) former[alias] = now.toISOString();
+  // A name that became current again is no longer former.
+  for (const alias of live) delete former[alias];
+  const kept = Object.fromEntries(
+    Object.entries(former).filter(
+      ([, retiredAt]) =>
+        now.getTime() - Date.parse(retiredAt) < FORMER_NAME_RETENTION_MS,
+    ),
+  );
+  return {
+    aliases: [...new Set([...current, ...Object.keys(kept)])],
+    formerAliases: kept,
+  };
+}
+
 export async function syncMerchantDirectory(
   shop: string,
   admin: AdminApiContext,
@@ -101,11 +148,21 @@ export async function syncMerchantDirectory(
   const normalized = normalizeMerchantName(info.name);
   // Aliases are derived from the store's verified Shopify name only. Never
   // hand-written for a particular shop.
-  const aliases = [...new Set([normalized, `${normalized} storefront`])];
+  const current = [...new Set([normalized, `${normalized} storefront`])];
+  const stored = await prisma.merchantDirectory.findUnique({
+    where: { shop },
+    select: { aliases: true, formerAliases: true },
+  });
+  const { aliases, formerAliases } = mergeFormerAliases(
+    current,
+    stored?.aliases ?? [],
+    stored?.formerAliases,
+  );
   const data = {
     primaryDomain,
     name: info.name,
     aliases,
+    formerAliases,
     verifiedAt: new Date(),
   };
   const profile = await prisma.merchantDirectory.upsert({
