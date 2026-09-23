@@ -712,7 +712,7 @@ export default function RefundDashboard() {
       )}
 
       {archivedOne && (
-        <s-banner heading="Return archived" tone="success">
+        <s-banner heading="Return archived" tone="success" dismissible>
           It is off this list. Shopify still has the return, and a customer data
           request still reports it.
         </s-banner>
