@@ -618,6 +618,49 @@ export function canRemoveReturn(record: {
   );
 }
 
+// A return with nothing left to do. Archiving clears it off the dashboard
+// without deleting it: the record is the store's account of a refund, and a
+// customer data request still reports it. Anything still asking for a decision
+// stays on the list.
+export function canArchiveReturn(record: {
+  status: string;
+  returnId: string | null;
+  refundId: string | null;
+  amount: string | null;
+  currencyCode: string | null;
+  refundTiming: string | null;
+  itemReceivedAt: Date | null;
+  archivedAt: Date | null;
+}) {
+  if (record.archivedAt) return false;
+  return !(
+    canRetryReturn(record) ||
+    canReceiveReturn(record) ||
+    canRemoveReturn(record)
+  );
+}
+
+export async function setReturnArchived(
+  shop: string,
+  agentReturnId: string,
+  archived: boolean,
+) {
+  const record = await prisma.agentReturn.findFirst({
+    where: { id: agentReturnId, shop },
+  });
+  if (!record) throw new Error("That return is no longer on this store.");
+  // Unarchiving is always allowed; archiving is not, while the return still
+  // needs something from the merchant.
+  if (archived && !canArchiveReturn(record))
+    throw new Error(
+      "This return still needs an action, so it stays on the list.",
+    );
+  await prisma.agentReturn.update({
+    where: { id: record.id },
+    data: { archivedAt: archived ? new Date() : null },
+  });
+}
+
 export async function removeUnsubmittedReturn(shop: string, agentReturnId: string) {
   const removed = await prisma.agentReturn.deleteMany({
     where: {

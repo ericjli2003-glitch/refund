@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import prisma from "../db.server";
 import {
+  canArchiveReturn,
   canRemoveReturn,
   executeAutomaticReturn,
   processApprovedReturn,
@@ -810,4 +811,54 @@ test("the dashboard's two received buttons map to restocking or not", () => {
   // Anything unexpected restocks, which is what the single button used to do.
   assert.equal(wantsRestock(""), true);
   assert.equal(wantsRestock("False"), true);
+});
+
+const archivable = {
+  status: "REFUND_SUBMITTED",
+  returnId: RETURN,
+  refundId: REFUND,
+  amount: "12.60",
+  currencyCode: "CAD",
+  refundTiming: "IMMEDIATE",
+  itemReceivedAt: new Date(),
+  archivedAt: null,
+};
+
+test("a finished return can be archived", () => {
+  assert.equal(canArchiveReturn(archivable), true);
+});
+
+test("a return still asking for something stays on the list", () => {
+  // Waiting for the item back: Mark received is still offered.
+  assert.equal(
+    canArchiveReturn({ ...archivable, itemReceivedAt: null }),
+    false,
+  );
+  // Retry refund is still offered.
+  assert.equal(
+    canArchiveReturn({
+      ...archivable,
+      status: "NEEDS_ATTENTION",
+      refundId: null,
+    }),
+    false,
+  );
+  // Never submitted: Remove is the right action, not Archive.
+  assert.equal(
+    canArchiveReturn({
+      ...archivable,
+      status: "NOT_SUBMITTED",
+      returnId: null,
+      refundId: null,
+      itemReceivedAt: null,
+    }),
+    false,
+  );
+});
+
+test("an archived return is not offered for archiving again", () => {
+  assert.equal(
+    canArchiveReturn({ ...archivable, archivedAt: new Date() }),
+    false,
+  );
 });
