@@ -514,7 +514,7 @@ export default function RefundDashboard() {
         View all orders
       </s-button>
 
-      <s-section heading="Gooper.io is installed">
+      <s-section slot="aside" heading="Gooper.io is installed">
         <s-stack direction="block" gap="base">
           <s-paragraph>
             Your store is connected. Customers can verify purchases and get
@@ -571,6 +571,50 @@ export default function RefundDashboard() {
         </s-banner>
       )}
 
+      {privacyRequests.length > 0 && (
+        <s-section heading="Pending privacy requests">
+          <s-stack direction="block" gap="base">
+            <s-banner heading="Customer data export required" tone="warning">
+              Download each verified customer export, deliver it through your
+              compliance process, then mark the request completed.
+            </s-banner>
+            {privacyRequests.map((privacyRequest) => (
+              <s-stack
+                key={privacyRequest.id}
+                direction="inline"
+                gap="base"
+                alignItems="center"
+              >
+                <s-link href={`/app/privacy/${privacyRequest.id}`}>
+                  Download request from{" "}
+                  {formatDate(privacyRequest.createdAt.toString())}
+                </s-link>
+                <form
+                  method="post"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    submit(event.currentTarget);
+                  }}
+                >
+                  <input
+                    type="hidden"
+                    name="intent"
+                    value="resolvePrivacyRequest"
+                  />
+                  <input
+                    type="hidden"
+                    name="requestId"
+                    value={privacyRequest.id}
+                  />
+                  <s-button type="submit" variant="secondary">
+                    Mark completed
+                  </s-button>
+                </form>
+              </s-stack>
+            ))}
+          </s-stack>
+        </s-section>
+      )}
       <s-section heading="Recent returns" padding="none">
         {agentReturns.length === 0 ? (
           <s-box padding="large">
@@ -673,7 +717,7 @@ export default function RefundDashboard() {
         )}
       </s-section>
 
-      <s-section heading="Store directory listing">
+      <s-section slot="aside" heading="Store directory listing">
         <form
           method="post"
           onSubmit={(event) => {
@@ -720,50 +764,6 @@ export default function RefundDashboard() {
         </s-banner>
       )}
 
-      {privacyRequests.length > 0 && (
-        <s-section heading="Pending privacy requests">
-          <s-stack direction="block" gap="base">
-            <s-banner heading="Customer data export required" tone="warning">
-              Download each verified customer export, deliver it through your
-              compliance process, then mark the request completed.
-            </s-banner>
-            {privacyRequests.map((privacyRequest) => (
-              <s-stack
-                key={privacyRequest.id}
-                direction="inline"
-                gap="base"
-                alignItems="center"
-              >
-                <s-link href={`/app/privacy/${privacyRequest.id}`}>
-                  Download request from{" "}
-                  {formatDate(privacyRequest.createdAt.toString())}
-                </s-link>
-                <form
-                  method="post"
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    submit(event.currentTarget);
-                  }}
-                >
-                  <input
-                    type="hidden"
-                    name="intent"
-                    value="resolvePrivacyRequest"
-                  />
-                  <input
-                    type="hidden"
-                    name="requestId"
-                    value={privacyRequest.id}
-                  />
-                  <s-button type="submit" variant="secondary">
-                    Mark completed
-                  </s-button>
-                </form>
-              </s-stack>
-            ))}
-          </s-stack>
-        </s-section>
-      )}
 
       <s-section heading="Automatic refund payments (optional)">
         <form
@@ -1009,7 +1009,7 @@ export default function RefundDashboard() {
         </form>
       </s-section>
 
-      <s-section heading="Add a return button to your storefront (optional)">
+      <s-section slot="aside" heading="Add a return button to your storefront (optional)">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
             Your return portal already works without this. Turning it on adds a
@@ -1050,7 +1050,7 @@ export default function RefundDashboard() {
         </s-stack>
       </s-section>
 
-      <s-section heading="Returns section for your store's agents.md (optional)">
+      <s-section slot="aside" heading="Returns section for your store's agents.md (optional)">
         <s-stack direction="block" gap="base">
           <s-paragraph color="subdued">
             Gooper.io already serves a current return guide at
