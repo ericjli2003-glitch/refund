@@ -9,6 +9,7 @@ import {
   removeUnsubmittedReturn,
   retryApprovedReturn,
   type AdminGraphql,
+  wantsRestock,
 } from "./automatic-return.server";
 import { customerIdentityHash } from "./customer-security.server";
 
@@ -797,4 +798,16 @@ test("a customer can't request a return of units Gooper already funded", async (
   // The other, unfunded unit is still returnable the ordinary way: the funded
   // check passes and the return proceeds to Shopify's calculation.
   await assert.rejects(submit(1), /Unexpected request.*CalculateCustomerReturn/s);
+});
+
+test("the dashboard's two received buttons map to restocking or not", () => {
+  // "Mark received and restock" sends no field at all.
+  assert.equal(wantsRestock(null), true);
+  assert.equal(wantsRestock(undefined), true);
+  assert.equal(wantsRestock("true"), true);
+  // "Mark received" is the only thing that stops an item going back on sale.
+  assert.equal(wantsRestock("false"), false);
+  // Anything unexpected restocks, which is what the single button used to do.
+  assert.equal(wantsRestock(""), true);
+  assert.equal(wantsRestock("False"), true);
 });

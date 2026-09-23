@@ -19,6 +19,7 @@ import {
   receiveReturnedItems,
   removeUnsubmittedReturn,
   retryApprovedReturn,
+  wantsRestock,
 } from "../services/automatic-return.server";
 import {
   provisionMerchant,
@@ -189,9 +190,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
           session.shop,
           agentReturnId,
           undefined,
-          // Absent means restock, so an older form or a missing field keeps
-          // the behaviour the button used to have.
-          formData.get("restock") !== "false",
+          wantsRestock(formData.get("restock")),
         );
     } catch (error) {
       return {
@@ -686,25 +685,27 @@ export default function RefundDashboard() {
                             Add a return label or tracking
                           </s-link>
                         )}
-                        {agentReturn.receivable &&
-                          agentReturn.refundTiming !== "ON_RECEIPT" && (
-                            <>
-                              {returnAction(
-                                "receiveReturn",
-                                agentReturn.id,
-                                null,
-                                "Mark received",
-                                { restock: "false" },
-                              )}
-                              {returnAction(
-                                "receiveReturn",
-                                agentReturn.id,
-                                null,
-                                "Mark received and restock",
-                              )}
-                            </>
-                          )}
                       </s-stack>
+                      {/* On their own line: two buttons beside the badge and
+                          link wrapped badly at this column width. */}
+                      {agentReturn.receivable &&
+                        agentReturn.refundTiming !== "ON_RECEIPT" && (
+                          <s-stack direction="inline" gap="small-200">
+                            {returnAction(
+                              "receiveReturn",
+                              agentReturn.id,
+                              null,
+                              "Mark received",
+                              { restock: "false" },
+                            )}
+                            {returnAction(
+                              "receiveReturn",
+                              agentReturn.id,
+                              null,
+                              "Mark received and restock",
+                            )}
+                          </s-stack>
+                        )}
                       {agentReturn.itemReceivedAt && (
                         <s-paragraph color="subdued">
                           Item received{" "}
