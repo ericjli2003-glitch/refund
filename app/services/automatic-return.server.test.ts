@@ -412,6 +412,37 @@ test("receiving an immediately refunded return restocks it without touching the 
   assert.deepEqual(updates.at(-1), { failureReason: null });
 });
 
+test("an item can be marked received without going back into sellable stock", async (t) => {
+  const updates = mockRecords(t, {
+    status: "REFUND_SUBMITTED",
+    refundTiming: "IMMEDIATE",
+    refundId: REFUND,
+  });
+  const shopify = fakeShopify({
+    ReturnDetailsForProcessing: details,
+    ReceiveReturnedItems: () => ({
+      reverseFulfillmentOrderDispose: {
+        reverseFulfillmentOrderLineItems: [{ id: REVERSE_LINE_ITEM }],
+        userErrors: [],
+      },
+    }),
+  });
+  await receiveReturnedItems(SHOP, "agent-return-1", shopify.admin, false);
+
+  // Shopify still records the item as back, but not as sellable, and no
+  // restock location is sent.
+  // No location is sent at all: a location only means something for stock
+  // going back on the shelf.
+  assert.deepEqual(shopify.variables("ReceiveReturnedItems").dispositionInputs, [
+    {
+      reverseFulfillmentOrderLineItemId: REVERSE_LINE_ITEM,
+      quantity: 1,
+      dispositionType: "NOT_RESTOCKED",
+    },
+  ]);
+  assert.deepEqual(updates.at(-1), { failureReason: null });
+});
+
 test("receiving an on-receipt return rechecks Shopify, then refunds and restocks in one call", async (t) => {
   const updates = mockRecords(t, { status: "AWAITING_ITEM", refundTiming: "ON_RECEIPT" });
   const shopify = fakeShopify({
