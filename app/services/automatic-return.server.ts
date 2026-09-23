@@ -367,12 +367,17 @@ async function returnLineItemsFor({
   returnId,
   items,
   dispose,
+  // Items can come back without going into sellable stock: damaged, opened,
+  // or waiting on inspection. Shopify records those as NOT_RESTOCKED, which is
+  // what a disposition with no location resolves to.
+  restock = true,
 }: {
   admin: AdminGraphql;
   shop: string;
   returnId: string;
   items: RequestedItem[];
   dispose: boolean;
+  restock?: boolean;
 }) {
   const noDetails =
     "Shopify did not return the approved return's line items. No refund was submitted.";
@@ -396,7 +401,7 @@ async function returnLineItemsFor({
     reverseFulfillmentLineItems: details.reverseFulfillmentOrders.nodes.flatMap(
       (node) => node.lineItems.nodes,
     ),
-    locationId: dispose
+    locationId: dispose && restock
       ? await resolveRestockLocation(
           shop,
           details.order.fulfillments.map((fulfillment) => fulfillment.location?.id),
@@ -710,6 +715,7 @@ export async function receiveReturnedItems(
   shop: string,
   agentReturnId: string,
   admin?: AdminGraphql,
+  restock = true,
 ) {
   const record = await prisma.agentReturn.findFirst({
     where: { id: agentReturnId, shop },
@@ -733,7 +739,14 @@ export async function receiveReturnedItems(
     const client = admin ?? (await adminFor(shop));
     if (!onReceipt) {
       const dispositionInputs = (
-        await returnLineItemsFor({ admin: client, shop, returnId, items, dispose: true })
+        await returnLineItemsFor({
+          admin: client,
+          shop,
+          returnId,
+          items,
+          dispose: true,
+          restock,
+        })
       ).flatMap((line) => line.dispositions);
       if (dispositionInputs.length) {
         const { reverseFulfillmentOrderDispose } = await adminData<{

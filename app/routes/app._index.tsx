@@ -184,7 +184,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     }
     try {
       if (retry) await retryApprovedReturn(session.shop, agentReturnId);
-      else await receiveReturnedItems(session.shop, agentReturnId);
+      else
+        await receiveReturnedItems(
+          session.shop,
+          agentReturnId,
+          undefined,
+          // Absent means restock, so an older form or a missing field keeps
+          // the behaviour the button used to have.
+          formData.get("restock") !== "false",
+        );
     } catch (error) {
       return {
         heading: retry
@@ -489,6 +497,7 @@ export default function RefundDashboard() {
     // a row that needs nothing from the merchant down to one line.
     explanation: string | null,
     label: string,
+    fields: Record<string, string> = {},
   ) => (
     <form
       method="post"
@@ -499,6 +508,9 @@ export default function RefundDashboard() {
     >
       <input type="hidden" name="intent" value={intent} />
       <input type="hidden" name="agentReturnId" value={agentReturnId} />
+      {Object.entries(fields).map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
       <s-stack direction="block" gap="small-200">
         {explanation && (
           <s-paragraph color="subdued">{explanation}</s-paragraph>
@@ -675,12 +687,22 @@ export default function RefundDashboard() {
                           </s-link>
                         )}
                         {agentReturn.receivable &&
-                          agentReturn.refundTiming !== "ON_RECEIPT" &&
-                          returnAction(
-                            "receiveReturn",
-                            agentReturn.id,
-                            null,
-                            "Mark received and restock",
+                          agentReturn.refundTiming !== "ON_RECEIPT" && (
+                            <>
+                              {returnAction(
+                                "receiveReturn",
+                                agentReturn.id,
+                                null,
+                                "Mark received",
+                                { restock: "false" },
+                              )}
+                              {returnAction(
+                                "receiveReturn",
+                                agentReturn.id,
+                                null,
+                                "Mark received and restock",
+                              )}
+                            </>
                           )}
                       </s-stack>
                       {agentReturn.itemReceivedAt && (
