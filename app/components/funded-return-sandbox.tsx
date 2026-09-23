@@ -13,9 +13,9 @@ const actionLabels: Record<SandboxAction, string> = {
   PAYOUT_SUCCEEDED: "Provider confirmed payout",
   PAYOUT_FAILED: "Provider confirmed payout failure",
   PAYOUT_UNKNOWN: "Payout outcome unknown",
-  RECEIVE_ITEM: "Mark sample item received",
-  INSPECT_ITEM: "Save inspection decision",
-  REQUEST_COLLECTION: "Request repayment through sandbox provider",
+  RECEIVE_ITEM: "Mark item received",
+  INSPECT_ITEM: "Complete Gooper return",
+  REQUEST_COLLECTION: "Process Gooper repayment",
   COLLECTION_SUCCEEDED: "Provider confirmed repayment",
   COLLECTION_FAILED: "Provider confirmed repayment failure",
   COLLECTION_UNKNOWN: "Repayment outcome unknown",
@@ -31,6 +31,30 @@ const scenarioLabels = {
   WRONG_AMOUNT_EVENT: "Webhook reports the wrong amount",
 } as const;
 type Scenario = keyof typeof scenarioLabels;
+
+function fundedReturnProgress(state: SandboxState) {
+  if (state.collection === "SETTLED")
+    return { label: "Gooper return complete", tone: "success" } as const;
+  if (["DUE", "PENDING", "FAILED", "UNKNOWN"].includes(state.collection))
+    return {
+      label: "Completing Gooper return",
+      tone:
+        state.collection === "FAILED" || state.collection === "UNKNOWN"
+          ? "warning"
+          : "info",
+    } as const;
+  if (state.returnStatus === "REJECTED")
+    return { label: "Gooper return needs review", tone: "warning" } as const;
+  if (state.returnStatus === "RECEIVED")
+    return { label: "Ready to complete", tone: "info" } as const;
+  if (state.payout === "SUCCEEDED")
+    return { label: "Refund paid by Gooper", tone: "success" } as const;
+  if (state.payout === "FAILED" || state.payout === "UNKNOWN")
+    return { label: "Gooper payment needs review", tone: "warning" } as const;
+  if (state.payout === "PENDING")
+    return { label: "Gooper payment in progress", tone: "info" } as const;
+  return { label: "Not funded yet", tone: "neutral" } as const;
+}
 
 export type SandboxPaymentView = {
   id: string;
@@ -110,6 +134,7 @@ export default function FundedReturnsSandboxView({
   const selected = cases.find((row) => row.id === selectedId) ?? cases[0];
   const state = selected?.state;
   const balances = state ? sandboxBalances(state) : null;
+  const progress = state ? fundedReturnProgress(state) : null;
   const money = (minor: number) =>
     new Intl.NumberFormat("en", {
       style: "currency",
@@ -295,6 +320,11 @@ export default function FundedReturnsSandboxView({
 
       {state && balances && (
         <>
+          {progress && (
+            <s-section heading="Funded return status">
+              <s-badge tone={progress.tone}>{progress.label}</s-badge>
+            </s-section>
+          )}
           {state.order && (
             <s-section heading="Linked Shopify order">
               <s-stack direction="block" gap="small">
