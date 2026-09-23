@@ -87,6 +87,9 @@ test("merchant resolution rejects unsafe addresses and never fetches arbitrary h
 });
 
 test("directory updates require Shopify's canonical shop to match the installation", async (t) => {
+  // Syncing reads the stored row first, to carry forward names the store has
+  // been renamed away from.
+  mockDelegate(t, prisma.merchantDirectory, "findUnique", async () => null);
   const saved = mockDelegate(
     t,
     prisma.merchantDirectory,

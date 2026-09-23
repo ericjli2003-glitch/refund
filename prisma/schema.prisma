@@ -68,7 +68,13 @@ model MerchantDirectory {
   shop               String   @id
   primaryDomain      String   @unique
   name               String
+  // Current search names, plus names the store has been renamed away from
+  // while those are still within their retention window.
   aliases            String[] @default([])
+  // Retired name -> when it stopped being the store's name, so a customer who
+  // bought under the old name can still find the store, and so the store stops
+  // answering to a name it no longer uses.
+  formerAliases      Json     @default("{}")
   // Listed by default; the merchant can hide the store from the directory.
   discoveryPublished Boolean  @default(true)
   verifiedAt         DateTime @default(now())
