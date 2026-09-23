@@ -437,10 +437,22 @@ function Explainer({
   summary: string;
   children: ReactNode;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <details>
+    <details
+      className="gooper-explainer"
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
       <summary style={{ cursor: "pointer" }}>
-        <s-text color="subdued">{summary}</s-text>
+        <s-stack direction="inline" gap="small-200" alignItems="center">
+          {/* The browser's own marker is hidden in favour of Polaris's
+              chevron, so the disclosure matches the rest of the admin. */}
+          <s-icon
+            type={open ? "chevron-down" : "chevron-right"}
+            tone="neutral"
+          />
+          <s-text color="subdued">{summary}</s-text>
+        </s-stack>
       </summary>
       <s-box paddingBlockStart="small-200">
         <s-stack direction="block" gap="small-200">
@@ -597,6 +609,10 @@ export default function RefundDashboard() {
   // section slotted into it disappears from the page entirely.
   return (
     <s-page heading="Gooper.io" inlineSize="base">
+      <style>{`
+        .gooper-explainer > summary { list-style: none; }
+        .gooper-explainer > summary::-webkit-details-marker { display: none; }
+      `}</style>
       <s-button slot="primary-action" href="shopify:admin/orders">
         View all orders
       </s-button>
