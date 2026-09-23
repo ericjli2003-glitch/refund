@@ -508,8 +508,10 @@ export default function RefundDashboard() {
     </form>
   );
 
+  // The aside column renders only at inlineSize="base". At "large" every
+  // section slotted into it disappears from the page entirely.
   return (
-    <s-page heading="Gooper.io" inlineSize="large">
+    <s-page heading="Gooper.io" inlineSize="base">
       <s-button slot="primary-action" href="shopify:admin/orders">
         View all orders
       </s-button>
