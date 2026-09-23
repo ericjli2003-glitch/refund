@@ -711,6 +711,12 @@ export async function retryApprovedReturn(
 // The merchant confirms the item is back. An immediately refunded return is
 // restocked; an on-receipt return is refunded and restocked in one
 // returnProcess call, after the same Shopify rechecks as a retry.
+// What the dashboard's two buttons mean. Anything that does not say "false"
+// restocks, so a form that omits the field behaves like the single button this
+// replaced.
+export const wantsRestock = (value: FormDataEntryValue | null | undefined) =>
+  value !== "false";
+
 export async function receiveReturnedItems(
   shop: string,
   agentReturnId: string,
