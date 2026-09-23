@@ -485,7 +485,9 @@ export default function RefundDashboard() {
   const returnAction = (
     intent: "retryReturn" | "receiveReturn" | "removeReturn",
     agentReturnId: string,
-    explanation: string,
+    // Null where the button's own label is the whole explanation, which keeps
+    // a row that needs nothing from the merchant down to one line.
+    explanation: string | null,
     label: string,
   ) => (
     <form
@@ -498,7 +500,9 @@ export default function RefundDashboard() {
       <input type="hidden" name="intent" value={intent} />
       <input type="hidden" name="agentReturnId" value={agentReturnId} />
       <s-stack direction="block" gap="small-200">
-        <s-paragraph color="subdued">{explanation}</s-paragraph>
+        {explanation && (
+          <s-paragraph color="subdued">{explanation}</s-paragraph>
+        )}
         <s-box>
           <s-button type="submit" variant="secondary">
             {label}
@@ -644,65 +648,75 @@ export default function RefundDashboard() {
                     {formatDate(agentReturn.createdAt.toString())}
                   </s-table-cell>
                   <s-table-cell>
-                    <s-badge
-                      tone={
-                        agentReturn.status !== "NEEDS_ATTENTION" && agentReturn.refundStatus === "SUCCESS"
-                          ? "success"
-                          : agentReturn.status === "NEEDS_ATTENTION"
-                            ? "critical"
-                            : agentReturn.status === "NOT_SUBMITTED"
-                              ? "warning"
-                              : "info"
-                      }
-                    >
-                      {describeRefundProgress(agentReturn).title}
-                    </s-badge>
-                    {agentReturn.itemReceivedAt && (
-                      <s-paragraph color="subdued">
-                        Item received{" "}
-                        {formatDate(agentReturn.itemReceivedAt.toString())}
-                      </s-paragraph>
-                    )}
-                    {agentReturn.failureReason && (
-                      <s-paragraph>{agentReturn.failureReason}</s-paragraph>
-                    )}
-                    {agentReturn.returnId && !agentReturn.itemReceivedAt && (
-                      <s-link
-                        href={`shopify:admin/orders/${agentReturn.orderId.split("/").pop()}`}
+                    <s-stack direction="block" gap="small-200">
+                      <s-stack
+                        direction="inline"
+                        gap="small-200"
+                        alignItems="center"
                       >
-                        Add a return label or tracking in Shopify
-                      </s-link>
-                    )}
-                    {agentReturn.removable &&
-                      returnAction(
-                        "removeReturn",
-                        agentReturn.id,
-                        agentReturn.status === "NOT_SUBMITTED"
-                          ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
-                          : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
-                        "Remove",
-                      )}
-                    {agentReturn.retryable &&
-                      returnAction(
-                        "retryReturn",
-                        agentReturn.id,
-                        "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
-                        "Retry refund",
-                      )}
-                    {agentReturn.receivable &&
-                      (agentReturn.refundTiming === "ON_RECEIPT"
-                        ? returnAction(
+                        <s-badge
+                          tone={
+                            agentReturn.status !== "NEEDS_ATTENTION" && agentReturn.refundStatus === "SUCCESS"
+                              ? "success"
+                              : agentReturn.status === "NEEDS_ATTENTION"
+                                ? "critical"
+                                : agentReturn.status === "NOT_SUBMITTED"
+                                  ? "warning"
+                                  : "info"
+                          }
+                        >
+                          {describeRefundProgress(agentReturn).title}
+                        </s-badge>
+                        {agentReturn.returnId && !agentReturn.itemReceivedAt && (
+                          <s-link
+                            href={`shopify:admin/orders/${agentReturn.orderId.split("/").pop()}`}
+                          >
+                            Add a return label or tracking
+                          </s-link>
+                        )}
+                        {agentReturn.receivable &&
+                          agentReturn.refundTiming !== "ON_RECEIPT" &&
+                          returnAction(
                             "receiveReturn",
                             agentReturn.id,
-                            "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
-                            "Mark received and refund",
-                          )
-                        : returnAction(
-                            "receiveReturn",
-                            agentReturn.id,
-                            "The refund was already issued. Once the item is back, this restocks it in Shopify.",
+                            null,
                             "Mark received and restock",
-                          ))}
+                          )}
+                      </s-stack>
+                      {agentReturn.itemReceivedAt && (
+                        <s-paragraph color="subdued">
+                          Item received{" "}
+                          {formatDate(agentReturn.itemReceivedAt.toString())}
+                        </s-paragraph>
+                      )}
+                      {agentReturn.failureReason && (
+                        <s-paragraph>{agentReturn.failureReason}</s-paragraph>
+                      )}
+                      {agentReturn.removable &&
+                        returnAction(
+                          "removeReturn",
+                          agentReturn.id,
+                          agentReturn.status === "NOT_SUBMITTED"
+                            ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
+                            : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
+                          "Remove",
+                        )}
+                      {agentReturn.retryable &&
+                        returnAction(
+                          "retryReturn",
+                          agentReturn.id,
+                          "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
+                          "Retry refund",
+                        )}
+                      {agentReturn.receivable &&
+                        agentReturn.refundTiming === "ON_RECEIPT" &&
+                        returnAction(
+                          "receiveReturn",
+                          agentReturn.id,
+                          "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
+                          "Mark received and refund",
+                        )}
+                    </s-stack>
                   </s-table-cell>
                   <s-table-cell>
                     {agentReturn.amount && agentReturn.currencyCode
