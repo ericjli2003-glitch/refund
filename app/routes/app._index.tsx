@@ -733,6 +733,314 @@ export default function RefundDashboard() {
         )}
       </s-section>
 
+      {/* Recent returns keeps the full width above; settings and the reference
+          sections share the row beneath it. */}
+      <s-grid
+        gridTemplateColumns="@container (inline-size <= 700px) 1fr, 1fr 1fr"
+        gap="base"
+      >
+        <s-section heading="Automatic refund payments (optional)">
+          <form
+            method="post"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const formData = new FormData();
+              formData.set(
+                "automaticRefundsEnabled",
+                automaticRefundsEnabled ? "true" : "false",
+              );
+              formData.set("returnWindowDays", returnWindowDays);
+              formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
+              formData.set("returnLocationId", returnLocationId);
+              formData.set("refundTiming", refundTiming);
+              formData.set("returnInstructions", returnInstructions);
+              formData.set("returnPolicyUrl", returnPolicyUrl);
+              formData.set(
+                "verifiedStoreLinks",
+                verifiedStoreLinks ? "true" : "false",
+              );
+              formData.set("restockingFeePercent", restockingFeePercent);
+              formData.set("returnShippingFee", returnShippingFee);
+              for (const id of finalSaleCollectionIds)
+                formData.append("finalSaleCollectionIds", id);
+              submit(formData, { method: "post" });
+            }}
+          >
+            <s-stack direction="block" gap="base">
+              <s-switch
+                label="Authorize eligible refunds to the original payment method on customer confirmation"
+                checked={automaticRefundsEnabled}
+                onChange={(event) =>
+                  setAutomaticRefundsEnabled(event.currentTarget.checked)
+                }
+              ></s-switch>
+              <s-paragraph color="subdued">
+                Estimates work without enabling this setting. When enabled, the
+                customer signs in, selects an eligible item, sees the calculated
+                amount and refund timing, and confirms it. Shopify then opens the
+                return, and the refund goes to the original payment method.
+              </s-paragraph>
+              <s-grid
+                gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+                gap="base"
+              >
+                <s-number-field
+                  label="Return window (days)"
+                  min={1}
+                  max={365}
+                  step={1}
+                  value={returnWindowDays}
+                  onChange={(event) =>
+                    setReturnWindowDays(event.currentTarget.value)
+                  }
+                  required
+                ></s-number-field>
+                <s-money-field
+                  label={`Maximum automatic refund (${policy.currencyCode})`}
+                  min={0.01}
+                  max={100000}
+                  value={maxAutoRefundAmount}
+                  onChange={(event) =>
+                    setMaxAutoRefundAmount(event.currentTarget.value)
+                  }
+                  required
+                ></s-money-field>
+                <s-select
+                  label="When to refund"
+                  value={refundTiming}
+                  onChange={(event) => setRefundTiming(event.currentTarget.value)}
+                >
+                  <s-option value="IMMEDIATE">
+                    As soon as the customer confirms the return
+                  </s-option>
+                  <s-option value="ON_RECEIPT">
+                    After I mark the returned item received
+                  </s-option>
+                </s-select>
+                <s-select
+                  label="Restock returned items to"
+                  value={returnLocationId}
+                  onChange={(event) =>
+                    setReturnLocationId(event.currentTarget.value)
+                  }
+                >
+                  <s-option value="">
+                    The location that fulfilled the order
+                  </s-option>
+                  {locations.map((location) => (
+                    <s-option key={location.id} value={location.id}>
+                      {location.name}
+                    </s-option>
+                  ))}
+                </s-select>
+              </s-grid>
+              <s-paragraph>
+                Immediate refunds reach customers before you receive or inspect
+                the item, so your store carries the risk if it never comes back.
+                Refunds on receipt approve the return at confirmation, then refund
+                and restock when you mark the item received below.
+              </s-paragraph>
+              <s-paragraph color="subdued">
+                Leave the restock location on the fulfilling location unless you
+                route returns to a dedicated warehouse. If an order was fulfilled
+                from more than one location and you have not chosen one here,
+                received items are recorded as not restocked.
+              </s-paragraph>
+              <s-paragraph color="subdued">
+                For customers signed in to your store, restocking and return
+                shipping fees come from your Shopify return rules (Settings, then
+                Policies). Customers see them in their quote, and Gooper.io deducts
+                them from the refund it submits.
+              </s-paragraph>
+              {!policy.returnRulesConfirmedAt && (
+                <s-banner heading="Save to turn on assistant returns" tone="info">
+                  Customers can&apos;t start returns at your store from ChatGPT or
+                  Claude until you review the fees and final-sale collections
+                  below and save.
+                </s-banner>
+              )}
+              {policy.returnRulesMismatch && (
+                <s-banner
+                  heading="Assistant returns are paused"
+                  tone="warning"
+                >
+                  {policy.returnRulesMismatch} Check the fees and final-sale
+                  collections below against your Shopify return rules, then save.
+                </s-banner>
+              )}
+              <s-switch
+                label="Let customers return through their AI assistant"
+                checked={verifiedStoreLinks}
+                onChange={(event) =>
+                  setVerifiedStoreLinks(event.currentTarget.checked)
+                }
+              ></s-switch>
+              <s-paragraph color="subdued">
+                Customers who add Gooper.io to ChatGPT or Claude confirm their email
+                once, and Gooper.io finds their orders at your store by that email,
+                with no store sign-in. Shopify doesn’t apply your return rules to
+                those returns, so Gooper.io applies the fees and final-sale
+                collections below. Saving confirms they match your Shopify return
+                rules. Turn this off to stop returns through assistants; your
+                return portal keeps working.
+              </s-paragraph>
+              <s-grid
+                gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+                gap="base"
+              >
+                <s-number-field
+                  label="Restocking fee (%)"
+                  min={0}
+                  max={100}
+                  step={0.01}
+                  value={restockingFeePercent}
+                  onChange={(event) =>
+                    setRestockingFeePercent(event.currentTarget.value)
+                  }
+                ></s-number-field>
+                <s-money-field
+                  label={`Return shipping fee (${policy.currencyCode})`}
+                  min={0}
+                  max={1000}
+                  value={returnShippingFee}
+                  onChange={(event) =>
+                    setReturnShippingFee(event.currentTarget.value)
+                  }
+                ></s-money-field>
+              </s-grid>
+              {canReadProducts ? (
+                collections.length ? (
+                  <s-stack direction="block" gap="small-200">
+                    <s-text>
+                      Final-sale collections (up to {finalSaleCollectionLimit})
+                    </s-text>
+                    {collections.map((collection) => {
+                      const checked = finalSaleCollectionIds.includes(
+                        collection.id,
+                      );
+                      return (
+                        <s-checkbox
+                          key={collection.id}
+                          label={collection.title}
+                          checked={checked}
+                          disabled={
+                            !checked &&
+                            finalSaleCollectionIds.length >=
+                              finalSaleCollectionLimit
+                          }
+                          onChange={(event) => {
+                            const selected = event.currentTarget.checked;
+                            setFinalSaleCollectionIds((current) =>
+                              selected
+                                ? [...current, collection.id]
+                                : current.filter((id) => id !== collection.id),
+                            );
+                          }}
+                        ></s-checkbox>
+                      );
+                    })}
+                  </s-stack>
+                ) : (
+                  <s-paragraph color="subdued">
+                    Your store has no collections to mark as final sale.
+                  </s-paragraph>
+                )
+              ) : (
+                <s-paragraph color="subdued">
+                  To mark final-sale collections, approve Gooper.io&apos;s updated
+                  permission to read products when Shopify asks.
+                </s-paragraph>
+              )}
+              <s-text-area
+                label="Return instructions for customers and assistants"
+                details={`Shown with every quote, on your public return page, and in your store's Gooper.io agent guide and manifest. Plain text, up to ${instructionsMaxLength} characters.`}
+                maxLength={instructionsMaxLength}
+                rows={4}
+                value={returnInstructions}
+                onChange={(event) =>
+                  setReturnInstructions(event.currentTarget.value)
+                }
+              ></s-text-area>
+              <s-url-field
+                label="Return policy page"
+                details="A page on your own store domain, such as your Shopify refund policy."
+                value={returnPolicyUrl}
+                onChange={(event) => setReturnPolicyUrl(event.currentTarget.value)}
+              ></s-url-field>
+              <s-stack direction="inline" gap="base" alignItems="center">
+                <s-button type="submit" variant="primary">
+                  Save policy
+                </s-button>
+                <s-badge
+                  tone={policy.automaticRefundsEnabled ? "success" : "warning"}
+                >
+                  {policy.automaticRefundsEnabled
+                    ? "Automatic payments on"
+                    : "Quotes only"}
+                </s-badge>
+              </s-stack>
+            </s-stack>
+          </form>
+        </s-section>
+        <s-stack direction="block" gap="base">
+          <s-section heading="Add a return button to your storefront (optional)">
+            <s-stack direction="block" gap="base">
+              <s-paragraph color="subdued">
+                Your return portal already works without this. Turning it on adds a
+                “Start a return” button to the bottom-right corner of every page of
+                your store, plus return details that AI shopping assistants can
+                read. It works with every Shopify theme, including older ones.
+              </s-paragraph>
+              <s-unordered-list>
+                <s-list-item>
+                  <s-text type="strong">Turn it on:</s-text> click the button below.
+                  Your theme editor opens with it switched on. Click Save.
+                </s-list-item>
+                <s-list-item>
+                  <s-text type="strong">Hide the button, keep AI assistant support:</s-text>{" "}
+                  in the theme editor, open App embeds → AI return assistance and
+                  untick Show the return button.
+                </s-list-item>
+                <s-list-item>
+                  <s-text type="strong">Turn it off completely:</s-text> go to Online
+                  Store → Themes → Customize → App embeds, switch off AI return
+                  assistance, then Save. Uninstalling Gooper.io also removes it.
+                </s-list-item>
+              </s-unordered-list>
+              <s-box>
+                <s-button
+                  href={siteToolsActivationUrl}
+                  target="_top"
+                  variant="secondary"
+                >
+                  {storefrontActive
+                    ? "Manage storefront assistance"
+                    : "Activate in theme editor"}
+                </s-button>
+              </s-box>
+              {storefrontActive && (
+                <s-badge tone="success">Active on your published theme</s-badge>
+              )}
+            </s-stack>
+          </s-section>
+          <s-section heading="Returns section for your store's agents.md (optional)">
+            <s-stack direction="block" gap="base">
+              <s-paragraph color="subdued">
+                Gooper.io already serves a current return guide at
+                /apps/refund/agents.md. Only if your theme publishes its own
+                agents.md, copy this Returns section into it, and copy it again
+                whenever you change your return guidance.
+              </s-paragraph>
+              <s-stack direction="inline" gap="base" alignItems="center">
+                <s-button onClick={() => void copyTemplate()}>
+                  Copy Returns section
+                </s-button>
+                <s-text color="subdued">{copyStatus}</s-text>
+              </s-stack>
+            </s-stack>
+          </s-section>
+        </s-stack>
+      </s-grid>
       <s-section slot="aside" heading="Store directory listing">
         <form
           method="post"
@@ -781,307 +1089,8 @@ export default function RefundDashboard() {
       )}
 
 
-      <s-section heading="Automatic refund payments (optional)">
-        <form
-          method="post"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const formData = new FormData();
-            formData.set(
-              "automaticRefundsEnabled",
-              automaticRefundsEnabled ? "true" : "false",
-            );
-            formData.set("returnWindowDays", returnWindowDays);
-            formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
-            formData.set("returnLocationId", returnLocationId);
-            formData.set("refundTiming", refundTiming);
-            formData.set("returnInstructions", returnInstructions);
-            formData.set("returnPolicyUrl", returnPolicyUrl);
-            formData.set(
-              "verifiedStoreLinks",
-              verifiedStoreLinks ? "true" : "false",
-            );
-            formData.set("restockingFeePercent", restockingFeePercent);
-            formData.set("returnShippingFee", returnShippingFee);
-            for (const id of finalSaleCollectionIds)
-              formData.append("finalSaleCollectionIds", id);
-            submit(formData, { method: "post" });
-          }}
-        >
-          <s-stack direction="block" gap="base">
-            <s-switch
-              label="Authorize eligible refunds to the original payment method on customer confirmation"
-              checked={automaticRefundsEnabled}
-              onChange={(event) =>
-                setAutomaticRefundsEnabled(event.currentTarget.checked)
-              }
-            ></s-switch>
-            <s-paragraph color="subdued">
-              Estimates work without enabling this setting. When enabled, the
-              customer signs in, selects an eligible item, sees the calculated
-              amount and refund timing, and confirms it. Shopify then opens the
-              return, and the refund goes to the original payment method.
-            </s-paragraph>
-            <s-grid
-              gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
-              gap="base"
-            >
-              <s-number-field
-                label="Return window (days)"
-                min={1}
-                max={365}
-                step={1}
-                value={returnWindowDays}
-                onChange={(event) =>
-                  setReturnWindowDays(event.currentTarget.value)
-                }
-                required
-              ></s-number-field>
-              <s-money-field
-                label={`Maximum automatic refund (${policy.currencyCode})`}
-                min={0.01}
-                max={100000}
-                value={maxAutoRefundAmount}
-                onChange={(event) =>
-                  setMaxAutoRefundAmount(event.currentTarget.value)
-                }
-                required
-              ></s-money-field>
-              <s-select
-                label="When to refund"
-                value={refundTiming}
-                onChange={(event) => setRefundTiming(event.currentTarget.value)}
-              >
-                <s-option value="IMMEDIATE">
-                  As soon as the customer confirms the return
-                </s-option>
-                <s-option value="ON_RECEIPT">
-                  After I mark the returned item received
-                </s-option>
-              </s-select>
-              <s-select
-                label="Restock returned items to"
-                value={returnLocationId}
-                onChange={(event) =>
-                  setReturnLocationId(event.currentTarget.value)
-                }
-              >
-                <s-option value="">
-                  The location that fulfilled the order
-                </s-option>
-                {locations.map((location) => (
-                  <s-option key={location.id} value={location.id}>
-                    {location.name}
-                  </s-option>
-                ))}
-              </s-select>
-            </s-grid>
-            <s-paragraph>
-              Immediate refunds reach customers before you receive or inspect
-              the item, so your store carries the risk if it never comes back.
-              Refunds on receipt approve the return at confirmation, then refund
-              and restock when you mark the item received below.
-            </s-paragraph>
-            <s-paragraph color="subdued">
-              Leave the restock location on the fulfilling location unless you
-              route returns to a dedicated warehouse. If an order was fulfilled
-              from more than one location and you have not chosen one here,
-              received items are recorded as not restocked.
-            </s-paragraph>
-            <s-paragraph color="subdued">
-              For customers signed in to your store, restocking and return
-              shipping fees come from your Shopify return rules (Settings, then
-              Policies). Customers see them in their quote, and Gooper.io deducts
-              them from the refund it submits.
-            </s-paragraph>
-            {!policy.returnRulesConfirmedAt && (
-              <s-banner heading="Save to turn on assistant returns" tone="info">
-                Customers can&apos;t start returns at your store from ChatGPT or
-                Claude until you review the fees and final-sale collections
-                below and save.
-              </s-banner>
-            )}
-            {policy.returnRulesMismatch && (
-              <s-banner
-                heading="Assistant returns are paused"
-                tone="warning"
-              >
-                {policy.returnRulesMismatch} Check the fees and final-sale
-                collections below against your Shopify return rules, then save.
-              </s-banner>
-            )}
-            <s-switch
-              label="Let customers return through their AI assistant"
-              checked={verifiedStoreLinks}
-              onChange={(event) =>
-                setVerifiedStoreLinks(event.currentTarget.checked)
-              }
-            ></s-switch>
-            <s-paragraph color="subdued">
-              Customers who add Gooper.io to ChatGPT or Claude confirm their email
-              once, and Gooper.io finds their orders at your store by that email,
-              with no store sign-in. Shopify doesn’t apply your return rules to
-              those returns, so Gooper.io applies the fees and final-sale
-              collections below. Saving confirms they match your Shopify return
-              rules. Turn this off to stop returns through assistants; your
-              return portal keeps working.
-            </s-paragraph>
-            <s-grid
-              gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
-              gap="base"
-            >
-              <s-number-field
-                label="Restocking fee (%)"
-                min={0}
-                max={100}
-                step={0.01}
-                value={restockingFeePercent}
-                onChange={(event) =>
-                  setRestockingFeePercent(event.currentTarget.value)
-                }
-              ></s-number-field>
-              <s-money-field
-                label={`Return shipping fee (${policy.currencyCode})`}
-                min={0}
-                max={1000}
-                value={returnShippingFee}
-                onChange={(event) =>
-                  setReturnShippingFee(event.currentTarget.value)
-                }
-              ></s-money-field>
-            </s-grid>
-            {canReadProducts ? (
-              collections.length ? (
-                <s-stack direction="block" gap="small-200">
-                  <s-text>
-                    Final-sale collections (up to {finalSaleCollectionLimit})
-                  </s-text>
-                  {collections.map((collection) => {
-                    const checked = finalSaleCollectionIds.includes(
-                      collection.id,
-                    );
-                    return (
-                      <s-checkbox
-                        key={collection.id}
-                        label={collection.title}
-                        checked={checked}
-                        disabled={
-                          !checked &&
-                          finalSaleCollectionIds.length >=
-                            finalSaleCollectionLimit
-                        }
-                        onChange={(event) => {
-                          const selected = event.currentTarget.checked;
-                          setFinalSaleCollectionIds((current) =>
-                            selected
-                              ? [...current, collection.id]
-                              : current.filter((id) => id !== collection.id),
-                          );
-                        }}
-                      ></s-checkbox>
-                    );
-                  })}
-                </s-stack>
-              ) : (
-                <s-paragraph color="subdued">
-                  Your store has no collections to mark as final sale.
-                </s-paragraph>
-              )
-            ) : (
-              <s-paragraph color="subdued">
-                To mark final-sale collections, approve Gooper.io&apos;s updated
-                permission to read products when Shopify asks.
-              </s-paragraph>
-            )}
-            <s-text-area
-              label="Return instructions for customers and assistants"
-              details={`Shown with every quote, on your public return page, and in your store's Gooper.io agent guide and manifest. Plain text, up to ${instructionsMaxLength} characters.`}
-              maxLength={instructionsMaxLength}
-              rows={4}
-              value={returnInstructions}
-              onChange={(event) =>
-                setReturnInstructions(event.currentTarget.value)
-              }
-            ></s-text-area>
-            <s-url-field
-              label="Return policy page"
-              details="A page on your own store domain, such as your Shopify refund policy."
-              value={returnPolicyUrl}
-              onChange={(event) => setReturnPolicyUrl(event.currentTarget.value)}
-            ></s-url-field>
-            <s-stack direction="inline" gap="base" alignItems="center">
-              <s-button type="submit" variant="primary">
-                Save policy
-              </s-button>
-              <s-badge
-                tone={policy.automaticRefundsEnabled ? "success" : "warning"}
-              >
-                {policy.automaticRefundsEnabled
-                  ? "Automatic payments on"
-                  : "Quotes only"}
-              </s-badge>
-            </s-stack>
-          </s-stack>
-        </form>
-      </s-section>
 
-      <s-section slot="aside" heading="Add a return button to your storefront (optional)">
-        <s-stack direction="block" gap="base">
-          <s-paragraph color="subdued">
-            Your return portal already works without this. Turning it on adds a
-            “Start a return” button to the bottom-right corner of every page of
-            your store, plus return details that AI shopping assistants can
-            read. It works with every Shopify theme, including older ones.
-          </s-paragraph>
-          <s-unordered-list>
-            <s-list-item>
-              <s-text type="strong">Turn it on:</s-text> click the button below.
-              Your theme editor opens with it switched on. Click Save.
-            </s-list-item>
-            <s-list-item>
-              <s-text type="strong">Hide the button, keep AI assistant support:</s-text>{" "}
-              in the theme editor, open App embeds → AI return assistance and
-              untick Show the return button.
-            </s-list-item>
-            <s-list-item>
-              <s-text type="strong">Turn it off completely:</s-text> go to Online
-              Store → Themes → Customize → App embeds, switch off AI return
-              assistance, then Save. Uninstalling Gooper.io also removes it.
-            </s-list-item>
-          </s-unordered-list>
-          <s-box>
-            <s-button
-              href={siteToolsActivationUrl}
-              target="_top"
-              variant="secondary"
-            >
-              {storefrontActive
-                ? "Manage storefront assistance"
-                : "Activate in theme editor"}
-            </s-button>
-          </s-box>
-          {storefrontActive && (
-            <s-badge tone="success">Active on your published theme</s-badge>
-          )}
-        </s-stack>
-      </s-section>
 
-      <s-section slot="aside" heading="Returns section for your store's agents.md (optional)">
-        <s-stack direction="block" gap="base">
-          <s-paragraph color="subdued">
-            Gooper.io already serves a current return guide at
-            /apps/refund/agents.md. Only if your theme publishes its own
-            agents.md, copy this Returns section into it, and copy it again
-            whenever you change your return guidance.
-          </s-paragraph>
-          <s-stack direction="inline" gap="base" alignItems="center">
-            <s-button onClick={() => void copyTemplate()}>
-              Copy Returns section
-            </s-button>
-            <s-text color="subdued">{copyStatus}</s-text>
-          </s-stack>
-        </s-stack>
-      </s-section>
 
     </s-page>
   );
