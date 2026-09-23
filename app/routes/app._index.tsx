@@ -13,12 +13,14 @@ import { describeRefundProgress } from "../refund-status";
 import { authenticate } from "../shopify.server";
 import { fundedSandboxEnabled } from "../services/funded-return-sandbox.server";
 import {
+  canArchiveReturn,
   canReceiveReturn,
   canRemoveReturn,
   canRetryReturn,
   receiveReturnedItems,
   removeUnsubmittedReturn,
   retryApprovedReturn,
+  setReturnArchived,
   wantsRestock,
 } from "../services/automatic-return.server";
 import {
@@ -59,6 +61,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const merchant = await provisionMerchant(session.shop, admin);
   const url = new URL(request.url);
+  const showArchived = url.searchParams.get("archived") === "1";
 
   const response = await admin.graphql(
     `#graphql
@@ -96,7 +99,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     await Promise.all([
       prisma.storePolicy.findUnique({ where: { shop: session.shop } }),
       prisma.agentReturn.findMany({
-        where: { shop: session.shop },
+        where: {
+          shop: session.shop,
+          archivedAt: showArchived ? { not: null } : null,
+        },
         orderBy: { createdAt: "desc" },
         take: 10,
       }),
@@ -118,6 +124,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     retried: url.searchParams.get("retried") === "true",
     received: url.searchParams.get("received") === "true",
     removed: url.searchParams.get("removed") === "true",
+    archivedOne: url.searchParams.get("archived_one") === "true",
+    restored: url.searchParams.get("restored") === "true",
     listingSaved: url.searchParams.get("listingSaved") === "true",
     returnPortalUrl: `${appOrigin()}/returns/${session.shop}`,
     listed: merchant.discoveryPublished,
@@ -149,8 +157,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     },
     instructionsMaxLength: RETURN_INSTRUCTIONS_MAX_LENGTH,
     agentsTemplateSection: merchantAgentsTemplateSection(guidance),
+    showArchived,
+    archivedCount: await prisma.agentReturn.count({
+      where: { shop: session.shop, archivedAt: { not: null } },
+    }),
     agentReturns: agentReturns.map((agentReturn) => ({
       ...agentReturn,
+      archivable: canArchiveReturn(agentReturn),
       retryable: canRetryReturn(agentReturn),
       receivable: canReceiveReturn(agentReturn),
       removable: canRemoveReturn(agentReturn),
@@ -172,6 +185,30 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       data: { status: "COMPLETED", completedAt: new Date() },
     });
     return redirect("/app?privacyResolved=true");
+  }
+
+  if (
+    formData.get("intent") === "archiveReturn" ||
+    formData.get("intent") === "unarchiveReturn"
+  ) {
+    const agentReturnId = formData.get("agentReturnId");
+    if (typeof agentReturnId !== "string" || !agentReturnId)
+      throw new Response("Return ID is required.", { status: 400 });
+    const archived = formData.get("intent") === "archiveReturn";
+    try {
+      await setReturnArchived(session.shop, agentReturnId, archived);
+    } catch (error) {
+      return {
+        heading: archived
+          ? "The return wasn't archived"
+          : "The return wasn't restored",
+        message:
+          error instanceof Error ? error.message : "Please try again.",
+      };
+    }
+    return redirect(
+      archived ? "/app?archived_one=true" : "/app?archived=1&restored=true",
+    );
   }
 
   if (
@@ -401,6 +438,10 @@ export default function RefundDashboard() {
     retried,
     received,
     removed,
+    archivedOne,
+    restored,
+    showArchived,
+    archivedCount,
     listed,
     listingSaved,
     privacyResolved,
@@ -490,7 +531,12 @@ export default function RefundDashboard() {
   }
 
   const returnAction = (
-    intent: "retryReturn" | "receiveReturn" | "removeReturn",
+    intent:
+      | "retryReturn"
+      | "receiveReturn"
+      | "removeReturn"
+      | "archiveReturn"
+      | "unarchiveReturn",
     agentReturnId: string,
     // Null where the button's own label is the whole explanation, which keeps
     // a row that needs nothing from the merchant down to one line.
@@ -574,6 +620,17 @@ export default function RefundDashboard() {
         </s-banner>
       )}
 
+      {archivedOne && (
+        <s-banner heading="Return archived" tone="success">
+          It is off this list. Shopify still has the return, and a customer data
+          request still reports it.
+        </s-banner>
+      )}
+      {restored && (
+        <s-banner heading="Return restored" tone="success">
+          It is back on the main list.
+        </s-banner>
+      )}
       {removed && (
         <s-banner heading="Return request removed" tone="success">
           The customer can try that return again.
@@ -632,11 +689,28 @@ export default function RefundDashboard() {
           </s-stack>
         </s-section>
       )}
-      <s-section heading="Recent returns" padding="none">
+      <s-section
+        heading={showArchived ? "Archived returns" : "Recent returns"}
+        padding="none"
+      >
+        <s-box padding="base">
+          {showArchived ? (
+            <s-link href="/app">Back to recent returns</s-link>
+          ) : (
+            archivedCount > 0 && (
+              <s-link href="/app?archived=1">
+                View {archivedCount} archived return
+                {archivedCount === 1 ? "" : "s"}
+              </s-link>
+            )
+          )}
+        </s-box>
         {agentReturns.length === 0 ? (
           <s-box padding="large">
             <s-paragraph color="subdued">
-              No customer-agent return requests have been received yet.
+              {showArchived
+                ? "Nothing archived yet."
+                : "No customer-agent return requests have been received yet."}
             </s-paragraph>
           </s-box>
         ) : (
@@ -686,6 +760,20 @@ export default function RefundDashboard() {
                           </s-link>
                         )}
                       </s-stack>
+                      {showArchived
+                        ? returnAction(
+                            "unarchiveReturn",
+                            agentReturn.id,
+                            null,
+                            "Restore",
+                          )
+                        : agentReturn.archivable &&
+                          returnAction(
+                            "archiveReturn",
+                            agentReturn.id,
+                            null,
+                            "Archive",
+                          )}
                       {/* On their own line: two buttons beside the badge and
                           link wrapped badly at this column width. */}
                       {agentReturn.receivable &&
