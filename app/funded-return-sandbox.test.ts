@@ -14,10 +14,6 @@ import {
   type SandboxState,
 } from "./funded-return-sandbox";
 import { fundedSandboxEnabled } from "./services/funded-return-sandbox.server";
-import {
-  dashboardFundedActionAvailable,
-  fundedReturnProgress,
-} from "./funded-return-display";
 
 function step(
   state: SandboxState,
@@ -321,28 +317,4 @@ test("funded sandbox: snapshots saved before intents still parse", () => {
   const parsed = sandboxStateSchema.parse(legacy);
   assert.equal(parsed.payoutIntentId, null);
   assert.equal(parsed.collectionIntentId, null);
-});
-
-test("funded dashboard: labels and actions follow the merchant handoff", () => {
-  const paidState = paid();
-  assert.equal(fundedReturnProgress(paidState).label, "Refund paid by Gooper");
-  assert.equal(
-    dashboardFundedActionAvailable(paidState, "RECEIVE_ITEM"),
-    true,
-  );
-  const received = step(paidState, "RECEIVE_ITEM");
-  assert.equal(fundedReturnProgress(received).label, "Ready to complete");
-  assert.equal(
-    dashboardFundedActionAvailable(received, "INSPECT_ITEM"),
-    true,
-  );
-  const accepted = step(received, "INSPECT_ITEM", received.amountMinor);
-  assert.equal(
-    fundedReturnProgress(accepted).label,
-    "Completing Gooper return",
-  );
-  assert.equal(
-    dashboardFundedActionAvailable(accepted, "INSPECT_ITEM"),
-    false,
-  );
 });

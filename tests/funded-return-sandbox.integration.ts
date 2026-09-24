@@ -3,9 +3,7 @@ import { randomUUID } from "node:crypto";
 import prisma from "../app/db.server";
 import {
   createFundedSandbox,
-  listDashboardFundedReturns,
   listFundedSandboxes,
-  updateDashboardFundedReturn,
   updateFundedSandbox,
 } from "../app/services/funded-return-sandbox.server";
 import { sandboxBalances } from "../app/funded-return-sandbox";
@@ -136,72 +134,6 @@ try {
     FUNDED_EXPOSURE: 2500,
     MERCHANT_RECEIVABLE: 0,
   });
-
-  // The main dashboard shows and advances only a paid case that is tied to a
-  // real order and still has actively reserved funded units.
-  const dashboardId = randomUUID();
-  const orderId = "gid://shopify/Order/1007";
-  await createFundedSandbox(shop, dashboardId, "CAD", {
-    amountMinor: 950,
-    order: {
-      orderId,
-      orderName: "#1007",
-      lineItemId: "gid://shopify/LineItem/2007",
-      title: "Orbit Wireless Keyboard",
-      quantity: 1,
-    },
-  });
-  await prisma.fundedEntitlement.create({
-    data: {
-      id: randomUUID(),
-      shop,
-      caseId: dashboardId,
-      orderId,
-      lineItemId: "gid://shopify/LineItem/2007",
-      quantity: 1,
-    },
-  });
-  assert.deepEqual(await listDashboardFundedReturns(shop), []);
-  await updateFundedSandbox(shop, dashboardId, 0, {
-    id: randomUUID(),
-    action: "APPROVE_RISK",
-  });
-  await requestSandboxPayment({
-    shop,
-    caseId: dashboardId,
-    version: 1,
-    commandId: randomUUID(),
-    operation: "payout",
-  });
-  await settleThroughProvider();
-  let dashboard = await listDashboardFundedReturns(shop);
-  assert.deepEqual(dashboard.map((candidate) => candidate.id), [dashboardId]);
-  await assert.rejects(
-    updateDashboardFundedReturn(otherShop, {
-      id: dashboardId,
-      version: dashboard[0].version,
-      actionId: randomUUID(),
-      action: "RECEIVE_ITEM",
-    }),
-    /active Gooper-funded return/,
-  );
-  await updateDashboardFundedReturn(shop, {
-    id: dashboardId,
-    version: dashboard[0].version,
-    actionId: randomUUID(),
-    action: "RECEIVE_ITEM",
-  });
-  dashboard = await listDashboardFundedReturns(shop);
-  await updateDashboardFundedReturn(shop, {
-    id: dashboardId,
-    version: dashboard[0].version,
-    actionId: randomUUID(),
-    action: "INSPECT_ITEM",
-  });
-  dashboard = await listDashboardFundedReturns(shop);
-  assert.equal(dashboard[0].state.returnStatus, "APPROVED");
-  assert.equal(dashboard[0].state.acceptedMinor, 950);
-  assert.equal(dashboard[0].state.collection, "DUE");
   assert.equal(
     await prisma.agentReturn.count({ where: { shop } }),
     0,
@@ -227,7 +159,6 @@ try {
   await prisma.fundedPaymentEvent.deleteMany({ where: { shop } });
   await prisma.fundedPaymentIntent.deleteMany({ where: { shop } });
   await prisma.fundedSandboxProviderPayment.deleteMany({ where: { shop } });
-  await prisma.fundedEntitlement.deleteMany({ where: { shop } });
   await prisma.fundedReturnSandbox.deleteMany({ where: { shop } });
   await prisma.$disconnect();
 }

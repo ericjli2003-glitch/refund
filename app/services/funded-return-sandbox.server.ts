@@ -51,62 +51,8 @@ export async function listFundedSandboxes(shop: string) {
   return rows.map((row) => ({
     id: row.id,
     version: row.version,
-    createdAt: row.createdAt,
     state: sandboxStateSchema.parse(row.snapshot),
   }));
-}
-
-// Only real development-store orders whose line-item units are actively
-// reserved for Gooper may use funded-return wording on the main dashboard.
-// Synthetic samples and ordinary Shopify refunds never enter this list.
-export async function listDashboardFundedReturns(shop: string) {
-  requireFundedSandbox();
-  const cases = await listFundedSandboxes(shop);
-  if (!cases.length) return [];
-  const funded = await prisma.fundedEntitlement.findMany({
-    where: {
-      shop,
-      status: "ACTIVE",
-      caseId: { in: cases.map((row) => row.id) },
-    },
-    select: { caseId: true, orderId: true },
-  });
-  return cases.filter(
-    (row) =>
-      row.state.payout === "SUCCEEDED" &&
-      row.state.order !== null &&
-      funded.some(
-        (unit) =>
-          unit.caseId === row.id && unit.orderId === row.state.order?.orderId,
-      ),
-  );
-}
-
-export async function updateDashboardFundedReturn(
-  shop: string,
-  input: {
-    id: string;
-    version: number;
-    actionId: string;
-    action: "RECEIVE_ITEM" | "INSPECT_ITEM";
-  },
-) {
-  requireFundedSandbox();
-  const id = z.string().uuid().parse(input.id);
-  const version = z.number().int().nonnegative().parse(input.version);
-  const actionId = z.string().uuid().parse(input.actionId);
-  const row = (await listDashboardFundedReturns(shop)).find(
-    (candidate) => candidate.id === id,
-  );
-  if (!row)
-    throw new SandboxError("This isn't an active Gooper-funded return.");
-  await updateFundedSandbox(shop, id, version, {
-    id: actionId,
-    action: input.action,
-    ...(input.action === "INSPECT_ITEM"
-      ? { acceptedMinor: row.state.amountMinor }
-      : {}),
-  });
 }
 
 type Transaction = Prisma.TransactionClient;
