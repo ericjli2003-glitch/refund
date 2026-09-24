@@ -132,8 +132,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     fundedSandbox,
     gooperPreview,
-    appStoreShot:
-      gooperPreview && url.searchParams.get("app_store_shot") === "1",
+    appStoreShot: url.searchParams.get("app_store_shot") === "1",
     locations: responseJson.data.locations.nodes,
     collections,
     canReadProducts,
@@ -563,7 +562,7 @@ function ReturnAutomationOverview({
           </s-text>
         </s-stack>
         <s-stack direction="block" gap="small-200">
-          <s-text type="strong">Assistant returns</s-text>
+          <s-text type="strong">AI-assisted returns</s-text>
           <s-badge tone={verifiedStoreLinks ? "success" : "warning"}>
             {verifiedStoreLinks ? "Enabled" : "Paused"}
           </s-badge>
@@ -790,9 +789,9 @@ export default function RefundDashboard() {
                 Funded returns sandbox
               </s-button>
             )}
-            {!gooperPreview && (
+            {fundedSandbox && !gooperPreview && (
               <s-button href="/app?gooper_preview=1" icon="view">
-                Preview Gooper financing
+                Preview funded returns
               </s-button>
             )}
             {merchantProfileUrl && (
@@ -836,7 +835,7 @@ export default function RefundDashboard() {
 
       {gooperPreview && !appStoreShot && (
         <s-banner
-          heading="Gooper financing preview"
+          heading="Funded returns preview"
           tone="info"
           dismissible
         >
@@ -1162,42 +1161,44 @@ export default function RefundDashboard() {
         )}
       </s-section>
 
-      <s-section slot="aside" heading="Store directory listing">
-        <form
-          method="post"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit(event.currentTarget);
-          }}
-        >
-          <input type="hidden" name="intent" value="setListing" />
-          <input type="hidden" name="listed" value={listed ? "false" : "true"} />
-          <s-stack direction="block" gap="base">
-            <s-paragraph>
-              {listed
-                ? "Your store is listed, so customers and assistants can find it by name in Gooper.io's store directory."
-                : "Your store is hidden from Gooper.io's store directory."}
-            </s-paragraph>
-            <Explainer summary="What listing publishes">
-              <s-paragraph color="subdued">
-                Listing publishes only your store name, website and Gooper.io return
-                page, at /stores, in /llms.txt and to assistants searching the
-                directory. Customers still verify every purchase, by confirming
-                their email or with your store&apos;s Shopify sign-in. Hiding the store doesn&apos;t affect
-                your return portal, your app proxy guide, or returns started from
-                your own website.
-              </s-paragraph>
-            </Explainer>
-            <s-box>
-              <s-button type="submit" variant="secondary">
+      {!appStoreShot && (
+        <s-section slot="aside" heading="Store directory listing">
+          <form
+            method="post"
+            onSubmit={(event) => {
+              event.preventDefault();
+              submit(event.currentTarget);
+            }}
+          >
+            <input type="hidden" name="intent" value="setListing" />
+            <input type="hidden" name="listed" value={listed ? "false" : "true"} />
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
                 {listed
-                  ? "Hide my store from the directory"
-                  : "List my store in the directory"}
-              </s-button>
-            </s-box>
-          </s-stack>
-        </form>
-      </s-section>
+                  ? "Your store is listed, so customers and assistants can find it by name in Gooper.io's store directory."
+                  : "Your store is hidden from Gooper.io's store directory."}
+              </s-paragraph>
+              <Explainer summary="What listing publishes">
+                <s-paragraph color="subdued">
+                  Listing publishes only your store name, website and Gooper.io return
+                  page, at /stores, in /llms.txt and to assistants searching the
+                  directory. Customers still verify every purchase, by confirming
+                  their email or with your store&apos;s Shopify sign-in. Hiding the store doesn&apos;t affect
+                  your return portal, your app proxy guide, or returns started from
+                  your own website.
+                </s-paragraph>
+              </Explainer>
+              <s-box>
+                <s-button type="submit" variant="secondary">
+                  {listed
+                    ? "Hide my store from the directory"
+                    : "List my store in the directory"}
+                </s-button>
+              </s-box>
+            </s-stack>
+          </form>
+        </s-section>
+      )}
 
       {actionData?.error && (
         <s-banner heading={actionData.heading} tone="critical">
@@ -1348,7 +1349,7 @@ export default function RefundDashboard() {
               </s-stack>
               <s-stack direction="block" gap="base">
                 {!policy.returnRulesConfirmedAt && (
-                  <s-banner heading="Save to turn on assistant returns" tone="info">
+                  <s-banner heading="Save to turn on AI-assisted returns" tone="info">
                     Customers can&apos;t start returns at your store from ChatGPT or
                     Claude until you review the fees and final-sale collections
                     below and save.
@@ -1356,7 +1357,7 @@ export default function RefundDashboard() {
                 )}
                 {policy.returnRulesMismatch && (
                   <s-banner
-                    heading="Assistant returns are paused"
+                    heading="AI-assisted returns are paused"
                     tone="warning"
                   >
                     {policy.returnRulesMismatch} Check the fees and final-sale
@@ -1370,14 +1371,14 @@ export default function RefundDashboard() {
                     setVerifiedStoreLinks(event.currentTarget.checked)
                   }
                 ></s-switch>
-                <Explainer summary="How assistant returns work">
+                <Explainer summary="How AI-assisted returns work">
                   <s-paragraph color="subdued">
                     Customers who add Gooper.io to ChatGPT or Claude confirm their email
                     once, and Gooper.io finds their orders at your store by that email,
                     with no store sign-in. Shopify doesn’t apply your return rules to
                     those returns, so Gooper.io applies the fees and final-sale
                     collections below. Saving confirms they match your Shopify return
-                    rules. Turn this off to stop returns through assistants; your
+                    rules. Turn this off to stop AI-assisted returns; your
                     return portal keeps working.
                   </s-paragraph>
                 </Explainer>
@@ -1485,57 +1486,59 @@ export default function RefundDashboard() {
         </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="Add a return button to your storefront (optional)">
-        <s-stack direction="block" gap="base">
-          <s-paragraph color="subdued">
-            Your return portal already works without this. Turning it on adds a
-            “Start a return” button to the bottom-right corner of every page of
-            your store, plus return details that AI shopping assistants can
-            read. It works with every Shopify theme, including older ones.
-          </s-paragraph>
-          <Explainer summary="How to turn it on and off">
-            <s-unordered-list>
-              <s-list-item>
-                <s-text type="strong">Turn it on:</s-text> click the button below.
-                Your theme editor opens with it switched on. Click Save.
-              </s-list-item>
-              <s-list-item>
-                <s-text type="strong">Hide the button, keep AI assistant support:</s-text>{" "}
-                in the theme editor, open App embeds → AI return assistance and
-                untick Show the return button.
-              </s-list-item>
-              <s-list-item>
-                <s-text type="strong">Turn it off completely:</s-text> go to Online
-                Store → Themes → Customize → App embeds, switch off AI return
-                assistance, then Save. Uninstalling Gooper.io also removes it.
-              </s-list-item>
-            </s-unordered-list>
-          </Explainer>
-          <s-box>
-            <s-button
-              href={siteToolsActivationUrl}
-              target="_top"
-              variant="secondary"
-            >
-              {storefrontActive
-                ? "Manage storefront assistance"
-                : "Activate in theme editor"}
-            </s-button>
-          </s-box>
-          {storefrontActive && (
-            <s-badge tone="success">Active on your published theme</s-badge>
-          )}
-          {gooperPreview && (
+      {!appStoreShot && (
+        <s-section slot="aside" heading="Add a return button to your storefront (optional)">
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Your return portal already works without this. Turning it on adds a
+              “Start a return” button to the bottom-right corner of every page of
+              your store, plus return details that AI shopping assistants can
+              read. It works with every Shopify theme, including older ones.
+            </s-paragraph>
+            <Explainer summary="How to turn it on and off">
+              <s-unordered-list>
+                <s-list-item>
+                  <s-text type="strong">Turn it on:</s-text> click the button below.
+                  Your theme editor opens with it switched on. Click Save.
+                </s-list-item>
+                <s-list-item>
+                  <s-text type="strong">Hide the button, keep AI assistant support:</s-text>{" "}
+                  in the theme editor, open App embeds → AI return assistance and
+                  untick Show the return button.
+                </s-list-item>
+                <s-list-item>
+                  <s-text type="strong">Turn it off completely:</s-text> go to Online
+                  Store → Themes → Customize → App embeds, switch off AI return
+                  assistance, then Save. Uninstalling Gooper.io also removes it.
+                </s-list-item>
+              </s-unordered-list>
+            </Explainer>
             <s-box>
-              <s-button href="/app" icon="exit" variant="secondary">
-                Exit financing preview
+              <s-button
+                href={siteToolsActivationUrl}
+                target="_top"
+                variant="secondary"
+              >
+                {storefrontActive
+                  ? "Manage storefront assistance"
+                  : "Activate in theme editor"}
               </s-button>
             </s-box>
-          )}
-        </s-stack>
-      </s-section>
+            {storefrontActive && (
+              <s-badge tone="success">Active on your published theme</s-badge>
+            )}
+            {gooperPreview && (
+              <s-box>
+                <s-button href="/app" icon="exit" variant="secondary">
+                  Exit preview
+                </s-button>
+              </s-box>
+            )}
+          </s-stack>
+        </s-section>
+      )}
 
-      {!gooperPreview && (
+      {!gooperPreview && !appStoreShot && (
         <s-section slot="aside" heading="Returns section for your store's agents.md (optional)">
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
