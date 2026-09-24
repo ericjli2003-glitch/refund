@@ -783,14 +783,11 @@ export default function RefundDashboard() {
                 Funded returns sandbox
               </s-button>
             )}
-            <s-button
-              href={gooperPreview ? "/app" : "/app?gooper_preview=1"}
-              icon={gooperPreview ? "exit" : "view"}
-            >
-              {gooperPreview
-                ? "Exit financing preview"
-                : "Preview Gooper financing"}
-            </s-button>
+            {!gooperPreview && (
+              <s-button href="/app?gooper_preview=1" icon="view">
+                Preview Gooper financing
+              </s-button>
+            )}
             {merchantProfileUrl && (
               <s-button href={merchantProfileUrl} target="_blank">
                 View your public return page
@@ -831,7 +828,11 @@ export default function RefundDashboard() {
       )}
 
       {gooperPreview && (
-        <s-banner heading="Gooper financing preview" tone="info">
+        <s-banner
+          heading="Gooper financing preview"
+          tone="info"
+          dismissible
+        >
           This demonstrates the proposed funded-return workflow. No customer
           payout, merchant repayment, Shopify refund, or inventory change is
           made from these preview controls.
@@ -1517,25 +1518,34 @@ export default function RefundDashboard() {
           {storefrontActive && (
             <s-badge tone="success">Active on your published theme</s-badge>
           )}
+          {gooperPreview && (
+            <s-box>
+              <s-button href="/app" icon="exit" variant="secondary">
+                Exit financing preview
+              </s-button>
+            </s-box>
+          )}
         </s-stack>
       </s-section>
 
-      <s-section slot="aside" heading="Returns section for your store's agents.md (optional)">
-        <s-stack direction="block" gap="base">
-          <s-paragraph color="subdued">
-            Gooper.io already serves a current return guide at
-            /apps/refund/agents.md. Only if your theme publishes its own
-            agents.md, copy this Returns section into it, and copy it again
-            whenever you change your return guidance.
-          </s-paragraph>
-          <s-stack direction="inline" gap="base" alignItems="center">
-            <s-button onClick={() => void copyTemplate()}>
-              Copy Returns section
-            </s-button>
-            <s-text color="subdued">{copyStatus}</s-text>
+      {!gooperPreview && (
+        <s-section slot="aside" heading="Returns section for your store's agents.md (optional)">
+          <s-stack direction="block" gap="base">
+            <s-paragraph color="subdued">
+              Gooper.io already serves a current return guide at
+              /apps/refund/agents.md. Only if your theme publishes its own
+              agents.md, copy this Returns section into it, and copy it again
+              whenever you change your return guidance.
+            </s-paragraph>
+            <s-stack direction="inline" gap="base" alignItems="center">
+              <s-button onClick={() => void copyTemplate()}>
+                Copy Returns section
+              </s-button>
+              <s-text color="subdued">{copyStatus}</s-text>
+            </s-stack>
           </s-stack>
-        </s-stack>
-      </s-section>
+        </s-section>
+      )}
 
     </s-page>
   );
