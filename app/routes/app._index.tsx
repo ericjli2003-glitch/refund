@@ -773,7 +773,13 @@ export default function RefundDashboard() {
         </s-button>
       )}
 
-      <s-section slot="aside" heading="Gooper.io is installed">
+      {/* The aside is not rendered at inlineSize="large", which the screenshot
+          layout uses, so the installed status moves into the main column there
+          rather than disappearing from the shot. */}
+      <s-section
+        slot={appStoreShot ? undefined : "aside"}
+        heading="Gooper.io is installed"
+      >
         <s-stack direction="block" gap="base">
           <s-paragraph>
             Your store is connected. Customers can verify purchases and get
