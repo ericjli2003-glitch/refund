@@ -27,6 +27,13 @@ allow only SANDBOX intents. No real provider is selected or connected, and
 customer recovery rights remain undecided. Existing Shopify refunds are
 unchanged.
 
+The production merchant dashboard also has an explicitly labeled, presentation-
+only financing preview at `/app?gooper_preview=1`. It uses the first three
+visible return rows to demonstrate “Refund paid by Gooper,” “Ready to complete,”
+and “Gooper return complete,” with client-only buttons that advance the display.
+The preview changes no refund, inventory, payout, repayment, or persisted return
+state. Normal dashboard mode continues to show the real Shopify refund statuses.
+
 Decided 2026-09-18/19: Canada first (CAD), merchant-paid pricing (Starter $49 + 5%,
 Growth $199 + 4%, $2 minimum, CAD, monthly, 60-day early-supporter trial waiving
 the subscription only), pilot limits ($150 per return, $3,000 per merchant,
