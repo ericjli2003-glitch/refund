@@ -9,9 +9,17 @@ import { useActionData, useLoaderData, useSubmit } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import prisma from "../db.server";
+import {
+  dashboardFundedActionAvailable,
+  fundedReturnProgress,
+} from "../funded-return-display";
 import { describeRefundProgress } from "../refund-status";
 import { authenticate } from "../shopify.server";
-import { fundedSandboxEnabled } from "../services/funded-return-sandbox.server";
+import {
+  fundedSandboxEnabled,
+  listDashboardFundedReturns,
+  updateDashboardFundedReturn,
+} from "../services/funded-return-sandbox.server";
 import {
   canArchiveReturn,
   canReceiveReturn,
@@ -62,6 +70,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const merchant = await provisionMerchant(session.shop, admin);
   const url = new URL(request.url);
   const showArchived = url.searchParams.get("archived") === "1";
+  const fundedSandbox = fundedSandboxEnabled();
 
   const response = await admin.graphql(
     `#graphql
@@ -113,9 +122,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       }),
       publicReturnGuidance(session.shop),
     ]);
+  const gooperReturns =
+    fundedSandbox && !showArchived
+      ? await listDashboardFundedReturns(session.shop)
+      : [];
 
   return {
-    fundedSandbox: fundedSandboxEnabled(),
+    fundedSandbox,
+    gooperPreview: !showArchived && url.searchParams.get("gooper_preview") === "1",
     locations: responseJson.data.locations.nodes,
     collections,
     canReadProducts,
@@ -124,6 +138,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     retried: url.searchParams.get("retried") === "true",
     received: url.searchParams.get("received") === "true",
     removed: url.searchParams.get("removed") === "true",
+    gooperReceived: url.searchParams.get("gooperReceived") === "true",
+    gooperCompleted: url.searchParams.get("gooperCompleted") === "true",
     archivedOne: url.searchParams.get("archived_one") === "true",
     restored: url.searchParams.get("restored") === "true",
     listingSaved: url.searchParams.get("listingSaved") === "true",
@@ -168,6 +184,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       receivable: canReceiveReturn(agentReturn),
       removable: canRemoveReturn(agentReturn),
     })),
+    gooperReturns,
+    gooperActionId: gooperReturns.length ? crypto.randomUUID() : null,
     privacyRequests,
   };
 };
@@ -175,6 +193,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session, redirect } = await authenticate.admin(request);
   const formData = await request.formData();
+  if (
+    formData.get("intent") === "fundedReceive" ||
+    formData.get("intent") === "fundedComplete"
+  ) {
+    if (!fundedSandboxEnabled()) throw new Response("Not found", { status: 404 });
+    const completesReturn = formData.get("intent") === "fundedComplete";
+    try {
+      await updateDashboardFundedReturn(session.shop, {
+        id: String(formData.get("fundedReturnId") ?? ""),
+        version: Number(formData.get("version")),
+        actionId: String(formData.get("actionId") ?? ""),
+        action: completesReturn ? "INSPECT_ITEM" : "RECEIVE_ITEM",
+      });
+    } catch (error) {
+      return {
+        heading: "The Gooper return wasn't updated",
+        error:
+          error instanceof Error ? error.message : "The action did not finish.",
+      };
+    }
+    return redirect(
+      completesReturn ? "/app?gooperCompleted=true" : "/app?gooperReceived=true",
+    );
+  }
   if (formData.get("intent") === "resolvePrivacyRequest") {
     const requestId = formData.get("requestId");
     if (typeof requestId !== "string" || !requestId) {
@@ -427,6 +469,24 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+const FINANCING_PREVIEW_STAGES = [
+  {
+    label: "Refund paid by Gooper",
+    icon: "payout-dollar",
+    actionLabel: "Mark item received",
+  },
+  {
+    label: "Ready to complete",
+    icon: "package-fulfilled",
+    actionLabel: "Complete Gooper return",
+  },
+  {
+    label: "Gooper return complete",
+    icon: "receipt-paid",
+    actionLabel: null,
+  },
+] as const;
+
 // Polaris has no disclosure component, so the browser's own <details> keeps an
 // explanation one click away rather than filling the page with it. Native means
 // it opens without JavaScript and reads correctly to a screen reader.
@@ -516,6 +576,7 @@ function ReturnAutomationOverview({
 export default function RefundDashboard() {
   const {
     fundedSandbox,
+    gooperPreview,
     locations,
     collections,
     canReadProducts,
@@ -524,6 +585,8 @@ export default function RefundDashboard() {
     retried,
     received,
     removed,
+    gooperReceived,
+    gooperCompleted,
     archivedOne,
     restored,
     showArchived,
@@ -538,6 +601,8 @@ export default function RefundDashboard() {
     instructionsMaxLength,
     agentsTemplateSection,
     agentReturns,
+    gooperReturns,
+    gooperActionId,
     privacyRequests,
   } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
@@ -606,6 +671,9 @@ export default function RefundDashboard() {
     policy.returnPolicyUrl ?? "",
   );
   const [copyStatus, setCopyStatus] = useState("");
+  const [previewStageByReturn, setPreviewStageByReturn] = useState<
+    Record<string, number>
+  >({});
 
   async function copyTemplate() {
     try {
@@ -655,6 +723,37 @@ export default function RefundDashboard() {
     </form>
   );
 
+  const fundedReturnAction = (
+    intent: "fundedReceive" | "fundedComplete",
+    fundedReturnId: string,
+    version: number,
+    label: string,
+    explanation?: string,
+  ) => (
+    <form
+      method="post"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit(event.currentTarget);
+      }}
+    >
+      <input type="hidden" name="intent" value={intent} />
+      <input type="hidden" name="fundedReturnId" value={fundedReturnId} />
+      <input type="hidden" name="version" value={version} />
+      <input type="hidden" name="actionId" value={gooperActionId ?? ""} />
+      <s-stack direction="block" gap="small-200">
+        {explanation && (
+          <s-paragraph color="subdued">{explanation}</s-paragraph>
+        )}
+        <s-box>
+          <s-button type="submit" variant="secondary">
+            {label}
+          </s-button>
+        </s-box>
+      </s-stack>
+    </form>
+  );
+
   // The aside column renders only at inlineSize="base". At "large" every
   // section slotted into it disappears from the page entirely.
   return (
@@ -684,6 +783,14 @@ export default function RefundDashboard() {
                 Funded returns sandbox
               </s-button>
             )}
+            <s-button
+              href={gooperPreview ? "/app" : "/app?gooper_preview=1"}
+              icon={gooperPreview ? "exit" : "view"}
+            >
+              {gooperPreview
+                ? "Exit financing preview"
+                : "Preview Gooper financing"}
+            </s-button>
             {merchantProfileUrl && (
               <s-button href={merchantProfileUrl} target="_blank">
                 View your public return page
@@ -708,6 +815,26 @@ export default function RefundDashboard() {
       {received && (
         <s-banner heading="Return marked received" tone="success">
           Check the return&apos;s status under Recent returns.
+        </s-banner>
+      )}
+
+      {gooperReceived && (
+        <s-banner heading="Gooper return marked received" tone="success">
+          Review the item, then complete the Gooper return when it is accepted.
+        </s-banner>
+      )}
+
+      {gooperCompleted && (
+        <s-banner heading="Gooper return ready for repayment" tone="success">
+          The accepted amount is ready for repayment to Gooper.
+        </s-banner>
+      )}
+
+      {gooperPreview && (
+        <s-banner heading="Gooper financing preview" tone="info">
+          This demonstrates the proposed funded-return workflow. No customer
+          payout, merchant repayment, Shopify refund, or inventory change is
+          made from these preview controls.
         </s-banner>
       )}
 
@@ -796,7 +923,7 @@ export default function RefundDashboard() {
             )
           )}
         </s-box>
-        {agentReturns.length === 0 ? (
+        {agentReturns.length === 0 && gooperReturns.length === 0 ? (
           <s-box padding="large">
             <s-paragraph color="subdued">
               {showArchived
@@ -815,8 +942,66 @@ export default function RefundDashboard() {
               </s-table-header>
             </s-table-header-row>
             <s-table-body>
-              {agentReturns.map((agentReturn) => (
-                <s-table-row key={agentReturn.id}>
+              {gooperReturns.map((gooperReturn) => {
+                const progress = fundedReturnProgress(gooperReturn.state);
+                const amount = formatMoney({
+                  amount: (gooperReturn.state.amountMinor / 100).toFixed(2),
+                  currencyCode: gooperReturn.state.currency,
+                });
+                return (
+                  <s-table-row key={`funded-${gooperReturn.id}`}>
+                    <s-table-cell>
+                      <s-stack direction="block" gap="small-200">
+                        <s-text>{gooperReturn.state.order?.orderName}</s-text>
+                        <s-text color="subdued">
+                          {gooperReturn.state.order?.title}
+                        </s-text>
+                      </s-stack>
+                    </s-table-cell>
+                    <s-table-cell>
+                      {formatDate(gooperReturn.createdAt.toString())}
+                    </s-table-cell>
+                    <s-table-cell>
+                      <s-stack direction="block" gap="small-200">
+                        <s-badge tone={progress.tone}>{progress.label}</s-badge>
+                        {dashboardFundedActionAvailable(
+                          gooperReturn.state,
+                          "RECEIVE_ITEM",
+                        ) &&
+                          fundedReturnAction(
+                            "fundedReceive",
+                            gooperReturn.id,
+                            gooperReturn.version,
+                            "Mark item received",
+                          )}
+                        {dashboardFundedActionAvailable(
+                          gooperReturn.state,
+                          "INSPECT_ITEM",
+                        ) &&
+                          fundedReturnAction(
+                            "fundedComplete",
+                            gooperReturn.id,
+                            gooperReturn.version,
+                            "Complete Gooper return",
+                            `Confirms the item was accepted and approves the ${amount} repayment to Gooper.`,
+                          )}
+                      </s-stack>
+                    </s-table-cell>
+                    <s-table-cell>{amount}</s-table-cell>
+                  </s-table-row>
+                );
+              })}
+              {agentReturns.map((agentReturn, index) => {
+                const previewStageIndex =
+                  gooperPreview && index < FINANCING_PREVIEW_STAGES.length
+                    ? (previewStageByReturn[agentReturn.id] ?? index)
+                    : null;
+                const preview =
+                  previewStageIndex === null
+                    ? null
+                    : FINANCING_PREVIEW_STAGES[previewStageIndex];
+                return (
+                  <s-table-row key={agentReturn.id}>
                   <s-table-cell>
                     {agentReturn.orderName ?? agentReturn.orderId}
                   </s-table-cell>
@@ -830,20 +1015,29 @@ export default function RefundDashboard() {
                         gap="small-200"
                         alignItems="center"
                       >
-                        <s-badge
-                          tone={
-                            agentReturn.status !== "NEEDS_ATTENTION" && agentReturn.refundStatus === "SUCCESS"
-                              ? "success"
-                              : agentReturn.status === "NEEDS_ATTENTION"
-                                ? "critical"
-                                : agentReturn.status === "NOT_SUBMITTED"
-                                  ? "warning"
-                                  : "info"
-                          }
-                        >
-                          {describeRefundProgress(agentReturn).title}
-                        </s-badge>
-                        {agentReturn.returnId && !agentReturn.itemReceivedAt && (
+                        {preview ? (
+                          <s-badge tone="success" icon={preview.icon}>
+                            {preview.label}
+                          </s-badge>
+                        ) : (
+                          <s-badge
+                            tone={
+                              agentReturn.status !== "NEEDS_ATTENTION" &&
+                              agentReturn.refundStatus === "SUCCESS"
+                                ? "success"
+                                : agentReturn.status === "NEEDS_ATTENTION"
+                                  ? "critical"
+                                  : agentReturn.status === "NOT_SUBMITTED"
+                                    ? "warning"
+                                    : "info"
+                            }
+                          >
+                            {describeRefundProgress(agentReturn).title}
+                          </s-badge>
+                        )}
+                        {!preview &&
+                          agentReturn.returnId &&
+                          !agentReturn.itemReceivedAt && (
                           <s-link
                             href={`shopify:admin/orders/${agentReturn.orderId.split("/").pop()}`}
                           >
@@ -851,73 +1045,97 @@ export default function RefundDashboard() {
                           </s-link>
                         )}
                       </s-stack>
-                      {showArchived
-                        ? returnAction(
-                            "unarchiveReturn",
-                            agentReturn.id,
-                            null,
-                            "Restore",
-                          )
-                        : agentReturn.archivable &&
-                          returnAction(
-                            "archiveReturn",
-                            agentReturn.id,
-                            null,
-                            "Archive",
-                          )}
-                      {/* On their own line: two buttons beside the badge and
+                      {preview ? (
+                        preview.actionLabel && (
+                          <s-box>
+                            <s-button
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                setPreviewStageByReturn((current) => ({
+                                  ...current,
+                                  [agentReturn.id]: Math.min(
+                                    (previewStageIndex ?? 0) + 1,
+                                    FINANCING_PREVIEW_STAGES.length - 1,
+                                  ),
+                                }))
+                              }
+                            >
+                              {preview.actionLabel}
+                            </s-button>
+                          </s-box>
+                        )
+                      ) : (
+                        <>
+                          {showArchived
+                            ? returnAction(
+                                "unarchiveReturn",
+                                agentReturn.id,
+                                null,
+                                "Restore",
+                              )
+                            : agentReturn.archivable &&
+                              returnAction(
+                                "archiveReturn",
+                                agentReturn.id,
+                                null,
+                                "Archive",
+                              )}
+                          {/* On their own line: two buttons beside the badge and
                           link wrapped badly at this column width. */}
-                      {agentReturn.receivable &&
-                        agentReturn.refundTiming !== "ON_RECEIPT" && (
-                          <s-stack direction="inline" gap="small-200">
-                            {returnAction(
+                          {agentReturn.receivable &&
+                            agentReturn.refundTiming !== "ON_RECEIPT" && (
+                              <s-stack direction="inline" gap="small-200">
+                                {returnAction(
+                                  "receiveReturn",
+                                  agentReturn.id,
+                                  null,
+                                  "Mark received",
+                                  { restock: "false" },
+                                )}
+                                {returnAction(
+                                  "receiveReturn",
+                                  agentReturn.id,
+                                  null,
+                                  "Mark received and restock",
+                                )}
+                              </s-stack>
+                            )}
+                          {agentReturn.itemReceivedAt && (
+                            <s-paragraph color="subdued">
+                              Item received{" "}
+                              {formatDate(agentReturn.itemReceivedAt.toString())}
+                            </s-paragraph>
+                          )}
+                          {agentReturn.failureReason && (
+                            <s-paragraph>{agentReturn.failureReason}</s-paragraph>
+                          )}
+                          {agentReturn.removable &&
+                            returnAction(
+                              "removeReturn",
+                              agentReturn.id,
+                              agentReturn.status === "NOT_SUBMITTED"
+                                ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
+                                : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
+                              "Remove",
+                            )}
+                          {agentReturn.retryable &&
+                            returnAction(
+                              "retryReturn",
+                              agentReturn.id,
+                              "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
+                              "Retry refund",
+                            )}
+                          {agentReturn.receivable &&
+                            agentReturn.refundTiming === "ON_RECEIPT" &&
+                            returnAction(
                               "receiveReturn",
                               agentReturn.id,
-                              null,
-                              "Mark received",
-                              { restock: "false" },
+                              "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
+                              "Mark received and refund",
                             )}
-                            {returnAction(
-                              "receiveReturn",
-                              agentReturn.id,
-                              null,
-                              "Mark received and restock",
-                            )}
-                          </s-stack>
-                        )}
-                      {agentReturn.itemReceivedAt && (
-                        <s-paragraph color="subdued">
-                          Item received{" "}
-                          {formatDate(agentReturn.itemReceivedAt.toString())}
-                        </s-paragraph>
+                        </>
                       )}
-                      {agentReturn.failureReason && (
-                        <s-paragraph>{agentReturn.failureReason}</s-paragraph>
-                      )}
-                      {agentReturn.removable &&
-                        returnAction(
-                          "removeReturn",
-                          agentReturn.id,
-                          agentReturn.status === "NOT_SUBMITTED"
-                            ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
-                            : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
-                          "Remove",
-                        )}
-                      {agentReturn.retryable &&
-                        returnAction(
-                          "retryReturn",
-                          agentReturn.id,
-                          "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
-                          "Retry refund",
-                        )}
-                      {agentReturn.receivable &&
-                        agentReturn.refundTiming === "ON_RECEIPT" &&
-                        returnAction(
-                          "receiveReturn",
-                          agentReturn.id,
-                          "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
-                          "Mark received and refund",
-                        )}
                     </s-stack>
                   </s-table-cell>
                   <s-table-cell>
@@ -928,8 +1146,9 @@ export default function RefundDashboard() {
                         })
                       : "—"}
                   </s-table-cell>
-                </s-table-row>
-              ))}
+                  </s-table-row>
+                );
+              })}
             </s-table-body>
           </s-table>
         )}
