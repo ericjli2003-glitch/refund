@@ -71,6 +71,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const url = new URL(request.url);
   const showArchived = url.searchParams.get("archived") === "1";
   const fundedSandbox = fundedSandboxEnabled();
+  const gooperPreview =
+    !showArchived && url.searchParams.get("gooper_preview") === "1";
 
   const response = await admin.graphql(
     `#graphql
@@ -129,7 +131,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   return {
     fundedSandbox,
-    gooperPreview: !showArchived && url.searchParams.get("gooper_preview") === "1",
+    gooperPreview,
+    appStoreShot:
+      gooperPreview && url.searchParams.get("app_store_shot") === "1",
     locations: responseJson.data.locations.nodes,
     collections,
     canReadProducts,
@@ -577,6 +581,7 @@ export default function RefundDashboard() {
   const {
     fundedSandbox,
     gooperPreview,
+    appStoreShot,
     locations,
     collections,
     canReadProducts,
@@ -757,15 +762,17 @@ export default function RefundDashboard() {
   // The aside column renders only at inlineSize="base". At "large" every
   // section slotted into it disappears from the page entirely.
   return (
-    <s-page heading="Gooper.io" inlineSize="base">
+    <s-page heading="Gooper.io" inlineSize={appStoreShot ? "large" : "base"}>
       <style>{`
         .gooper-explainer > summary { list-style: none; }
         .gooper-explainer > summary::-webkit-details-marker { display: none; }
         .gooper-policy-editor > summary { cursor: pointer; }
       `}</style>
-      <s-button slot="primary-action" href="shopify:admin/orders">
-        View all orders
-      </s-button>
+      {!appStoreShot && (
+        <s-button slot="primary-action" href="shopify:admin/orders">
+          View all orders
+        </s-button>
+      )}
 
       <s-section slot="aside" heading="Gooper.io is installed">
         <s-stack direction="block" gap="base">
@@ -827,7 +834,7 @@ export default function RefundDashboard() {
         </s-banner>
       )}
 
-      {gooperPreview && (
+      {gooperPreview && !appStoreShot && (
         <s-banner
           heading="Gooper financing preview"
           tone="info"

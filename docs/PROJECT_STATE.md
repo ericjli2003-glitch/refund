@@ -33,6 +33,10 @@ visible return rows to demonstrate “Refund paid by Gooper,” “Ready to comp
 and “Gooper return complete,” with client-only buttons that advance the display.
 The preview changes no refund, inventory, payout, repayment, or persisted return
 state. Normal dashboard mode continues to show the real Shopify refund statuses.
+Adding `&app_store_shot=1` switches that preview to the wide App Store capture
+layout: the operational sections use the large dashboard width, setup asides are
+not rendered, and the preview notice and Shopify orders action are suppressed.
+This is also presentation-only and does not change merchant or return state.
 
 Decided 2026-09-18/19: Canada first (CAD), merchant-paid pricing (Starter $49 + 5%,
 Growth $199 + 4%, $2 minimum, CAD, monthly, 60-day early-supporter trial waiving
