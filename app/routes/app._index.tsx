@@ -795,7 +795,8 @@ export default function RefundDashboard() {
                 Funded returns sandbox
               </s-button>
             )}
-            {fundedSandbox && !gooperPreview && (
+            {/* Present for the merchant, absent from listing screenshots. */}
+            {!appStoreShot && !gooperPreview && (
               <s-button href="/app?gooper_preview=1" icon="view">
                 Preview funded returns
               </s-button>
