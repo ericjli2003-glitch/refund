@@ -13,10 +13,10 @@ export function publicSupportEmail(environment = process.env) {
   return isEmailAddress(address) ? address : null;
 }
 
-// Mail is sent from REFUND_EMAIL_FROM on a domain whose inbound route is not
-// read by anyone, so a reply to that address is lost silently. Every message
-// carries a Reply-To that a person actually reads: a dedicated address when one
-// is configured, otherwise the same address the support page publishes.
+// Every message carries a Reply-To that a person reads: a dedicated address
+// when one is configured, otherwise the same address the support page
+// publishes. Replies to REFUND_EMAIL_FROM are forwarded too, but only while
+// inbound forwarding is configured, so the Reply-To is the dependable route.
 export function replyToAddress(environment = process.env) {
   for (const value of [
     environment.REFUND_EMAIL_REPLY_TO,
