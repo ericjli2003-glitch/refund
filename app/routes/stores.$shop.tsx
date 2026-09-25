@@ -102,6 +102,9 @@ export default function MerchantReturns() {
         <h2>{`Return a purchase from ${displayName}`}</h2>
         <p>
           Tell your assistant which item you want to return from {displayName}.
+          Not connected yet?{" "}
+          <a href="/connect">Use Gooper.io in ChatGPT or Claude</a>. One
+          connection works with every store that uses Gooper.io.
         </p>
         {(guidance.returnPolicyUrl || guidance.returnInstructions) && (
           <section aria-label={`${displayName} return policy`}>

@@ -75,6 +75,11 @@ export default function Stores() {
           Choose the store you bought from. You’ll verify your purchase with
           Shopify before viewing your orders.
         </p>
+        <p>
+          Prefer to do it in chat?{" "}
+          <a href="/connect">Use Gooper.io in ChatGPT or Claude</a>. One
+          connection works with every store listed here.
+        </p>
         <Form method="post">
           <label>
             Store name{" "}
