@@ -1,17 +1,23 @@
 import type { MetaFunction } from "react-router";
+import { useLoaderData } from "react-router";
 
 import { PublicShell } from "../components/PublicShell";
+import { publicSupportEmail } from "../services/email.server";
 import styles from "../styles/public.module.css";
 
 export const meta: MetaFunction = () => [{ title: "Privacy | Gooper.io" }];
 
+export const loader = async () => ({ supportEmail: publicSupportEmail() });
+
 export default function Privacy() {
+  const { supportEmail } = useLoaderData<typeof loader>();
+
   return (
     <PublicShell>
       <main className={styles.legal}>
         <p className={styles.eyebrow}>Legal</p>
         <h1>Privacy policy</h1>
-        <p className={styles.updated}>Effective September 8, 2026</p>
+        <p className={styles.updated}>Effective September 25, 2026</p>
 
         <p>
           Gooper.io helps Shopify merchants offer customer-confirmed returns
@@ -31,8 +37,8 @@ export default function Privacy() {
             timestamps.
           </li>
           <li>
-            A keyed hash of the customer identifier. Gooper.io does not store the
-            raw customer identifier in its operational return records.
+            A keyed hash of the customer identifier. Gooper.io does not store
+            the raw customer identifier in its operational return records.
           </li>
           <li>
             Technical records needed for security, webhook deduplication,
@@ -50,8 +56,8 @@ export default function Privacy() {
 
         <h2>Merchant discovery records</h2>
         <p>
-          When a store cannot be found, Gooper.io may retain its business name or
-          domain, issue category, source, and timestamps for private service
+          When a store cannot be found, Gooper.io may retain its business name
+          or domain, issue category, source, and timestamps for private service
           improvement and merchant opportunity review. These records are not
           shared with merchants and do not trigger outreach. They exclude
           customer identifiers, order/item details, conversation text, and URL
@@ -63,16 +69,17 @@ export default function Privacy() {
         <p>
           Customer Account access tokens are used to validate the request and
           read the authenticated customer&apos;s eligible order information.
-          They are not stored in Gooper.io&apos;s return records. Gooper.io does not
-          collect debit or credit card numbers. Shopify and the merchant&apos;s
-          payment provider process refunds to the original payment method.
+          They are not stored in Gooper.io&apos;s return records. Gooper.io does
+          not collect debit or credit card numbers. Shopify and the
+          merchant&apos;s payment provider process refunds to the original
+          payment method.
         </p>
         <p>
-          The customer return portal stores access tokens encrypted in a separate,
-          short-lived session. The browser receives an opaque, HttpOnly session
-          cookie, not the token. Portal sessions expire within four hours and are
-          removed on sign-out, expiry cleanup, applicable redaction requests, or
-          app uninstall.
+          The customer return portal stores access tokens encrypted in a
+          separate, short-lived session. The browser receives an opaque,
+          HttpOnly session cookie, not the token. Portal sessions expire within
+          four hours and are removed on sign-out, expiry cleanup, applicable
+          redaction requests, or app uninstall.
         </p>
 
         <h2>Sharing and service providers</h2>
@@ -103,10 +110,27 @@ export default function Privacy() {
         <h2>Your choices</h2>
         <p>
           Customers can contact the Shopify merchant where they placed their
-          order to request access, correction, or deletion. Merchants can
-          uninstall the app and can contact us through the support channel shown
-          on the Gooper.io support page or Shopify App Store listing.
+          order to request access, correction, or deletion. The merchant
+          controls that order information, and Shopify sends the request to
+          Gooper.io. Merchants can uninstall the app at any time.
         </p>
+
+        <h2>Contact us</h2>
+        {supportEmail ? (
+          <p>
+            Send questions about this policy or about the data Gooper.io
+            processes to <a href={`mailto:${supportEmail}`}>{supportEmail}</a>.
+            If you are a customer asking about a specific order, include the
+            store you bought from. We may direct you to that merchant, since
+            they control the order information.
+          </p>
+        ) : (
+          <p>
+            Contact Gooper.io through the support link on its Shopify App Store
+            listing with questions about this policy or about the data Gooper.io
+            processes.
+          </p>
+        )}
 
         <h2>Changes</h2>
         <p>

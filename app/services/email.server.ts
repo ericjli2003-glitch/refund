@@ -6,6 +6,13 @@ export const emailConfigured = () =>
 export const isEmailAddress = (value: string) =>
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
+// The address the public support and privacy pages publish, or null when it is
+// unset or malformed, so neither page ever shows a broken mailto link.
+export function publicSupportEmail(environment = process.env) {
+  const address = environment.PUBLIC_SUPPORT_EMAIL?.trim() ?? "";
+  return isEmailAddress(address) ? address : null;
+}
+
 // Mail is sent from REFUND_EMAIL_FROM on a domain whose inbound route is not
 // read by anyone, so a reply to that address is lost silently. Every message
 // carries a Reply-To that a person actually reads: a dedicated address when one
@@ -38,10 +45,7 @@ export type EmailMessage = {
   idempotencyKey: string;
 };
 
-export function emailPayload(
-  message: EmailMessage,
-  environment = process.env,
-) {
+export function emailPayload(message: EmailMessage, environment = process.env) {
   const replyTo = replyToAddress(environment);
   return {
     from: environment.REFUND_EMAIL_FROM,
