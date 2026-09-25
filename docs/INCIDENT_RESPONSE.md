@@ -59,9 +59,12 @@ thing to revisit when anyone else joins.
 **Internal reporting:** not applicable while sole-operator. Suspected incidents
 reach the lead directly, or through the external inbox below.
 
-**External reporting inbox:** the address published at `/support` and in the
-app listing. Reports from researchers and merchants arrive here and must be
-triaged within one business day.
+**External reporting inbox:** support@gooper.io, published at `/support`,
+`/privacy` and in the app listing. Resend receives mail for gooper.io and the
+app forwards it to `INBOUND_EMAIL_FORWARD_TO` (confirmed working 2026-09-25).
+Reports from researchers and merchants arrive here and must be triaged within
+one business day. If forwarding fails, the message can still be read in
+Resend's received emails.
 
 **Key external contacts**
 
@@ -238,7 +241,8 @@ record — reference the affected rows by identifier and count instead.
 - MFA is also enforced on the two accounts that can be used to reach the
   others: the domain registrar and DNS for gooper.io (GoDaddy), which controls
   both the app's hostname and password-reset delivery, and the Google account
-  behind `PUBLIC_SUPPORT_EMAIL` (confirmed 2026-09-20).
+  that receives forwarded support mail, `INBOUND_EMAIL_FORWARD_TO`
+  (confirmed 2026-09-20).
 - The domain has registrar transfer lock and domain privacy enabled
   (confirmed 2026-09-20). It cannot be moved to another registrar without
   first being unlocked from the MFA-protected GoDaddy account, and public

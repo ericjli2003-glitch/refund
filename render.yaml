@@ -33,6 +33,10 @@ services:
         sync: false
       - key: REFUND_EMAIL_FROM
         sync: false
+      - key: RESEND_INBOUND_WEBHOOK_SECRET
+        sync: false
+      - key: INBOUND_EMAIL_FORWARD_TO
+        sync: false
 
 databases:
   - name: refund-db
