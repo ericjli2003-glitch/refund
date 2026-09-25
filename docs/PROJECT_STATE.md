@@ -490,12 +490,11 @@ email-link path.
   subtotal and tax as negative credits. The verified quote added them as
   positive, so a $14.00 refund read as $14.00 owed and stopped before quoting.
   Line credits are now read as money back whatever their sign.
-- **Few questions.** In chat, a customer's request to return an item is the
-  go-ahead when nothing is deducted. `quote_return` returns
-  `goAheadWithoutAsking` and the assistant calls `confirm_return` right away.
-  A restocking or return shipping fee gets one short question first. The
-  assistant picks the store, order and item itself when only one fits, and
-  never asks for an order number, a reason or to confirm the store.
+- **Few questions.** The assistant picks the store, order and item itself when
+  only one fits, and never asks for an order number, a reason or to confirm the
+  store. *Superseded in part on 2026-09-15 (`c6ada8c`):* submitting without
+  asking when nothing is deducted (`goAheadWithoutAsking`) was removed. Every
+  submission now needs the customer to confirm the exact items and total once.
 - **Return reason.** Shopify rejects a return request without a reason, and
   the old `returnReason` enum is deprecated. Customers aren't asked why, so
   every return is filed under Shopify's "Other" reason

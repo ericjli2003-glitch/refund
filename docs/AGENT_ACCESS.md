@@ -103,12 +103,12 @@ Limits and protections:
   `/mcp/:shop` addresses saved from earlier setup pages, each with its own
   resource metadata. Single-store grants are retired and open nothing.
   Submission still needs the signed quote, and every tool checks its scope.
-- **Few questions.** A customer's request to return an item is the go-ahead when
-  nothing is deducted: `quote_return` returns `goAheadWithoutAsking: true` and
-  the assistant calls `confirm_return` right away. A restocking or return
-  shipping fee gets one short check first. The assistant picks the store, order
-  and item itself when only one fits, and never asks for an order number or a
-  reason.
+- **Few questions, one confirmation.** `quote_return` shows what's going back,
+  any fees and the refund total, and the assistant asks once; `confirm_return`
+  runs only after a clear yes. If `submissionAvailable` is false, the store
+  reviews the return itself and the assistant stops. The assistant picks the
+  store, order and item itself when only one fits, and never asks for an order
+  number or a reason.
 
 ## Connect and test
 
@@ -146,8 +146,10 @@ chat, to the original payment method. For submission to work at a store, its
 merchant must turn on automatic refunds in the Gooper.io dashboard; otherwise the
 assistant quotes and the store reviews the return.
 
-For a first test, ask the assistant to find an order at the Testing store and
-quote it. Submitting refunds the original payment method, so use a test order.
+For a first test, ask the assistant to find an order at Pied Piper
+(testing-bl7vdfur.myshopify.com) and quote it. Submitting refunds the original
+payment method, so use a test order. The full acceptance run for both hosts is
+[ASSISTANT_E2E_TEST.md](ASSISTANT_E2E_TEST.md).
 
 ## Protocol and safety
 
@@ -179,28 +181,31 @@ failure category; this instrumentation is not itself a compatibility fix.
   restarts; confidential-client secrets are encrypted and do not silently expire.
 - Authorization requests bind client, exact callback, resource, scopes, a separate
   opaque HttpOnly browser cookie and CSRF protection. They expire in 20 minutes.
-  Shopify login preserves only a validated internal continuation.
-- Consent cannot be supplied by an MCP argument. The signed-in customer must
-  approve the named assistant and exact requested scopes on the browser page.
+- Consent cannot be supplied by an MCP argument. The customer must confirm an
+  email and approve the named assistant and exact requested scopes on the
+  browser page. No Shopify sign-in is involved.
 - Codes expire after two minutes, require S256 PKCE and an exact resource/redirect
   match, and are consumed atomically with grant creation. A valid replay revokes
   the previously issued grant. Concurrent exchanges cannot issue two grants.
-- Independent opaque Gooper.io access tokens are hash-stored, resource/shop/customer/
-  client-bound and scope-checked on every request and tool call. Shopify tokens
-  stay encrypted server-side. Never paste either token into a chat or a URL.
+- Opaque Gooper.io access tokens are hash-stored, bound to the connection,
+  client, resource and scopes, and checked on every request and tool call. They
+  carry no Shopify credential: access to a store is checked separately, per
+  call, against that store's link. Never paste a token into a chat or a URL.
 - Separate scopes are returns:read, returns:quote, returns:submit. Submission
   still requires the signed exact quote, plus the customer's agreement when a
   fee applies. Claude gets
   HTTP insufficient-scope challenges, not only tool metadata errors.
-- Access tokens last at most one hour. Clients registered for `refresh_token`
-  receive rotating Gooper.io refresh tokens (reusing one revokes the chain), but no
-  grant outlives the verified Shopify customer session, capped at four hours.
-  Shopify issues no refresh token to public PKCE app clients, so Gooper.io cannot
-  extend that session. Reconnecting first tries a silent `prompt=none` Shopify
-  sign-in; the consent click is still required. No offline_access scope exists.
-- Customers can disconnect individual assistants in the return portal. Logout,
-  customer redaction and uninstall remove related authorizations/grants.
-  Privacy reports contain safe metadata, never codes, cookies or secrets.
+- Access tokens last one hour. Clients registered for `refresh_token` receive
+  rotating Gooper.io refresh tokens, and reusing one revokes the chain. A refresh
+  token works while the connection lasts, and each refresh keeps the connection
+  for another year, so a connection in regular use doesn't need reconnecting.
+  Refresh can't add scopes the customer didn't approve. No offline_access scope
+  exists.
+- Customers disconnect at `/connect/manage` in the approving browser, or by
+  removing Gooper.io from their assistant. A store's return portal lists and can
+  remove that store's links. Uninstall and customer redaction remove links and
+  emails as described above. Privacy reports contain safe metadata, never
+  codes, cookies or secrets.
 
 ## Deployment and verification
 
@@ -210,9 +215,11 @@ server and OAuth broker; added `/connect/:shop` and a return-portal setup link.
 smoke passed. The smoke test verifies the setup page's rendered merchant URL,
 private/security headers, invalid/uninstalled-store rejection and absence of
 new grants or authorization requests just from opening the page. Live read-only
-discovery checks passed against the deployed server. These new onboarding changes
-have not yet been deployed; actual ChatGPT/Claude customer sign-in and quote tests
-remain pending. No real customer return or refund was performed.
+discovery checks passed against the deployed server. That onboarding has since
+been deployed and replaced by the email-only flow described above. The live
+ChatGPT and Claude acceptance runs are
+[ASSISTANT_E2E_TEST.md](ASSISTANT_E2E_TEST.md); results are recorded there, not
+here.
 
 Run migrations, build, and start with npm run start:production. The production
 HTTP entry point serves both OAuth and the React Router app. The Shopify CLI's
@@ -229,8 +236,8 @@ exercises registration, consent/denial, sign-in continuation, PKCE mismatches,
 resource/client/callback binding, expiration, replay races, scope denial,
 revocation, and logout. It creates no real Shopify order or refund.
 
-Before broad customer rollout, complete each host's actual connection/quote
-acceptance test, review the authentication implementation, and size distributed
+Before broad customer rollout, complete each host's run in
+[ASSISTANT_E2E_TEST.md](ASSISTANT_E2E_TEST.md), review the authentication implementation, and size distributed
 client storage and rate-limit budgets for expected traffic. The production HTTP
 server now uses PostgreSQL counters across replicas for registration (20/hour),
 authorization (60/10 minutes), and token/revocation requests (120/minute), per
@@ -244,7 +251,8 @@ HTTPS origin and `REFUND_TEST_SHOP` set to an installed canonical shop. This che
 the running server's public MCP handshake/tool list, OAuth metadata, rejection of
 unauthenticated protected calls and browser preflight. It does not register a
 client, invoke intake, create a draft, or submit a financial action. The separate
-host sign-in and exact-quote checklist above still needs the customer's browser.
+host connection and exact-quote run in
+[ASSISTANT_E2E_TEST.md](ASSISTANT_E2E_TEST.md) still needs a real browser.
 
 References: [OpenAI authentication](https://developers.openai.com/plugins/build/auth),
 [Claude authentication](https://claude.com/docs/connectors/building/authentication),
