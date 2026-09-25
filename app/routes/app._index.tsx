@@ -70,6 +70,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const merchant = await provisionMerchant(session.shop, admin);
   const url = new URL(request.url);
   const showArchived = url.searchParams.get("archived") === "1";
+  // Opens the policy editor from the URL, for screenshots and for linking
+  // a merchant straight to the settings.
+  const policyOpen = url.searchParams.get("policy_open") === "1";
   const fundedSandbox = fundedSandboxEnabled();
   const gooperPreview =
     !showArchived && url.searchParams.get("gooper_preview") === "1";
@@ -177,6 +180,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     instructionsMaxLength: RETURN_INSTRUCTIONS_MAX_LENGTH,
     agentsTemplateSection: merchantAgentsTemplateSection(guidance),
     showArchived,
+    policyOpen,
     archivedCount: await prisma.agentReturn.count({
       where: { shop: session.shop, archivedAt: { not: null } },
     }),
@@ -594,6 +598,7 @@ export default function RefundDashboard() {
     archivedOne,
     restored,
     showArchived,
+    policyOpen,
     archivedCount,
     listed,
     listingSaved,
@@ -1227,7 +1232,7 @@ export default function RefundDashboard() {
             verifiedStoreLinks={verifiedStoreLinks}
             returnWindowDays={returnWindowDays}
           />
-          <details className="gooper-policy-editor">
+          <details className="gooper-policy-editor" open={policyOpen}>
             <summary>
               <s-text type="strong">Edit automation and return policy</s-text>
             </summary>
