@@ -2,17 +2,12 @@ import type { MetaFunction } from "react-router";
 import { useLoaderData } from "react-router";
 
 import { PublicShell } from "../components/PublicShell";
-import { isEmailAddress } from "../services/email.server";
+import { publicSupportEmail } from "../services/email.server";
 import styles from "../styles/public.module.css";
 
 export const meta: MetaFunction = () => [{ title: "Support | Gooper.io" }];
 
-export const loader = async () => {
-  const configured = process.env.PUBLIC_SUPPORT_EMAIL?.trim() ?? "";
-  const supportEmail = isEmailAddress(configured) ? configured : null;
-
-  return { supportEmail };
-};
+export const loader = async () => ({ supportEmail: publicSupportEmail() });
 
 export default function Support() {
   const { supportEmail } = useLoaderData<typeof loader>();
@@ -31,14 +26,14 @@ export default function Support() {
             <p>
               Email <a href={`mailto:${supportEmail}`}>{supportEmail}</a>.
               Include your <code>.myshopify.com</code> domain and the return
-              status shown in Gooper.io. Do not include payment-card information or
-              customer access tokens.
+              status shown in Gooper.io. Do not include payment-card information
+              or customer access tokens.
             </p>
           ) : (
             <p>
-              Contact Gooper.io through the support link on its Shopify App Store
-              listing. Include your <code>.myshopify.com</code> domain and the
-              return status shown in the app.
+              Contact Gooper.io through the support link on its Shopify App
+              Store listing. Include your <code>.myshopify.com</code> domain and
+              the return status shown in the app.
             </p>
           )}
         </div>

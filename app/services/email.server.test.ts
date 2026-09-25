@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { emailPayload, isEmailAddress, replyToAddress } from "./email.server";
+import {
+  emailPayload,
+  isEmailAddress,
+  publicSupportEmail,
+  replyToAddress,
+} from "./email.server";
 
 const message = {
   to: "customer@example.com",
@@ -27,14 +32,18 @@ test("a dedicated reply address wins over the published support address", () => 
 
 test("the support address is used when no dedicated address is set", () => {
   assert.equal(
-    replyToAddress(environment({ PUBLIC_SUPPORT_EMAIL: "support@example.com" })),
+    replyToAddress(
+      environment({ PUBLIC_SUPPORT_EMAIL: "support@example.com" }),
+    ),
     "support@example.com",
   );
 });
 
 test("surrounding whitespace is trimmed", () => {
   assert.equal(
-    replyToAddress(environment({ PUBLIC_SUPPORT_EMAIL: "  support@example.com \n" })),
+    replyToAddress(
+      environment({ PUBLIC_SUPPORT_EMAIL: "  support@example.com \n" }),
+    ),
     "support@example.com",
   );
 });
@@ -49,7 +58,14 @@ test("a malformed address falls through instead of being sent", () => {
     ),
     "support@example.com",
   );
-  for (const value of ["", "   ", "a@b", "no-at-sign.com", "two@@at.com", undefined]) {
+  for (const value of [
+    "",
+    "   ",
+    "a@b",
+    "no-at-sign.com",
+    "two@@at.com",
+    undefined,
+  ]) {
     assert.equal(
       replyToAddress(environment({ REFUND_EMAIL_REPLY_TO: value })),
       null,
@@ -82,4 +98,40 @@ test("address validation matches what the support page will publish", () => {
   assert.equal(isEmailAddress("support@example.com"), true);
   assert.equal(isEmailAddress("not-an-address"), false);
   assert.equal(isEmailAddress("spaces in@example.com"), false);
+});
+
+test("the published support address is trimmed and shown as configured", () => {
+  assert.equal(
+    publicSupportEmail(
+      environment({ PUBLIC_SUPPORT_EMAIL: " support@example.com\n" }),
+    ),
+    "support@example.com",
+  );
+});
+
+test("an unset or malformed support address is never published", () => {
+  for (const value of [
+    undefined,
+    "",
+    "   ",
+    "a@b",
+    "no-at-sign.com",
+    "two@@at.com",
+  ]) {
+    assert.equal(
+      publicSupportEmail(environment({ PUBLIC_SUPPORT_EMAIL: value })),
+      null,
+    );
+  }
+});
+
+test("the public pages publish the support address, never the reply-to address", () => {
+  // REFUND_EMAIL_REPLY_TO is for transactional mail only; the public pages
+  // publish PUBLIC_SUPPORT_EMAIL or nothing.
+  assert.equal(
+    publicSupportEmail(
+      environment({ REFUND_EMAIL_REPLY_TO: "replies@gooper.io" }),
+    ),
+    null,
+  );
 });
