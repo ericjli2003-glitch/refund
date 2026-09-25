@@ -49,7 +49,6 @@ import {
   publicReturnGuidance,
 } from "../services/return-guidance.server";
 
-
 type Money = {
   amount: string;
   currencyCode: string;
@@ -135,7 +134,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return {
     fundedSandbox,
     gooperPreview,
-    appStoreShot: url.searchParams.get("app_store_shot") === "1",
+    // "1" is the dashboard without its aside column; "policy" is the return
+    // policy editor on its own. Both exist for App Store listing screenshots.
+    appStoreShot: ["1", "policy"].includes(
+      url.searchParams.get("app_store_shot") ?? "",
+    ),
+    policyShot: url.searchParams.get("app_store_shot") === "policy",
     locations: responseJson.data.locations.nodes,
     collections,
     canReadProducts,
@@ -204,7 +208,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     formData.get("intent") === "fundedReceive" ||
     formData.get("intent") === "fundedComplete"
   ) {
-    if (!fundedSandboxEnabled()) throw new Response("Not found", { status: 404 });
+    if (!fundedSandboxEnabled())
+      throw new Response("Not found", { status: 404 });
     const completesReturn = formData.get("intent") === "fundedComplete";
     try {
       await updateDashboardFundedReturn(session.shop, {
@@ -221,7 +226,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       };
     }
     return redirect(
-      completesReturn ? "/app?gooperCompleted=true" : "/app?gooperReceived=true",
+      completesReturn
+        ? "/app?gooperCompleted=true"
+        : "/app?gooperReceived=true",
     );
   }
   if (formData.get("intent") === "resolvePrivacyRequest") {
@@ -251,8 +258,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         heading: archived
           ? "The return wasn't archived"
           : "The return wasn't restored",
-        message:
-          error instanceof Error ? error.message : "Please try again.",
+        message: error instanceof Error ? error.message : "Please try again.",
       };
     }
     return redirect(
@@ -330,7 +336,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     throw new Response("Invalid automatic return policy.", { status: 400 });
   }
 
-  const restockingFeePercent = Number(formData.get("restockingFeePercent") || 0);
+  const restockingFeePercent = Number(
+    formData.get("restockingFeePercent") || 0,
+  );
   const returnShippingFee = Number(formData.get("returnShippingFee") || 0);
   const finalSaleCollectionIds = [
     ...new Set(
@@ -367,10 +375,16 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       { variables: { ids: finalSaleCollectionIds } },
     );
     const found =
-      ((await collectionCheck.json()) as {
-        data?: { nodes: Array<{ id?: string } | null> };
-      }).data?.nodes ?? [];
-    if (finalSaleCollectionIds.some((id) => !found.some((node) => node?.id === id)))
+      (
+        (await collectionCheck.json()) as {
+          data?: { nodes: Array<{ id?: string } | null> };
+        }
+      ).data?.nodes ?? [];
+    if (
+      finalSaleCollectionIds.some(
+        (id) => !found.some((node) => node?.id === id),
+      )
+    )
       throw new Response("Unknown final-sale collection.", { status: 400 });
   }
 
@@ -444,7 +458,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     returnInstructions,
     returnPolicyUrl,
     refundTiming:
-      formData.get("refundTiming") === "ON_RECEIPT" ? "ON_RECEIPT" : "IMMEDIATE",
+      formData.get("refundTiming") === "ON_RECEIPT"
+        ? "ON_RECEIPT"
+        : "IMMEDIATE",
     verifiedStoreLinks: formData.get("verifiedStoreLinks") === "true",
     restockingFeePercent: String(Math.round(restockingFeePercent * 100) / 100),
     returnShippingFee: returnShippingFee.toFixed(2),
@@ -585,6 +601,7 @@ export default function RefundDashboard() {
     fundedSandbox,
     gooperPreview,
     appStoreShot,
+    policyShot,
     locations,
     collections,
     canReadProducts,
@@ -780,40 +797,47 @@ export default function RefundDashboard() {
 
       {/* The aside is not rendered at inlineSize="large", which the screenshot
           layout uses, so the installed status moves into the main column there
-          rather than disappearing from the shot. */}
-      <s-section
-        slot={appStoreShot ? undefined : "aside"}
-        heading="Gooper.io is installed"
-      >
-        <s-stack direction="block" gap="base">
-          <s-paragraph>
-            Your store is connected. Customers can verify purchases and get
-            return estimates through your hosted return portal. No separate
-            Gooper.io account or connector is needed.
-          </s-paragraph>
-          <s-stack direction="inline" gap="base">
-            <s-button href={returnPortalUrl} target="_blank" variant="primary">
-              Open your return portal
-            </s-button>
-            {fundedSandbox && (
-              <s-button href="/app/funded-returns">
-                Funded returns sandbox
+          rather than disappearing from the shot. The policy screenshot shows
+          the editor on its own, so it drops this section entirely. */}
+      {!policyShot && (
+        <s-section
+          slot={appStoreShot ? undefined : "aside"}
+          heading="Gooper.io is installed"
+        >
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              Your store is connected. Customers can verify purchases and get
+              return estimates through your hosted return portal. No separate
+              Gooper.io account or connector is needed.
+            </s-paragraph>
+            <s-stack direction="inline" gap="base">
+              <s-button
+                href={returnPortalUrl}
+                target="_blank"
+                variant="primary"
+              >
+                Open your return portal
               </s-button>
-            )}
-            {/* Present for the merchant, absent from listing screenshots. */}
-            {!appStoreShot && !gooperPreview && (
-              <s-button href="/app?gooper_preview=1" icon="view">
-                Preview funded returns
-              </s-button>
-            )}
-            {merchantProfileUrl && (
-              <s-button href={merchantProfileUrl} target="_blank">
-                View your public return page
-              </s-button>
-            )}
+              {fundedSandbox && (
+                <s-button href="/app/funded-returns">
+                  Funded returns sandbox
+                </s-button>
+              )}
+              {/* Present for the merchant, absent from listing screenshots. */}
+              {!appStoreShot && !gooperPreview && (
+                <s-button href="/app?gooper_preview=1" icon="view">
+                  Preview funded returns
+                </s-button>
+              )}
+              {merchantProfileUrl && (
+                <s-button href={merchantProfileUrl} target="_blank">
+                  View your public return page
+                </s-button>
+              )}
+            </s-stack>
           </s-stack>
-        </s-stack>
-      </s-section>
+        </s-section>
+      )}
 
       {saved && (
         <s-banner heading="Automatic return policy saved" tone="success">
@@ -846,11 +870,7 @@ export default function RefundDashboard() {
       )}
 
       {gooperPreview && !appStoreShot && (
-        <s-banner
-          heading="Funded returns preview"
-          tone="info"
-          dismissible
-        >
+        <s-banner heading="Funded returns preview" tone="info" dismissible>
           This demonstrates the proposed funded-return workflow. No customer
           payout, merchant repayment, Shopify refund, or inventory change is
           made from these preview controls.
@@ -926,252 +946,260 @@ export default function RefundDashboard() {
           </s-stack>
         </s-section>
       )}
-      <s-section
-        heading={showArchived ? "Archived returns" : "Recent returns"}
-        padding="none"
-      >
-        <s-box padding="base">
-          {showArchived ? (
-            <s-link href="/app">Back to recent returns</s-link>
-          ) : (
-            archivedCount > 0 && (
-              <s-link href="/app?archived=1">
-                View {archivedCount} archived return
-                {archivedCount === 1 ? "" : "s"}
-              </s-link>
-            )
-          )}
-        </s-box>
-        {agentReturns.length === 0 && gooperReturns.length === 0 ? (
-          <s-box padding="large">
-            <s-paragraph color="subdued">
-              {showArchived
-                ? "Nothing archived yet."
-                : "No customer-agent return requests have been received yet."}
-            </s-paragraph>
+      {!policyShot && (
+        <s-section
+          heading={showArchived ? "Archived returns" : "Recent returns"}
+          padding="none"
+        >
+          <s-box padding="base">
+            {showArchived ? (
+              <s-link href="/app">Back to recent returns</s-link>
+            ) : (
+              archivedCount > 0 && (
+                <s-link href="/app?archived=1">
+                  View {archivedCount} archived return
+                  {archivedCount === 1 ? "" : "s"}
+                </s-link>
+              )
+            )}
           </s-box>
-        ) : (
-          <s-table>
-            <s-table-header-row>
-              <s-table-header listSlot="primary">Order</s-table-header>
-              <s-table-header listSlot="secondary">Requested</s-table-header>
-              <s-table-header listSlot="labeled">Status</s-table-header>
-              <s-table-header listSlot="labeled" format="currency">
-                Refund
-              </s-table-header>
-            </s-table-header-row>
-            <s-table-body>
-              {gooperReturns.map((gooperReturn) => {
-                const progress = fundedReturnProgress(gooperReturn.state);
-                const amount = formatMoney({
-                  amount: (gooperReturn.state.amountMinor / 100).toFixed(2),
-                  currencyCode: gooperReturn.state.currency,
-                });
-                return (
-                  <s-table-row key={`funded-${gooperReturn.id}`}>
-                    <s-table-cell>
-                      <s-stack direction="block" gap="small-200">
-                        <s-text>{gooperReturn.state.order?.orderName}</s-text>
-                        <s-text color="subdued">
-                          {gooperReturn.state.order?.title}
-                        </s-text>
-                      </s-stack>
-                    </s-table-cell>
-                    <s-table-cell>
-                      {formatDate(gooperReturn.createdAt.toString())}
-                    </s-table-cell>
-                    <s-table-cell>
-                      <s-stack direction="block" gap="small-200">
-                        <s-badge tone={progress.tone}>{progress.label}</s-badge>
-                        {dashboardFundedActionAvailable(
-                          gooperReturn.state,
-                          "RECEIVE_ITEM",
-                        ) &&
-                          fundedReturnAction(
-                            "fundedReceive",
-                            gooperReturn.id,
-                            gooperReturn.version,
-                            "Mark item received",
-                          )}
-                        {dashboardFundedActionAvailable(
-                          gooperReturn.state,
-                          "INSPECT_ITEM",
-                        ) &&
-                          fundedReturnAction(
-                            "fundedComplete",
-                            gooperReturn.id,
-                            gooperReturn.version,
-                            "Complete Gooper return",
-                            `Confirms the item was accepted and approves the ${amount} repayment to Gooper.`,
-                          )}
-                      </s-stack>
-                    </s-table-cell>
-                    <s-table-cell>{amount}</s-table-cell>
-                  </s-table-row>
-                );
-              })}
-              {agentReturns.map((agentReturn, index) => {
-                const previewStageIndex =
-                  gooperPreview && index < FINANCING_PREVIEW_STAGES.length
-                    ? (previewStageByReturn[agentReturn.id] ?? index)
-                    : null;
-                const preview =
-                  previewStageIndex === null
-                    ? null
-                    : FINANCING_PREVIEW_STAGES[previewStageIndex];
-                return (
-                  <s-table-row key={agentReturn.id}>
-                  <s-table-cell>
-                    {agentReturn.orderName ?? agentReturn.orderId}
-                  </s-table-cell>
-                  <s-table-cell>
-                    {formatDate(agentReturn.createdAt.toString())}
-                  </s-table-cell>
-                  <s-table-cell>
-                    <s-stack direction="block" gap="small-200">
-                      <s-stack
-                        direction="inline"
-                        gap="small-200"
-                        alignItems="center"
-                      >
-                        {preview ? (
-                          <s-badge tone="success" icon={preview.icon}>
-                            {preview.label}
+          {agentReturns.length === 0 && gooperReturns.length === 0 ? (
+            <s-box padding="large">
+              <s-paragraph color="subdued">
+                {showArchived
+                  ? "Nothing archived yet."
+                  : "No customer-agent return requests have been received yet."}
+              </s-paragraph>
+            </s-box>
+          ) : (
+            <s-table>
+              <s-table-header-row>
+                <s-table-header listSlot="primary">Order</s-table-header>
+                <s-table-header listSlot="secondary">Requested</s-table-header>
+                <s-table-header listSlot="labeled">Status</s-table-header>
+                <s-table-header listSlot="labeled" format="currency">
+                  Refund
+                </s-table-header>
+              </s-table-header-row>
+              <s-table-body>
+                {gooperReturns.map((gooperReturn) => {
+                  const progress = fundedReturnProgress(gooperReturn.state);
+                  const amount = formatMoney({
+                    amount: (gooperReturn.state.amountMinor / 100).toFixed(2),
+                    currencyCode: gooperReturn.state.currency,
+                  });
+                  return (
+                    <s-table-row key={`funded-${gooperReturn.id}`}>
+                      <s-table-cell>
+                        <s-stack direction="block" gap="small-200">
+                          <s-text>{gooperReturn.state.order?.orderName}</s-text>
+                          <s-text color="subdued">
+                            {gooperReturn.state.order?.title}
+                          </s-text>
+                        </s-stack>
+                      </s-table-cell>
+                      <s-table-cell>
+                        {formatDate(gooperReturn.createdAt.toString())}
+                      </s-table-cell>
+                      <s-table-cell>
+                        <s-stack direction="block" gap="small-200">
+                          <s-badge tone={progress.tone}>
+                            {progress.label}
                           </s-badge>
-                        ) : (
-                          <s-badge
-                            tone={
-                              agentReturn.status !== "NEEDS_ATTENTION" &&
-                              agentReturn.refundStatus === "SUCCESS"
-                                ? "success"
-                                : agentReturn.status === "NEEDS_ATTENTION"
-                                  ? "critical"
-                                  : agentReturn.status === "NOT_SUBMITTED"
-                                    ? "warning"
-                                    : "info"
-                            }
+                          {dashboardFundedActionAvailable(
+                            gooperReturn.state,
+                            "RECEIVE_ITEM",
+                          ) &&
+                            fundedReturnAction(
+                              "fundedReceive",
+                              gooperReturn.id,
+                              gooperReturn.version,
+                              "Mark item received",
+                            )}
+                          {dashboardFundedActionAvailable(
+                            gooperReturn.state,
+                            "INSPECT_ITEM",
+                          ) &&
+                            fundedReturnAction(
+                              "fundedComplete",
+                              gooperReturn.id,
+                              gooperReturn.version,
+                              "Complete Gooper return",
+                              `Confirms the item was accepted and approves the ${amount} repayment to Gooper.`,
+                            )}
+                        </s-stack>
+                      </s-table-cell>
+                      <s-table-cell>{amount}</s-table-cell>
+                    </s-table-row>
+                  );
+                })}
+                {agentReturns.map((agentReturn, index) => {
+                  const previewStageIndex =
+                    gooperPreview && index < FINANCING_PREVIEW_STAGES.length
+                      ? (previewStageByReturn[agentReturn.id] ?? index)
+                      : null;
+                  const preview =
+                    previewStageIndex === null
+                      ? null
+                      : FINANCING_PREVIEW_STAGES[previewStageIndex];
+                  return (
+                    <s-table-row key={agentReturn.id}>
+                      <s-table-cell>
+                        {agentReturn.orderName ?? agentReturn.orderId}
+                      </s-table-cell>
+                      <s-table-cell>
+                        {formatDate(agentReturn.createdAt.toString())}
+                      </s-table-cell>
+                      <s-table-cell>
+                        <s-stack direction="block" gap="small-200">
+                          <s-stack
+                            direction="inline"
+                            gap="small-200"
+                            alignItems="center"
                           >
-                            {describeRefundProgress(agentReturn).title}
-                          </s-badge>
-                        )}
-                        {!preview &&
-                          agentReturn.returnId &&
-                          !agentReturn.itemReceivedAt && (
-                          <s-link
-                            href={`shopify:admin/orders/${agentReturn.orderId.split("/").pop()}`}
-                          >
-                            Add a return label or tracking
-                          </s-link>
-                        )}
-                      </s-stack>
-                      {preview ? (
-                        preview.actionLabel && (
-                          <s-box>
-                            <s-button
-                              type="button"
-                              variant="secondary"
-                              onClick={() =>
-                                setPreviewStageByReturn((current) => ({
-                                  ...current,
-                                  [agentReturn.id]: Math.min(
-                                    (previewStageIndex ?? 0) + 1,
-                                    FINANCING_PREVIEW_STAGES.length - 1,
-                                  ),
-                                }))
-                              }
-                            >
-                              {preview.actionLabel}
-                            </s-button>
-                          </s-box>
-                        )
-                      ) : (
-                        <>
-                          {showArchived
-                            ? returnAction(
-                                "unarchiveReturn",
-                                agentReturn.id,
-                                null,
-                                "Restore",
-                              )
-                            : agentReturn.archivable &&
-                              returnAction(
-                                "archiveReturn",
-                                agentReturn.id,
-                                null,
-                                "Archive",
+                            {preview ? (
+                              <s-badge tone="success" icon={preview.icon}>
+                                {preview.label}
+                              </s-badge>
+                            ) : (
+                              <s-badge
+                                tone={
+                                  agentReturn.status !== "NEEDS_ATTENTION" &&
+                                  agentReturn.refundStatus === "SUCCESS"
+                                    ? "success"
+                                    : agentReturn.status === "NEEDS_ATTENTION"
+                                      ? "critical"
+                                      : agentReturn.status === "NOT_SUBMITTED"
+                                        ? "warning"
+                                        : "info"
+                                }
+                              >
+                                {describeRefundProgress(agentReturn).title}
+                              </s-badge>
+                            )}
+                            {!preview &&
+                              agentReturn.returnId &&
+                              !agentReturn.itemReceivedAt && (
+                                <s-link
+                                  href={`shopify:admin/orders/${agentReturn.orderId.split("/").pop()}`}
+                                >
+                                  Add a return label or tracking
+                                </s-link>
                               )}
-                          {/* On their own line: two buttons beside the badge and
-                          link wrapped badly at this column width. */}
-                          {agentReturn.receivable &&
-                            agentReturn.refundTiming !== "ON_RECEIPT" && (
-                              <s-stack direction="inline" gap="small-200">
-                                {returnAction(
+                          </s-stack>
+                          {preview ? (
+                            preview.actionLabel && (
+                              <s-box>
+                                <s-button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    setPreviewStageByReturn((current) => ({
+                                      ...current,
+                                      [agentReturn.id]: Math.min(
+                                        (previewStageIndex ?? 0) + 1,
+                                        FINANCING_PREVIEW_STAGES.length - 1,
+                                      ),
+                                    }))
+                                  }
+                                >
+                                  {preview.actionLabel}
+                                </s-button>
+                              </s-box>
+                            )
+                          ) : (
+                            <>
+                              {showArchived
+                                ? returnAction(
+                                    "unarchiveReturn",
+                                    agentReturn.id,
+                                    null,
+                                    "Restore",
+                                  )
+                                : agentReturn.archivable &&
+                                  returnAction(
+                                    "archiveReturn",
+                                    agentReturn.id,
+                                    null,
+                                    "Archive",
+                                  )}
+                              {/* On their own line: two buttons beside the badge and
+                            link wrapped badly at this column width. */}
+                              {agentReturn.receivable &&
+                                agentReturn.refundTiming !== "ON_RECEIPT" && (
+                                  <s-stack direction="inline" gap="small-200">
+                                    {returnAction(
+                                      "receiveReturn",
+                                      agentReturn.id,
+                                      null,
+                                      "Mark received",
+                                      { restock: "false" },
+                                    )}
+                                    {returnAction(
+                                      "receiveReturn",
+                                      agentReturn.id,
+                                      null,
+                                      "Mark received and restock",
+                                    )}
+                                  </s-stack>
+                                )}
+                              {agentReturn.itemReceivedAt && (
+                                <s-paragraph color="subdued">
+                                  Item received{" "}
+                                  {formatDate(
+                                    agentReturn.itemReceivedAt.toString(),
+                                  )}
+                                </s-paragraph>
+                              )}
+                              {agentReturn.failureReason && (
+                                <s-paragraph>
+                                  {agentReturn.failureReason}
+                                </s-paragraph>
+                              )}
+                              {agentReturn.removable &&
+                                returnAction(
+                                  "removeReturn",
+                                  agentReturn.id,
+                                  agentReturn.status === "NOT_SUBMITTED"
+                                    ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
+                                    : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
+                                  "Remove",
+                                )}
+                              {agentReturn.retryable &&
+                                returnAction(
+                                  "retryReturn",
+                                  agentReturn.id,
+                                  "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
+                                  "Retry refund",
+                                )}
+                              {agentReturn.receivable &&
+                                agentReturn.refundTiming === "ON_RECEIPT" &&
+                                returnAction(
                                   "receiveReturn",
                                   agentReturn.id,
-                                  null,
-                                  "Mark received",
-                                  { restock: "false" },
+                                  "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
+                                  "Mark received and refund",
                                 )}
-                                {returnAction(
-                                  "receiveReturn",
-                                  agentReturn.id,
-                                  null,
-                                  "Mark received and restock",
-                                )}
-                              </s-stack>
-                            )}
-                          {agentReturn.itemReceivedAt && (
-                            <s-paragraph color="subdued">
-                              Item received{" "}
-                              {formatDate(agentReturn.itemReceivedAt.toString())}
-                            </s-paragraph>
+                            </>
                           )}
-                          {agentReturn.failureReason && (
-                            <s-paragraph>{agentReturn.failureReason}</s-paragraph>
-                          )}
-                          {agentReturn.removable &&
-                            returnAction(
-                              "removeReturn",
-                              agentReturn.id,
-                              agentReturn.status === "NOT_SUBMITTED"
-                                ? "Shopify turned this request down, so no return or refund exists. Removing it clears it from this list."
-                                : "Shopify never confirmed a return for this request. Check the order in Shopify first; removing it only clears it from Gooper.io so the customer can try again.",
-                              "Remove",
-                            )}
-                          {agentReturn.retryable &&
-                            returnAction(
-                              "retryReturn",
-                              agentReturn.id,
-                              "Retrying checks Shopify first. It refunds the amount the customer confirmed only if the return is still requested or open and no refund exists for it or for the order since the request. A return set to refund on receipt goes back to waiting for its item.",
-                              "Retry refund",
-                            )}
-                          {agentReturn.receivable &&
-                            agentReturn.refundTiming === "ON_RECEIPT" &&
-                            returnAction(
-                              "receiveReturn",
-                              agentReturn.id,
-                              "Once the item is back, this checks Shopify for any existing refund, then refunds the amount the customer confirmed and restocks the item.",
-                              "Mark received and refund",
-                            )}
-                        </>
-                      )}
-                    </s-stack>
-                  </s-table-cell>
-                  <s-table-cell>
-                    {agentReturn.amount && agentReturn.currencyCode
-                      ? formatMoney({
-                          amount: agentReturn.amount,
-                          currencyCode: agentReturn.currencyCode,
-                        })
-                      : "—"}
-                  </s-table-cell>
-                  </s-table-row>
-                );
-              })}
-            </s-table-body>
-          </s-table>
-        )}
-      </s-section>
+                        </s-stack>
+                      </s-table-cell>
+                      <s-table-cell>
+                        {agentReturn.amount && agentReturn.currencyCode
+                          ? formatMoney({
+                              amount: agentReturn.amount,
+                              currencyCode: agentReturn.currencyCode,
+                            })
+                          : "—"}
+                      </s-table-cell>
+                    </s-table-row>
+                  );
+                })}
+              </s-table-body>
+            </s-table>
+          )}
+        </s-section>
+      )}
 
       {!appStoreShot && (
         <s-section slot="aside" heading="Store directory listing">
@@ -1183,7 +1211,11 @@ export default function RefundDashboard() {
             }}
           >
             <input type="hidden" name="intent" value="setListing" />
-            <input type="hidden" name="listed" value={listed ? "false" : "true"} />
+            <input
+              type="hidden"
+              name="listed"
+              value={listed ? "false" : "true"}
+            />
             <s-stack direction="block" gap="base">
               <s-paragraph>
                 {listed
@@ -1192,11 +1224,12 @@ export default function RefundDashboard() {
               </s-paragraph>
               <Explainer summary="What listing publishes">
                 <s-paragraph color="subdued">
-                  Listing publishes only your store name, website and Gooper.io return
-                  page, at /stores, in /llms.txt and to assistants searching the
-                  directory. Customers still verify every purchase, by confirming
-                  their email or with your store&apos;s Shopify sign-in. Hiding the store doesn&apos;t affect
-                  your return portal, your app proxy guide, or returns started from
+                  Listing publishes only your store name, website and Gooper.io
+                  return page, at /stores, in /llms.txt and to assistants
+                  searching the directory. Customers still verify every
+                  purchase, by confirming their email or with your store&apos;s
+                  Shopify sign-in. Hiding the store doesn&apos;t affect your
+                  return portal, your app proxy guide, or returns started from
                   your own website.
                 </s-paragraph>
               </Explainer>
@@ -1238,260 +1271,282 @@ export default function RefundDashboard() {
             </summary>
             <s-box paddingBlockStart="base">
               <form
-          method="post"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const formData = new FormData();
-            formData.set(
-              "automaticRefundsEnabled",
-              automaticRefundsEnabled ? "true" : "false",
-            );
-            formData.set("returnWindowDays", returnWindowDays);
-            formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
-            formData.set("returnLocationId", returnLocationId);
-            formData.set("refundTiming", refundTiming);
-            formData.set("returnInstructions", returnInstructions);
-            formData.set("returnPolicyUrl", returnPolicyUrl);
-            formData.set(
-              "verifiedStoreLinks",
-              verifiedStoreLinks ? "true" : "false",
-            );
-            formData.set("restockingFeePercent", restockingFeePercent);
-            formData.set("returnShippingFee", returnShippingFee);
-            for (const id of finalSaleCollectionIds)
-              formData.append("finalSaleCollectionIds", id);
-            submit(formData, { method: "post" });
-          }}
-        >
-          <s-stack direction="block" gap="base">
-            {/* Two groups of settings side by side, so the form is as tall
-                as its longer half rather than both halves stacked. */}
-            <s-grid
-              gridTemplateColumns="@container (inline-size <= 700px) 1fr, 1fr 1fr"
-              gap="base"
-            >
-              <s-stack direction="block" gap="base">
-                <s-switch
-                  label="Authorize eligible refunds to the original payment method on customer confirmation"
-                  checked={automaticRefundsEnabled}
-                  onChange={(event) =>
-                    setAutomaticRefundsEnabled(event.currentTarget.checked)
-                  }
-                ></s-switch>
-                <s-paragraph color="subdued">
-                  Estimates work without enabling this setting. When enabled, the
-                  customer signs in, selects an eligible item, sees the calculated
-                  amount and refund timing, and confirms it. Shopify then opens the
-                  return, and the refund goes to the original payment method.
-                </s-paragraph>
-                <s-grid
-                  gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
-                  gap="base"
-                >
-                  <s-number-field
-                    label="Return window (days)"
-                    min={1}
-                    max={365}
-                    step={1}
-                    value={returnWindowDays}
-                    onChange={(event) =>
-                      setReturnWindowDays(event.currentTarget.value)
-                    }
-                    required
-                  ></s-number-field>
-                  <s-money-field
-                    label={`Maximum automatic refund (${policy.currencyCode})`}
-                    min={0.01}
-                    max={100000}
-                    value={maxAutoRefundAmount}
-                    onChange={(event) =>
-                      setMaxAutoRefundAmount(event.currentTarget.value)
-                    }
-                    required
-                  ></s-money-field>
-                  <s-select
-                    label="When to refund"
-                    value={refundTiming}
-                    onChange={(event) => setRefundTiming(event.currentTarget.value)}
-                  >
-                    <s-option value="IMMEDIATE">
-                      As soon as the customer confirms the return
-                    </s-option>
-                    <s-option value="ON_RECEIPT">
-                      After I mark the returned item received
-                    </s-option>
-                  </s-select>
-                  <s-select
-                    label="Restock returned items to"
-                    value={returnLocationId}
-                    onChange={(event) =>
-                      setReturnLocationId(event.currentTarget.value)
-                    }
-                  >
-                    <s-option value="">
-                      The location that fulfilled the order
-                    </s-option>
-                    {locations.map((location) => (
-                      <s-option key={location.id} value={location.id}>
-                        {location.name}
-                      </s-option>
-                    ))}
-                  </s-select>
-                </s-grid>
-                <Explainer summary="About refund timing, restocking and fees">
-                  <s-paragraph>
-                    Immediate refunds reach customers before you receive or inspect
-                    the item, so your store carries the risk if it never comes back.
-                    Refunds on receipt approve the return at confirmation, then refund
-                    and restock when you mark the item received below.
-                  </s-paragraph>
-                  <s-paragraph color="subdued">
-                    Leave the restock location on the fulfilling location unless you
-                    route returns to a dedicated warehouse. If an order was fulfilled
-                    from more than one location and you have not chosen one here,
-                    received items are recorded as not restocked.
-                  </s-paragraph>
-                  <s-paragraph color="subdued">
-                    For customers signed in to your store, restocking and return
-                    shipping fees come from your Shopify return rules (Settings, then
-                    Policies). Customers see them in their quote, and Gooper.io deducts
-                    them from the refund it submits.
-                  </s-paragraph>
-                </Explainer>
-              </s-stack>
-              <s-stack direction="block" gap="base">
-                {!policy.returnRulesConfirmedAt && (
-                  <s-banner heading="Save to turn on AI-assisted returns" tone="info">
-                    Customers can&apos;t start returns at your store from ChatGPT or
-                    Claude until you review the fees and final-sale collections
-                    below and save.
-                  </s-banner>
-                )}
-                {policy.returnRulesMismatch && (
-                  <s-banner
-                    heading="AI-assisted returns are paused"
-                    tone="warning"
-                  >
-                    {policy.returnRulesMismatch} Check the fees and final-sale
-                    collections below against your Shopify return rules, then save.
-                  </s-banner>
-                )}
-                <s-switch
-                  label="Let customers return through their AI assistant"
-                  checked={verifiedStoreLinks}
-                  onChange={(event) =>
-                    setVerifiedStoreLinks(event.currentTarget.checked)
-                  }
-                ></s-switch>
-                <Explainer summary="How AI-assisted returns work">
-                  <s-paragraph color="subdued">
-                    Customers who add Gooper.io to ChatGPT or Claude confirm their email
-                    once, and Gooper.io finds their orders at your store by that email,
-                    with no store sign-in. Shopify doesn’t apply your return rules to
-                    those returns, so Gooper.io applies the fees and final-sale
-                    collections below. Saving confirms they match your Shopify return
-                    rules. Turn this off to stop AI-assisted returns; your
-                    return portal keeps working.
-                  </s-paragraph>
-                </Explainer>
-                <s-grid
-                  gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
-                  gap="base"
-                >
-                  <s-number-field
-                    label="Restocking fee (%)"
-                    min={0}
-                    max={100}
-                    step={0.01}
-                    value={restockingFeePercent}
-                    onChange={(event) =>
-                      setRestockingFeePercent(event.currentTarget.value)
-                    }
-                  ></s-number-field>
-                  <s-money-field
-                    label={`Return shipping fee (${policy.currencyCode})`}
-                    min={0}
-                    max={1000}
-                    value={returnShippingFee}
-                    onChange={(event) =>
-                      setReturnShippingFee(event.currentTarget.value)
-                    }
-                  ></s-money-field>
-                </s-grid>
-                {canReadProducts ? (
-                  collections.length ? (
-                    <s-stack direction="block" gap="small-200">
-                      <s-text>
-                        Final-sale collections (up to {finalSaleCollectionLimit})
-                      </s-text>
-                      {collections.map((collection) => {
-                        const checked = finalSaleCollectionIds.includes(
-                          collection.id,
-                        );
-                        return (
-                          <s-checkbox
-                            key={collection.id}
-                            label={collection.title}
-                            checked={checked}
-                            disabled={
-                              !checked &&
-                              finalSaleCollectionIds.length >=
-                                finalSaleCollectionLimit
-                            }
-                            onChange={(event) => {
-                              const selected = event.currentTarget.checked;
-                              setFinalSaleCollectionIds((current) =>
-                                selected
-                                  ? [...current, collection.id]
-                                  : current.filter((id) => id !== collection.id),
-                              );
-                            }}
-                          ></s-checkbox>
-                        );
-                      })}
-                    </s-stack>
-                  ) : (
-                    <s-paragraph color="subdued">
-                      Your store has no collections to mark as final sale.
-                    </s-paragraph>
-                  )
-                ) : (
-                  <s-paragraph color="subdued">
-                    To mark final-sale collections, approve Gooper.io&apos;s updated
-                    permission to read products when Shopify asks.
-                  </s-paragraph>
-                )}
-                <s-text-area
-                  label="Return instructions for customers and assistants"
-                  details={`Shown with every quote, on your public return page, and in your store's Gooper.io agent guide and manifest. Plain text, up to ${instructionsMaxLength} characters.`}
-                  maxLength={instructionsMaxLength}
-                  rows={4}
-                  value={returnInstructions}
-                  onChange={(event) =>
-                    setReturnInstructions(event.currentTarget.value)
-                  }
-                ></s-text-area>
-                <s-url-field
-                  label="Return policy page"
-                  details="A page on your own store domain, such as your Shopify refund policy."
-                  value={returnPolicyUrl}
-                  onChange={(event) => setReturnPolicyUrl(event.currentTarget.value)}
-                ></s-url-field>
-              </s-stack>
-            </s-grid>
-            <s-stack direction="inline" gap="base" alignItems="center">
-              <s-button type="submit" variant="primary">
-                Save policy
-              </s-button>
-              <s-badge
-                tone={policy.automaticRefundsEnabled ? "success" : "warning"}
+                method="post"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const formData = new FormData();
+                  formData.set(
+                    "automaticRefundsEnabled",
+                    automaticRefundsEnabled ? "true" : "false",
+                  );
+                  formData.set("returnWindowDays", returnWindowDays);
+                  formData.set("maxAutoRefundAmount", maxAutoRefundAmount);
+                  formData.set("returnLocationId", returnLocationId);
+                  formData.set("refundTiming", refundTiming);
+                  formData.set("returnInstructions", returnInstructions);
+                  formData.set("returnPolicyUrl", returnPolicyUrl);
+                  formData.set(
+                    "verifiedStoreLinks",
+                    verifiedStoreLinks ? "true" : "false",
+                  );
+                  formData.set("restockingFeePercent", restockingFeePercent);
+                  formData.set("returnShippingFee", returnShippingFee);
+                  for (const id of finalSaleCollectionIds)
+                    formData.append("finalSaleCollectionIds", id);
+                  submit(formData, { method: "post" });
+                }}
               >
-                {policy.automaticRefundsEnabled
-                  ? "Automatic payments on"
-                  : "Quotes only"}
-              </s-badge>
-            </s-stack>
-          </s-stack>
+                <s-stack direction="block" gap="base">
+                  {/* Two groups of settings side by side, so the form is as tall
+                as its longer half rather than both halves stacked. */}
+                  <s-grid
+                    gridTemplateColumns="@container (inline-size <= 700px) 1fr, 1fr 1fr"
+                    gap="base"
+                  >
+                    <s-stack direction="block" gap="base">
+                      <s-switch
+                        label="Authorize eligible refunds to the original payment method on customer confirmation"
+                        checked={automaticRefundsEnabled}
+                        onChange={(event) =>
+                          setAutomaticRefundsEnabled(
+                            event.currentTarget.checked,
+                          )
+                        }
+                      ></s-switch>
+                      <s-paragraph color="subdued">
+                        Estimates work without enabling this setting. When
+                        enabled, the customer signs in, selects an eligible
+                        item, sees the calculated amount and refund timing, and
+                        confirms it. Shopify then opens the return, and the
+                        refund goes to the original payment method.
+                      </s-paragraph>
+                      <s-grid
+                        gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+                        gap="base"
+                      >
+                        <s-number-field
+                          label="Return window (days)"
+                          min={1}
+                          max={365}
+                          step={1}
+                          value={returnWindowDays}
+                          onChange={(event) =>
+                            setReturnWindowDays(event.currentTarget.value)
+                          }
+                          required
+                        ></s-number-field>
+                        <s-money-field
+                          label={`Maximum automatic refund (${policy.currencyCode})`}
+                          min={0.01}
+                          max={100000}
+                          value={maxAutoRefundAmount}
+                          onChange={(event) =>
+                            setMaxAutoRefundAmount(event.currentTarget.value)
+                          }
+                          required
+                        ></s-money-field>
+                        <s-select
+                          label="When to refund"
+                          value={refundTiming}
+                          onChange={(event) =>
+                            setRefundTiming(event.currentTarget.value)
+                          }
+                        >
+                          <s-option value="IMMEDIATE">
+                            As soon as the customer confirms the return
+                          </s-option>
+                          <s-option value="ON_RECEIPT">
+                            After I mark the returned item received
+                          </s-option>
+                        </s-select>
+                        <s-select
+                          label="Restock returned items to"
+                          value={returnLocationId}
+                          onChange={(event) =>
+                            setReturnLocationId(event.currentTarget.value)
+                          }
+                        >
+                          <s-option value="">
+                            The location that fulfilled the order
+                          </s-option>
+                          {locations.map((location) => (
+                            <s-option key={location.id} value={location.id}>
+                              {location.name}
+                            </s-option>
+                          ))}
+                        </s-select>
+                      </s-grid>
+                      <Explainer summary="About refund timing, restocking and fees">
+                        <s-paragraph>
+                          Immediate refunds reach customers before you receive
+                          or inspect the item, so your store carries the risk if
+                          it never comes back. Refunds on receipt approve the
+                          return at confirmation, then refund and restock when
+                          you mark the item received below.
+                        </s-paragraph>
+                        <s-paragraph color="subdued">
+                          Leave the restock location on the fulfilling location
+                          unless you route returns to a dedicated warehouse. If
+                          an order was fulfilled from more than one location and
+                          you have not chosen one here, received items are
+                          recorded as not restocked.
+                        </s-paragraph>
+                        <s-paragraph color="subdued">
+                          For customers signed in to your store, restocking and
+                          return shipping fees come from your Shopify return
+                          rules (Settings, then Policies). Customers see them in
+                          their quote, and Gooper.io deducts them from the
+                          refund it submits.
+                        </s-paragraph>
+                      </Explainer>
+                    </s-stack>
+                    <s-stack direction="block" gap="base">
+                      {!policy.returnRulesConfirmedAt && (
+                        <s-banner
+                          heading="Save to turn on AI-assisted returns"
+                          tone="info"
+                        >
+                          Customers can&apos;t start returns at your store from
+                          ChatGPT or Claude until you review the fees and
+                          final-sale collections below and save.
+                        </s-banner>
+                      )}
+                      {policy.returnRulesMismatch && (
+                        <s-banner
+                          heading="AI-assisted returns are paused"
+                          tone="warning"
+                        >
+                          {policy.returnRulesMismatch} Check the fees and
+                          final-sale collections below against your Shopify
+                          return rules, then save.
+                        </s-banner>
+                      )}
+                      <s-switch
+                        label="Let customers return through their AI assistant"
+                        checked={verifiedStoreLinks}
+                        onChange={(event) =>
+                          setVerifiedStoreLinks(event.currentTarget.checked)
+                        }
+                      ></s-switch>
+                      <Explainer summary="How AI-assisted returns work">
+                        <s-paragraph color="subdued">
+                          Customers who add Gooper.io to ChatGPT or Claude
+                          confirm their email once, and Gooper.io finds their
+                          orders at your store by that email, with no store
+                          sign-in. Shopify doesn’t apply your return rules to
+                          those returns, so Gooper.io applies the fees and
+                          final-sale collections below. Saving confirms they
+                          match your Shopify return rules. Turn this off to stop
+                          AI-assisted returns; your return portal keeps working.
+                        </s-paragraph>
+                      </Explainer>
+                      <s-grid
+                        gridTemplateColumns="repeat(auto-fit, minmax(220px, 1fr))"
+                        gap="base"
+                      >
+                        <s-number-field
+                          label="Restocking fee (%)"
+                          min={0}
+                          max={100}
+                          step={0.01}
+                          value={restockingFeePercent}
+                          onChange={(event) =>
+                            setRestockingFeePercent(event.currentTarget.value)
+                          }
+                        ></s-number-field>
+                        <s-money-field
+                          label={`Return shipping fee (${policy.currencyCode})`}
+                          min={0}
+                          max={1000}
+                          value={returnShippingFee}
+                          onChange={(event) =>
+                            setReturnShippingFee(event.currentTarget.value)
+                          }
+                        ></s-money-field>
+                      </s-grid>
+                      {canReadProducts ? (
+                        collections.length ? (
+                          <s-stack direction="block" gap="small-200">
+                            <s-text>
+                              Final-sale collections (up to{" "}
+                              {finalSaleCollectionLimit})
+                            </s-text>
+                            {collections.map((collection) => {
+                              const checked = finalSaleCollectionIds.includes(
+                                collection.id,
+                              );
+                              return (
+                                <s-checkbox
+                                  key={collection.id}
+                                  label={collection.title}
+                                  checked={checked}
+                                  disabled={
+                                    !checked &&
+                                    finalSaleCollectionIds.length >=
+                                      finalSaleCollectionLimit
+                                  }
+                                  onChange={(event) => {
+                                    const selected =
+                                      event.currentTarget.checked;
+                                    setFinalSaleCollectionIds((current) =>
+                                      selected
+                                        ? [...current, collection.id]
+                                        : current.filter(
+                                            (id) => id !== collection.id,
+                                          ),
+                                    );
+                                  }}
+                                ></s-checkbox>
+                              );
+                            })}
+                          </s-stack>
+                        ) : (
+                          <s-paragraph color="subdued">
+                            Your store has no collections to mark as final sale.
+                          </s-paragraph>
+                        )
+                      ) : (
+                        <s-paragraph color="subdued">
+                          To mark final-sale collections, approve
+                          Gooper.io&apos;s updated permission to read products
+                          when Shopify asks.
+                        </s-paragraph>
+                      )}
+                      <s-text-area
+                        label="Return instructions for customers and assistants"
+                        details={`Shown with every quote, on your public return page, and in your store's Gooper.io agent guide and manifest. Plain text, up to ${instructionsMaxLength} characters.`}
+                        maxLength={instructionsMaxLength}
+                        rows={4}
+                        value={returnInstructions}
+                        onChange={(event) =>
+                          setReturnInstructions(event.currentTarget.value)
+                        }
+                      ></s-text-area>
+                      <s-url-field
+                        label="Return policy page"
+                        details="A page on your own store domain, such as your Shopify refund policy."
+                        value={returnPolicyUrl}
+                        onChange={(event) =>
+                          setReturnPolicyUrl(event.currentTarget.value)
+                        }
+                      ></s-url-field>
+                    </s-stack>
+                  </s-grid>
+                  <s-stack direction="inline" gap="base" alignItems="center">
+                    <s-button type="submit" variant="primary">
+                      Save policy
+                    </s-button>
+                    <s-badge
+                      tone={
+                        policy.automaticRefundsEnabled ? "success" : "warning"
+                      }
+                    >
+                      {policy.automaticRefundsEnabled
+                        ? "Automatic payments on"
+                        : "Quotes only"}
+                    </s-badge>
+                  </s-stack>
+                </s-stack>
               </form>
             </s-box>
           </details>
@@ -1499,29 +1554,36 @@ export default function RefundDashboard() {
       </s-section>
 
       {!appStoreShot && (
-        <s-section slot="aside" heading="Add a return button to your storefront (optional)">
+        <s-section
+          slot="aside"
+          heading="Add a return button to your storefront (optional)"
+        >
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
-              Your return portal already works without this. Turning it on adds a
-              “Start a return” button to the bottom-right corner of every page of
-              your store, plus return details that AI shopping assistants can
+              Your return portal already works without this. Turning it on adds
+              a “Start a return” button to the bottom-right corner of every page
+              of your store, plus return details that AI shopping assistants can
               read. It works with every Shopify theme, including older ones.
             </s-paragraph>
             <Explainer summary="How to turn it on and off">
               <s-unordered-list>
                 <s-list-item>
-                  <s-text type="strong">Turn it on:</s-text> click the button below.
-                  Your theme editor opens with it switched on. Click Save.
+                  <s-text type="strong">Turn it on:</s-text> click the button
+                  below. Your theme editor opens with it switched on. Click
+                  Save.
                 </s-list-item>
                 <s-list-item>
-                  <s-text type="strong">Hide the button, keep AI assistant support:</s-text>{" "}
-                  in the theme editor, open App embeds → AI return assistance and
-                  untick Show the return button.
+                  <s-text type="strong">
+                    Hide the button, keep AI assistant support:
+                  </s-text>{" "}
+                  in the theme editor, open App embeds → AI return assistance
+                  and untick Show the return button.
                 </s-list-item>
                 <s-list-item>
-                  <s-text type="strong">Turn it off completely:</s-text> go to Online
-                  Store → Themes → Customize → App embeds, switch off AI return
-                  assistance, then Save. Uninstalling Gooper.io also removes it.
+                  <s-text type="strong">Turn it off completely:</s-text> go to
+                  Online Store → Themes → Customize → App embeds, switch off AI
+                  return assistance, then Save. Uninstalling Gooper.io also
+                  removes it.
                 </s-list-item>
               </s-unordered-list>
             </Explainer>
@@ -1551,7 +1613,10 @@ export default function RefundDashboard() {
       )}
 
       {!gooperPreview && !appStoreShot && (
-        <s-section slot="aside" heading="Returns section for your store's agents.md (optional)">
+        <s-section
+          slot="aside"
+          heading="Returns section for your store's agents.md (optional)"
+        >
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
               Gooper.io already serves a current return guide at
@@ -1568,7 +1633,6 @@ export default function RefundDashboard() {
           </s-stack>
         </s-section>
       )}
-
     </s-page>
   );
 }
