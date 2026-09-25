@@ -780,10 +780,11 @@ export default function RefundDashboard() {
     </form>
   );
 
-  // The aside column renders only at inlineSize="base". At "large" every
-  // section slotted into it disappears from the page entirely.
+  // Always "base". Polaris renders nothing at all at inlineSize="large" — not
+  // the aside column, and not the main column either — so the screenshot modes
+  // drop sections instead of widening the page.
   return (
-    <s-page heading="Gooper.io" inlineSize={appStoreShot ? "large" : "base"}>
+    <s-page heading="Gooper.io" inlineSize="base">
       <style>{`
         .gooper-explainer > summary { list-style: none; }
         .gooper-explainer > summary::-webkit-details-marker { display: none; }
@@ -795,10 +796,10 @@ export default function RefundDashboard() {
         </s-button>
       )}
 
-      {/* The aside is not rendered at inlineSize="large", which the screenshot
-          layout uses, so the installed status moves into the main column there
-          rather than disappearing from the shot. The policy screenshot shows
-          the editor on its own, so it drops this section entirely. */}
+      {/* The screenshot layouts hide the rest of the aside, so the installed
+          status moves into the main column there rather than sitting alone in
+          an otherwise empty column. The policy screenshot shows the editor on
+          its own, so it drops this section entirely. */}
       {!policyShot && (
         <s-section
           slot={appStoreShot ? undefined : "aside"}
