@@ -93,3 +93,15 @@ export async function installedStores(shops: string[]) {
     installed.set(install.shop, wixScopeString(install.permissions));
   return installed;
 }
+
+// A public page for an installed Wix site, or the same 404 a Shopify store
+// that never connected gets.
+export async function requireInstalledWixSite(value: string) {
+  const shop = value.trim().toLowerCase();
+  if (!isWixStore(shop) || !(await storeInstallation(shop)))
+    throw new Response("This store has not connected Gooper.io.", {
+      status: 404,
+      headers: { "Cache-Control": "no-store" },
+    });
+  return shop;
+}

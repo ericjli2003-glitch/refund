@@ -102,7 +102,7 @@ export function submittedReturnShipping(guidance: ReturnGuidance) {
   return (
     "The return is open, so send the item back." +
     returnInstructionsSentence(guidance.returnInstructions) +
-    " The store may add a return shipping label in Shopify; ask to check this return's status later for the label and tracking." +
+    " If the store adds a return shipping label, ask to check this return's status later for the label and tracking." +
     (guidance.returnPolicyUrl
       ? ` Return policy: ${guidance.returnPolicyUrl}`
       : "")

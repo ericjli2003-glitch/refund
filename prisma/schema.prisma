@@ -370,6 +370,10 @@ model AgentReturn {
   // The store's refund timing when the customer confirmed; null before it existed.
   refundTiming        String?
   itemReceivedAt      DateTime?
+  // Tracking the customer entered for a return with no platform return
+  // object to hold it (Wix). Shopify returns keep tracking on the return.
+  trackingNumber      String?
+  trackingUrl         String?
   // Set when the merchant clears a finished return off the dashboard. The
   // record stays: it is the store's account of a refund, and a customer data
   // request still reports it.

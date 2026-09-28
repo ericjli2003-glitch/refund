@@ -356,7 +356,7 @@ export async function createReturnQuote(
     },
     returnShipping:
       (submissionAvailable
-        ? "A return is opened for each order after confirmation. The store may add return shipping labels in Shopify."
+        ? "A return is opened for each order after confirmation. The store may add return shipping labels."
         : "Contact the merchant for return approval. No shipping label has been created.") +
       instructions,
   };

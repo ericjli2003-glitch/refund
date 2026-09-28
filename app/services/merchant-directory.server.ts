@@ -1,7 +1,11 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import { normalizeShopDomain } from "./customer-account.server";
-import { installedStores } from "./store-platform.server";
+import {
+  installedStores,
+  isWixStore,
+  storeInstallation,
+} from "./store-platform.server";
 
 export const normalizeMerchantName = (value: string) =>
   value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
@@ -188,6 +192,19 @@ export async function provisionMerchant(shop: string, admin: AdminApiContext) {
 
 export async function resolveMerchant(value: string) {
   if (!value.trim() || value.length > 2048) return null;
+  const key = value.trim().toLowerCase();
+  if (isWixStore(key)) {
+    const [directory, installed] = await Promise.all([
+      prisma.merchantDirectory.findUnique({ where: { shop: key } }),
+      storeInstallation(key),
+    ]);
+    if (!installed) return null;
+    return {
+      shop: key,
+      name: directory?.name || key,
+      domain: directory?.primaryDomain ?? key,
+    };
+  }
   if (!/[:/\\.]/.test(value)) {
     const matches = await findPublishedMerchants(value);
     if (matches.length !== 1) return null;
@@ -199,16 +216,19 @@ export async function resolveMerchant(value: string) {
     where: canonical ? { shop: host } : { primaryDomain: host },
   });
   const shop = canonical ? normalizeShopDomain(host) : directory?.shop;
-  if (
-    !shop ||
-    !(await prisma.session.findFirst({
-      where: { shop, isOnline: false },
-      select: { id: true },
-    }))
-  )
-    return null;
+  if (!shop || !(await storeInstallation(shop))) return null;
   // Custom domains can change owners. Recheck against the installed shop, never
   // fetch a caller-supplied hostname or infer identity from a redirect/DNS record.
+  if (!canonical && isWixStore(shop)) {
+    // Loaded on use: the Wix site sync builds on this module's helpers.
+    const [{ syncWixSite }, { wixApiFor }] = await Promise.all([
+      import("./wix/wix-site.server"),
+      import("./wix/wix-client.server"),
+    ]);
+    const current = await syncWixSite(shop, await wixApiFor(shop));
+    if (current.primaryDomain !== host) return null;
+    return { shop, name: current.name, domain: host };
+  }
   if (!canonical) {
     const { unauthenticated } = await import("../shopify.server");
     const { admin } = await unauthenticated.admin(shop);

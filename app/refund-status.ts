@@ -1,4 +1,4 @@
-// A Shopify refund record is not proof that money reached the customer's bank.
+// A platform refund record is not proof that money reached the customer's bank.
 export function refundPaymentStatus(
   transactions: Array<{ kind: string; status: string }>,
   hasMore = false,
@@ -16,7 +16,7 @@ export function describeRefundProgress(record: { status: string; refundStatus?: 
   if (record.status === "NOT_SUBMITTED") {
     return {
       title: "Not submitted",
-      message: "Shopify didn't accept this return request, so nothing was submitted and no refund was issued. It's safe to try again, or contact the store.",
+      message: "The store didn't accept this return request, so nothing was submitted and no refund was issued. It's safe to try again, or contact the store.",
     };
   }
   if (record.status === "NEEDS_ATTENTION" || record.refundStatus === "FAILED") {
@@ -33,10 +33,10 @@ export function describeRefundProgress(record: { status: string; refundStatus?: 
   }
   if (["REFUND_SUBMITTED", "REFUND_RECORDED"].includes(record.status)) {
     return {
-      title: record.refundStatus === "SUCCESS" ? "Refund processed by Shopify" : "Refund submitted",
+      title: record.refundStatus === "SUCCESS" ? "Refund processed" : "Refund submitted",
       message: record.refundStatus === "SUCCESS"
-        ? "Shopify reports successful refund processing through the original payment processor. Your bank may still take time to post the credit. Follow the store's instructions for sending the item back."
-        : "Shopify has recorded your refund request to the original payment method. Payment completion is not yet confirmed here. Bank posting time may vary. Follow the store's instructions for sending the item back.",
+        ? "The store reports your refund to the original payment method as processed. Your bank may still take time to post the credit. Follow the store's instructions for sending the item back."
+        : "The store has recorded your refund to the original payment method. Payment completion is not yet confirmed here. Bank posting time may vary. Follow the store's instructions for sending the item back.",
     };
   }
   return {

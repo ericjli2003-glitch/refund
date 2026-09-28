@@ -6,6 +6,9 @@ import {
   unsealWithRotation,
 } from "./customer-security.server";
 import { adminData, adminFor, type AdminGraphql } from "./shopify-admin.server";
+import { isWixStore } from "./store-platform.server";
+import { wixApiFor } from "./wix/wix-client.server";
+import { hasWixOrdersForEmail } from "./wix/wix-returns.server";
 import { emailSubject } from "./verified-customer-returns.server";
 
 export const connectionEmailContext = (connectionId: string) =>
@@ -28,6 +31,8 @@ export async function hasOrdersForEmail(
   email: string,
   admin?: AdminGraphql,
 ) {
+  if (isWixStore(shop))
+    return hasWixOrdersForEmail(shop, email, await wixApiFor(shop));
   const client = admin ?? (await adminFor(shop));
   const { orders } = await adminData<{
     orders: { nodes: Array<{ id: string; email: string | null }> };
