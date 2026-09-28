@@ -116,7 +116,30 @@ async function mintToken(instanceId: string, deps: WixClientDeps): Promise<Cache
   const expiresIn = Number(body?.expires_in);
   if (typeof token !== "string" || !token || !Number.isFinite(expiresIn) || expiresIn <= 0)
     throw new WixApiError("Wix returned an unusable access token.", 502, false);
+  lastMintedAt = now();
   return { token, expiresAt: now() + expiresIn * 1000 };
+}
+
+// Whether an error from minting a site's token (wixAccessToken) means Wix no
+// longer has Gooper.io on that site, so its data can be deleted. Only 400 and
+// 404 (instance not found / app not installed) count. 401 and 403 mean our
+// own credentials were refused (a wrong or rotated WIX_APP_SECRET), which
+// says nothing about the site; treating them as "removed" would let a
+// credential problem wipe live stores. UNVERIFIED: the exact status Wix
+// returns for a removed instance; 400 and 404 are both accepted. Apply this
+// only to token mint errors: other endpoints use 400/404 for their own reasons.
+// When this process last got a token from Wix for any site. A token proves the
+// app's own credentials work, so a "not installed" answer about some other
+// site can be believed. With broken credentials (say a bad secret rotation,
+// which some OAuth servers answer with 400) no token is ever issued, and
+// nothing gets deleted on the strength of those answers.
+let lastMintedAt = 0;
+const CREDENTIALS_PROVEN_MS = 24 * 3_600_000;
+export const wixCredentialsProven = (now = Date.now()) =>
+  lastMintedAt > 0 && now - lastMintedAt < CREDENTIALS_PROVEN_MS;
+
+export function wixInstanceGone(error: unknown) {
+  return error instanceof WixApiError && (error.status === 400 || error.status === 404);
 }
 
 // The app's access token for one installed site, cached in memory until
@@ -214,4 +237,5 @@ export async function wixApiFor(shop: string): Promise<WixApi> {
 export function resetWixTokenCache() {
   tokens.clear();
   minting.clear();
+  lastMintedAt = 0;
 }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test, { type TestContext } from "node:test";
+import { Prisma } from "@prisma/client";
 
 import prisma from "../../db.server";
 import type { WixApi } from "./wix-api.server";
@@ -9,6 +10,7 @@ import {
   provisionWixSite,
   removeWixSite,
   syncWixSite,
+  WixSiteNotInstalled,
   wixSiteHost,
 } from "./wix-site.server";
 
@@ -52,15 +54,47 @@ const instanceResponse = (site: Record<string, unknown> = {}, instance: Record<s
   },
 });
 
-function mockWrites(t: TestContext, stored: unknown = null) {
-  mockDelegate(t, prisma, "$transaction", async (ops: Promise<unknown>[]) => Promise.all(ops));
+const domainTaken = () =>
+  new Prisma.PrismaClientKnownRequestError("Unique constraint failed on primaryDomain", {
+    code: "P2002",
+    clientVersion: "test",
+    meta: { modelName: "MerchantDirectory", target: ["primaryDomain"] },
+  });
+
+type DirectoryWrite = { where: unknown; create?: Record<string, unknown>; update?: Record<string, unknown>; data?: Record<string, unknown> };
+
+function mockWrites(
+  t: TestContext,
+  stored: unknown = null,
+  {
+    installed = 1,
+    directoryRows = 1,
+    takenDomains = [] as string[],
+    directoryError = null as Error | null,
+  } = {},
+) {
+  const transaction = mockDelegate(t, prisma, "$transaction", async (ops: Promise<unknown>[]) => Promise.all(ops));
   mockDelegate(t, prisma.merchantDirectory, "findUnique", async () => stored);
   return {
-    directory: mockDelegate(t, prisma.merchantDirectory, "upsert", async () => ({})),
+    transaction,
+    directory: mockDelegate(t, prisma.merchantDirectory, "upsert", async (args: DirectoryWrite) => {
+      if (takenDomains.includes(args.update?.primaryDomain as string)) throw domainTaken();
+      return {};
+    }),
+    directoryUpdate: mockDelegate(t, prisma.merchantDirectory, "updateMany", async (args: DirectoryWrite) => {
+      if (directoryError) throw directoryError;
+      const domain = args.data?.primaryDomain as string;
+      if (takenDomains.includes(domain)) throw domainTaken();
+      return { count: directoryRows };
+    }),
     installation: mockDelegate(t, prisma.wixInstallation, "upsert", async () => ({})),
+    installationUpdate: mockDelegate(t, prisma.wixInstallation, "updateMany", async () => ({ count: installed })),
     policy: mockDelegate(t, prisma.storePolicy, "upsert", async () => ({})),
   };
 }
+
+const firstArg = (mock: { mock: { calls: { arguments: unknown[] }[] } }, index = 0) =>
+  mock.mock.calls[index].arguments[0] as DirectoryWrite;
 
 test("tells custom domains from shared free Wix hosts", () => {
   assert.equal(wixSiteHost("https://www.plantshop.example/"), "www.plantshop.example");
@@ -74,46 +108,70 @@ test("tells custom domains from shared free Wix hosts", () => {
     assert.equal(isSharedWixHost(host), false, host);
 });
 
-test("syncs the directory profile and installation from the app instance", async (t) => {
+test("syncs the directory profile and installation from the app instance, update-only", async (t) => {
   const writes = mockWrites(t);
   const { api, calls } = fakeApi(instanceResponse());
   const result = await syncWixSite(shop, api, now);
   assert.deepEqual(calls, [["GET", "/apps/v1/instance"]]);
   assert.deepEqual(result, { name: "Plant   Shop", primaryDomain: "www.plantshop.example", currencyCode: "USD" });
 
-  const directory = writes.directory.mock.calls[0].arguments[0] as unknown as {
-    where: unknown;
-    create: Record<string, unknown>;
-    update: Record<string, unknown>;
-  };
-  assert.deepEqual(directory.where, { shop });
-  assert.equal(directory.create.shop, shop);
-  assert.deepEqual(directory.update, {
-    primaryDomain: "www.plantshop.example",
-    name: "Plant   Shop",
-    aliases: ["plant shop", "plant shop storefront"],
-    formerAliases: {},
-    verifiedAt: now,
+  assert.deepEqual(firstArg(writes.directoryUpdate), {
+    where: { shop },
+    data: {
+      primaryDomain: "www.plantshop.example",
+      name: "Plant   Shop",
+      aliases: ["plant shop", "plant shop storefront"],
+      formerAliases: {},
+      verifiedAt: now,
+    },
   });
-  assert.equal("discoveryPublished" in directory.update, false);
+  assert.deepEqual(firstArg(writes.installationUpdate), {
+    where: { instanceId, shop },
+    data: {
+      permissions: ["WIX_STORES.READ_PRODUCTS", "ECOM.READ_ORDERS"],
+      siteName: "Plant   Shop",
+      siteUrl: "https://www.plantshop.example",
+      currencyCode: "USD",
+    },
+  });
+  // A sync never creates rows.
+  assert.equal(writes.installation.mock.callCount(), 0);
+  assert.equal(writes.directory.mock.callCount(), 0);
+  assert.equal(writes.policy.mock.callCount(), 0);
+});
 
-  assert.deepEqual(writes.installation.mock.calls[0].arguments[0], {
-    where: { instanceId },
-    create: {
-      instanceId,
-      shop,
-      permissions: ["WIX_STORES.READ_PRODUCTS", "ECOM.READ_ORDERS"],
-      siteName: "Plant   Shop",
-      siteUrl: "https://www.plantshop.example",
-      currencyCode: "USD",
-    },
-    update: {
-      permissions: ["WIX_STORES.READ_PRODUCTS", "ECOM.READ_ORDERS"],
-      siteName: "Plant   Shop",
-      siteUrl: "https://www.plantshop.example",
-      currencyCode: "USD",
-    },
-  });
+test("a sync after the site was removed writes nothing and says so", async (t) => {
+  const writes = mockWrites(t, null, { installed: 0 });
+  await assert.rejects(syncWixSite(shop, fakeApi(instanceResponse()).api, now), WixSiteNotInstalled);
+  assert.equal(writes.directoryUpdate.mock.callCount(), 0);
+  assert.equal(writes.directory.mock.callCount(), 0);
+  assert.equal(writes.installation.mock.callCount(), 0);
+});
+
+test("a sync leaves a missing directory row for provisioning to create", async (t) => {
+  const writes = mockWrites(t, null, { directoryRows: 0 });
+  const result = await syncWixSite(shop, fakeApi(instanceResponse()).api, now);
+  assert.equal(result.name, "Plant   Shop");
+  assert.equal(writes.directoryUpdate.mock.callCount(), 1);
+  assert.equal(writes.directory.mock.callCount(), 0);
+});
+
+test("a custom domain held by another store falls back to the store key", async (t) => {
+  const writes = mockWrites(t, null, { takenDomains: ["www.plantshop.example"] });
+  const synced = await syncWixSite(shop, fakeApi(instanceResponse()).api, now);
+  assert.equal(synced.primaryDomain, shop);
+  assert.equal(firstArg(writes.directoryUpdate, 1).data?.primaryDomain, shop);
+
+  const provisioned = await provisionWixSite(instanceId, fakeApi(instanceResponse()).api, now);
+  assert.equal(provisioned.primaryDomain, shop);
+  assert.equal(writes.installation.mock.callCount(), 1);
+  assert.equal(firstArg(writes.directory, 1).create?.primaryDomain, shop);
+  assert.equal(writes.policy.mock.callCount(), 1);
+});
+
+test("other directory failures are not mistaken for a taken domain", async (t) => {
+  mockWrites(t, null, { directoryError: new Error("database unavailable") });
+  await assert.rejects(syncWixSite(shop, fakeApi(instanceResponse()).api, now), /database unavailable/);
 });
 
 test("free Wix addresses and unpublished sites use the store key as primary domain", async (t) => {
@@ -130,7 +188,7 @@ test("keeps a renamed site's former name searchable", async (t) => {
     formerAliases: {},
   });
   await syncWixSite(shop, fakeApi(instanceResponse()).api, now);
-  const update = (writes.directory.mock.calls[0].arguments[0] as unknown as { update: { aliases: string[]; formerAliases: Record<string, string> } }).update;
+  const update = firstArg(writes.directoryUpdate).data as { aliases: string[]; formerAliases: Record<string, string> };
   assert.deepEqual(update.aliases, ["plant shop", "plant shop storefront", "old name", "old name storefront"]);
   assert.deepEqual(Object.keys(update.formerAliases), ["old name", "old name storefront"]);
 });
@@ -144,6 +202,8 @@ test("refuses an instance Wix does not confirm, without writing", async (t) => {
     instanceResponse({ siteDisplayName: " ", url: "https://jane.wixsite.com/x" }),
   ])
     await assert.rejects(syncWixSite(shop, fakeApi(response).api, now));
+  assert.equal(writes.directoryUpdate.mock.callCount(), 0);
+  assert.equal(writes.installationUpdate.mock.callCount(), 0);
   assert.equal(writes.directory.mock.callCount(), 0);
   assert.equal(writes.installation.mock.callCount(), 0);
 });
@@ -154,10 +214,30 @@ test("an unusable currency is stored as unknown", async (t) => {
   assert.equal(result.currencyCode, null);
 });
 
-test("provisioning creates return rules off by default and never overwrites them", async (t) => {
+test("provisioning creates the site, listed, with return rules off, and never overwrites choices", async (t) => {
   const writes = mockWrites(t);
-  const result = await provisionWixSite(instanceId.toUpperCase(), fakeApi(instanceResponse()).api);
+  const result = await provisionWixSite(instanceId.toUpperCase(), fakeApi(instanceResponse()).api, now);
   assert.equal(result.shop, shop);
+  assert.equal(result.primaryDomain, "www.plantshop.example");
+  // Written one by one: nothing about the directory row can undo the install.
+  assert.equal(writes.transaction.mock.callCount(), 0);
+  const installation = {
+    permissions: ["WIX_STORES.READ_PRODUCTS", "ECOM.READ_ORDERS"],
+    siteName: "Plant   Shop",
+    siteUrl: "https://www.plantshop.example",
+    currencyCode: "USD",
+  };
+  assert.deepEqual(firstArg(writes.installation), {
+    where: { instanceId },
+    create: { instanceId, shop, ...installation },
+    update: installation,
+  });
+  const directory = firstArg(writes.directory);
+  assert.deepEqual(directory.where, { shop });
+  assert.equal(directory.create?.shop, shop);
+  assert.equal(directory.update?.primaryDomain, "www.plantshop.example");
+  assert.equal("discoveryPublished" in (directory.update ?? {}), false);
+  assert.equal("discoveryPublished" in (directory.create ?? {}), false);
   assert.deepEqual(writes.policy.mock.calls[0].arguments[0], {
     where: { shop },
     create: { shop, currencyCode: "USD", automaticRefundsEnabled: false },
@@ -172,6 +252,7 @@ test("provisioning without a currency fails before creating return rules", async
     /currency/,
   );
   assert.equal(writes.policy.mock.callCount(), 0);
+  assert.equal(writes.installation.mock.callCount(), 0);
 });
 
 test("removal clears exactly what a Shopify uninstall clears, with the Wix installation for the session", async (t) => {

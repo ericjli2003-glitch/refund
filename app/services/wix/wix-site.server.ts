@@ -1,3 +1,5 @@
+import { Prisma } from "@prisma/client";
+
 import prisma from "../../db.server";
 import {
   merchantHost,
@@ -41,7 +43,15 @@ export const isSharedWixHost = (host: string) => SHARED_WIX_HOSTS.test(host);
 const stringOr = (value: unknown) =>
   typeof value === "string" && value.trim() ? value.trim() : null;
 
-export async function syncWixSite(shop: string, api: WixApi, now = new Date()) {
+export class WixSiteNotInstalled extends Error {
+  constructor() {
+    super("Gooper.io is not installed on this Wix site.");
+    this.name = "WixSiteNotInstalled";
+  }
+}
+
+// What Wix says about the site now, checked against the store key.
+async function readWixSite(shop: string, api: WixApi, now: Date) {
   const response = await api<WixAppInstanceResponse>("GET", "/apps/v1/instance");
   const instanceId = stringOr(response?.instance?.instanceId)?.toLowerCase();
   if (!instanceId || instanceId !== wixInstanceIdOf(shop))
@@ -80,38 +90,100 @@ export async function syncWixSite(shop: string, api: WixApi, now = new Date()) {
     stored?.formerAliases,
     now,
   );
-  const directory = { primaryDomain, name, aliases, formerAliases, verifiedAt: now };
-  const installation = { permissions, siteName: name, siteUrl, currencyCode };
-  await prisma.$transaction([
-    prisma.wixInstallation.upsert({
-      where: { instanceId },
-      create: { instanceId, shop, ...installation },
-      update: installation,
-    }),
-    prisma.merchantDirectory.upsert({
-      where: { shop },
-      // New installations are listed by default; updates keep the merchant's
-      // listing choice.
-      create: { shop, ...directory },
-      update: directory,
-    }),
-  ]);
-  return { name, primaryDomain, currencyCode };
+  return {
+    instanceId,
+    name,
+    currencyCode,
+    // Never includes discoveryPublished: the merchant's listing choice stays.
+    directory: { primaryDomain, name, aliases, formerAliases, verifiedAt: now },
+    installation: { permissions, siteName: name, siteUrl, currencyCode },
+  };
+}
+
+type Directory = Awaited<ReturnType<typeof readWixSite>>["directory"];
+
+const primaryDomainTaken = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === "P2002" &&
+  JSON.stringify(error.meta?.target ?? "").includes("primaryDomain");
+
+// Writes the directory row. A custom domain can still be held by another
+// store's row: a merchant who moved from Shopify to Wix with Gooper.io on
+// both keeps the domain on the Shopify row until that store is uninstalled or
+// resynced. primaryDomain is unique, so rather than failing (which would
+// block install forever), the site is listed under its store key, as a free
+// Wix address is: still found by name, never by that website. The next sync
+// claims the domain once it is free. Returns the domain actually stored.
+async function writeDirectory(
+  write: (directory: Directory) => Promise<unknown>,
+  directory: Directory,
+  shop: string,
+) {
+  try {
+    await write(directory);
+    return directory.primaryDomain;
+  } catch (error) {
+    if (directory.primaryDomain === shop || !primaryDomainTaken(error)) throw error;
+    await write({ ...directory, primaryDomain: shop });
+    return shop;
+  }
+}
+
+// Refreshes an installed site's details. Update-only: a sync racing with
+// removeWixSite (the maintenance sweep, a custom-domain lookup) must never
+// bring a removed site back, so it writes nothing once the installation row
+// is gone and throws WixSiteNotInstalled. Only provisionWixSite creates rows.
+export async function syncWixSite(shop: string, api: WixApi, now = new Date()) {
+  const site = await readWixSite(shop, api, now);
+  const { count } = await prisma.wixInstallation.updateMany({
+    where: { instanceId: site.instanceId, shop },
+    data: site.installation,
+  });
+  if (!count) throw new WixSiteNotInstalled();
+  // If removal lands between these writes, this matches no row and writes
+  // nothing. A missing row is left for provisioning to create.
+  const primaryDomain = await writeDirectory(
+    (directory) => prisma.merchantDirectory.updateMany({ where: { shop }, data: directory }),
+    site.directory,
+    shop,
+  );
+  return { name: site.name, primaryDomain, currencyCode: site.currencyCode };
 }
 
 // On install. Writes nothing until Wix confirms the instance with a token
 // minted for it (a replayed install event for a removed site fails there).
-export async function provisionWixSite(instanceId: string, api: WixApi) {
+// The installation is written on its own, before the directory, so nothing
+// about the directory row can keep the site from being installed. A failure
+// after it throws, and the install webhook's retry (every write here is an
+// upsert) finishes the job.
+export async function provisionWixSite(instanceId: string, api: WixApi, now = new Date()) {
   const shop = wixStoreKey(instanceId);
-  const merchant = await syncWixSite(shop, api);
-  if (!merchant.currencyCode) throw new Error("Could not determine the store currency.");
+  const site = await readWixSite(shop, api, now);
+  if (!site.currencyCode) throw new Error("Could not determine the store currency.");
+  await prisma.wixInstallation.upsert({
+    where: { instanceId: site.instanceId },
+    create: { instanceId: site.instanceId, shop, ...site.installation },
+    update: site.installation,
+  });
+  const primaryDomain = await writeDirectory(
+    (directory) =>
+      prisma.merchantDirectory.upsert({
+        where: { shop },
+        // New installations are listed by default; updates keep the
+        // merchant's listing choice.
+        create: { shop, ...directory },
+        update: directory,
+      }),
+    site.directory,
+    shop,
+  );
   // Reinstalling must never overwrite a merchant's choices.
   await prisma.storePolicy.upsert({
     where: { shop },
-    create: { shop, currencyCode: merchant.currencyCode, automaticRefundsEnabled: false },
+    create: { shop, currencyCode: site.currencyCode, automaticRefundsEnabled: false },
     update: {},
   });
-  return { shop, ...merchant };
+  return { shop, name: site.name, primaryDomain, currencyCode: site.currencyCode };
 }
 
 // On removal: the same tables the Shopify uninstall webhook clears, with the

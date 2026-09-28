@@ -8,9 +8,11 @@ import { action as wixWebhook } from "../app/routes/webhooks.wix";
 import { connectionStore } from "../app/services/agent-access.server";
 import { connectionEmailContext } from "../app/services/connection-email.server";
 import { customerIdentityHash, seal } from "../app/services/customer-security.server";
+import { refreshShop } from "../app/services/merchant-maintenance.server";
 import { findStore } from "../app/services/merchant-lookup.server";
 import { resolveStore } from "../app/services/return-wording.server";
-import { resetWixTokenCache } from "../app/services/wix/wix-client.server";
+import { createWixApi, resetWixTokenCache } from "../app/services/wix/wix-client.server";
+import { syncWixSite, WixSiteNotInstalled } from "../app/services/wix/wix-site.server";
 
 // A Wix site's whole life against the real schema, next to a Shopify store:
 // install, directory search, a customer's store link, then uninstall. Only
@@ -37,13 +39,17 @@ process.env.WIX_WEBHOOK_PUBLIC_KEY = publicKey
   .export({ type: "spki", format: "pem" })
   .toString();
 
-async function deliver(eventType: string, data: Record<string, unknown>) {
+async function deliver(
+  eventType: string,
+  data: Record<string, unknown>,
+  instance = instanceId,
+) {
   const key = await importPKCS8(
     privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
     "RS256",
   );
   const body = await new SignJWT({
-    data: JSON.stringify({ eventType, instanceId, data: JSON.stringify(data) }),
+    data: JSON.stringify({ eventType, instanceId: instance, data: JSON.stringify(data) }),
   })
     .setProtectedHeader({ alg: "RS256" })
     .setIssuedAt()
@@ -54,23 +60,37 @@ async function deliver(eventType: string, data: Record<string, unknown>) {
 }
 
 // Wix's side: a token while the app is installed, then the site's details.
+// A second site (movedInstanceId) is used for the custom-domain and sweep
+// cases.
+const movedInstanceId = randomUUID();
+const movedShop = `wix-${movedInstanceId}`;
+const takenDomain = `www.fern-${instanceId.slice(0, 6)}.example`;
+const sites = new Map<string, { installed: boolean; url: string }>([
+  [instanceId, { installed: true, url: `https://jane-${instanceId.slice(0, 6)}.wixsite.com/ferns` }],
+  [movedInstanceId, { installed: true, url: `https://${takenDomain}` }],
+]);
 let installed = true;
 const realFetch = globalThis.fetch;
-globalThis.fetch = (async (input: string | URL | Request) => {
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = String(input instanceof Request ? input.url : input);
-  if (url.endsWith("/oauth2/token"))
-    return installed
-      ? Response.json({ access_token: "integration-token", expires_in: 14_400 })
+  if (url.endsWith("/oauth2/token")) {
+    const id = JSON.parse(String(init?.body)).instance_id as string;
+    const live = id === instanceId ? installed : sites.get(id)?.installed;
+    return live
+      ? Response.json({ access_token: `token-${id}`, expires_in: 14_400 })
       : Response.json({ message: "App instance not found" }, { status: 400 });
-  if (url.endsWith("/apps/v1/instance"))
+  }
+  if (url.endsWith("/apps/v1/instance")) {
+    const id = String(new Headers(init?.headers).get("Authorization")).slice("token-".length);
     return Response.json({
-      instance: { instanceId, appName: "Gooper.io", permissions: ["SCOPE.DC-STORES-MEGA.READ-STORES"] },
+      instance: { instanceId: id, appName: "Gooper.io", permissions: ["SCOPE.DC-STORES-MEGA.READ-STORES"] },
       site: {
-        siteDisplayName: siteName,
-        url: `https://jane-${instanceId.slice(0, 6)}.wixsite.com/ferns`,
+        siteDisplayName: id === instanceId ? siteName : `Moved ${siteName}`,
+        url: sites.get(id)?.url,
         paymentCurrency: "EUR",
       },
     });
+  }
   throw new Error(`Unexpected request in integration test: ${url}`);
 }) as typeof fetch;
 
@@ -79,11 +99,14 @@ test.after(async () => {
   resetWixTokenCache();
   await prisma.$transaction([
     prisma.agentConnection.deleteMany({ where: { clientId: `client-${instanceId}` } }),
-    prisma.merchantDirectory.deleteMany({ where: { shop: { in: [wixShop, shopifyShop] } } }),
-    prisma.storePolicy.deleteMany({ where: { shop: { in: [wixShop, shopifyShop] } } }),
+    prisma.merchantDirectory.deleteMany({
+      where: { shop: { in: [wixShop, shopifyShop, movedShop, `moved-${shopifyShop}`] } },
+    }),
+    prisma.storePolicy.deleteMany({ where: { shop: { in: [wixShop, shopifyShop, movedShop] } } }),
     prisma.session.deleteMany({ where: { shop: shopifyShop } }),
-    prisma.wixInstallation.deleteMany({ where: { shop: wixShop } }),
-    prisma.webhookReceipt.deleteMany({ where: { shop: wixShop } }),
+    prisma.wixInstallation.deleteMany({ where: { shop: { in: [wixShop, movedShop] } } }),
+    prisma.webhookReceipt.deleteMany({ where: { shop: { in: [wixShop, movedShop] } } }),
+    prisma.agentReturn.deleteMany({ where: { shop: { in: [wixShop, movedShop] } } }),
   ]);
   await prisma.$disconnect();
 });
@@ -170,6 +193,43 @@ test("a Wix site installs, is found, links a customer, and is removed without to
     1,
   );
 
+  // A refund result that beats the return's own save of the refund ID is
+  // refused (5xx, nothing recorded) so Wix redelivers it once the ID is in.
+  const agentReturn = await prisma.agentReturn.create({
+    data: {
+      shop: wixShop,
+      orderId: `order-${instanceId}`,
+      status: "RETURN_OPEN",
+      idempotencyKey: `return-${instanceId}`,
+      requestedLineItems: [],
+      customerSubjectHash: "integration",
+    },
+  });
+  const refundEvent = {
+    id: `refund-event-${instanceId}`,
+    entityId: agentReturn.orderId,
+    actionEvent: {
+      body: {
+        orderId: agentReturn.orderId,
+        refund: { id: `refund-${instanceId}`, transactions: [{ refundStatus: "SUCCEEDED" }] },
+      },
+    },
+  };
+  const early = await deliver("wix.ecom.v1.order_transactions_refund_completed", refundEvent);
+  assert.equal(early.status, 503);
+  assert.equal(await prisma.webhookReceipt.count({ where: { id: `wix:${refundEvent.id}` } }), 0);
+  await prisma.agentReturn.update({
+    where: { id: agentReturn.id },
+    data: { status: "REFUND_SUBMITTED", refundId: `refund-${instanceId}` },
+  });
+  assert.deepEqual(
+    await (await deliver("wix.ecom.v1.order_transactions_refund_completed", refundEvent)).json(),
+    { recorded: true },
+  );
+  const recorded = await prisma.agentReturn.findUniqueOrThrow({ where: { id: agentReturn.id } });
+  assert.equal(recorded.status, "REFUND_RECORDED");
+  assert.equal(recorded.refundStatus, "SUCCESS");
+
   // A replayed removal while the app is still installed deletes nothing.
   assert.deepEqual(await (await deliver("AppRemoved", { appId })).json(), { ignored: true });
   assert.ok(await prisma.wixInstallation.findUnique({ where: { shop: wixShop } }));
@@ -192,4 +252,50 @@ test("a Wix site installs, is found, links a customer, and is removed without to
   assert.equal(await prisma.session.count({ where: { shop: shopifyShop } }), 1);
   assert.equal(await prisma.storePolicy.count({ where: { shop: shopifyShop } }), 1);
   await assert.rejects(resolveStore(siteName), /No store called/);
+
+  // A sync that raced with the removal cannot bring the site back.
+  installed = true;
+  resetWixTokenCache();
+  await assert.rejects(syncWixSite(wixShop, createWixApi(instanceId)), WixSiteNotInstalled);
+  assert.equal(await prisma.wixInstallation.count({ where: { shop: wixShop } }), 0);
+  assert.equal(await prisma.merchantDirectory.count({ where: { shop: wixShop } }), 0);
+});
+
+test("a custom domain another store still holds does not block install; the sweep removes sites Wix dropped", async () => {
+  // The merchant moved from Shopify to Wix; the old Shopify row keeps the domain.
+  const oldShop = `moved-${shopifyShop}`;
+  await prisma.merchantDirectory.create({
+    data: { shop: oldShop, primaryDomain: takenDomain, name: "Old storefront" },
+  });
+  const response = await deliver("AppInstalled", { appId }, movedInstanceId);
+  assert.equal(response.status, 200);
+  assert.ok(await prisma.wixInstallation.findUnique({ where: { shop: movedShop } }));
+  let profile = await prisma.merchantDirectory.findUniqueOrThrow({ where: { shop: movedShop } });
+  assert.equal(profile.primaryDomain, movedShop);
+  assert.ok(await prisma.storePolicy.findUnique({ where: { shop: movedShop } }));
+
+  // The merchant hid the store; a sync keeps that choice and, once the old
+  // row lets go, claims the domain.
+  await prisma.merchantDirectory.update({ where: { shop: movedShop }, data: { discoveryPublished: false } });
+  await refreshShop(movedShop);
+  assert.equal(
+    (await prisma.merchantDirectory.findUniqueOrThrow({ where: { shop: movedShop } })).primaryDomain,
+    movedShop,
+  );
+  await prisma.merchantDirectory.delete({ where: { shop: oldShop } });
+  await refreshShop(movedShop);
+  profile = await prisma.merchantDirectory.findUniqueOrThrow({ where: { shop: movedShop } });
+  assert.equal(profile.primaryDomain, takenDomain);
+  assert.equal(profile.discoveryPublished, false);
+
+  // Wix no longer has the app and the removal webhook never came: the sweep
+  // cleans up.
+  sites.get(movedInstanceId)!.installed = false;
+  await refreshShop(movedShop);
+  for (const count of await Promise.all([
+    prisma.wixInstallation.count({ where: { shop: movedShop } }),
+    prisma.merchantDirectory.count({ where: { shop: movedShop } }),
+    prisma.storePolicy.count({ where: { shop: movedShop } }),
+  ]))
+    assert.equal(count, 0);
 });

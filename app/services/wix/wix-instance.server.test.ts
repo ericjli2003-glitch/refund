@@ -43,11 +43,19 @@ test("verifies a signed dashboard instance", () => {
   });
 });
 
-test("tolerates padding on the signature and a missing sign date", () => {
-  const [signature, data] = sign(payload({ signDate: undefined })).split(".");
+test("tolerates padding on the signature", () => {
+  const [signature, data] = sign(payload()).split(".");
   const result = verifyWixDashboardInstance(`${signature}=.${data}`, { secret, now });
   assert.equal(result.shop, `wix-${instanceId}`);
-  assert.equal(result.signDate, undefined);
+});
+
+test("an instance without a sign date never verifies, since it would never expire", () => {
+  for (const signDate of [undefined, "", null, 0])
+    assert.throws(
+      () => verifyWixDashboardInstance(sign(payload({ signDate })), { secret, now }),
+      WixInstanceRejected,
+      String(signDate),
+    );
 });
 
 test("rejects forged, altered and malformed instances", () => {

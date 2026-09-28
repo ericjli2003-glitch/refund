@@ -9,6 +9,7 @@ import {
   wixAccessToken,
   wixApiFor,
   wixConfigured,
+  wixInstanceGone,
 } from "./wix-client.server";
 
 const instanceId = "1b4f3c2a-9d8e-4f7a-8b6c-5d4e3f2a1b0c";
@@ -257,4 +258,15 @@ test("wixApiFor only serves installed Wix sites", async (t) => {
   );
   assert.equal(typeof (await wixApiFor(`wix-${instanceId}`)), "function");
   assert.equal(find.mock.callCount(), 2);
+});
+
+test("only a 400 or 404 token refusal means Wix no longer has the site", () => {
+  for (const status of [400, 404])
+    assert.equal(wixInstanceGone(new WixApiError("gone", status, true)), true, String(status));
+  // Our own credentials refused, rate limits, outages and timeouts say
+  // nothing about the site.
+  for (const status of [401, 403, 409, 429, 500, 502, 504])
+    assert.equal(wixInstanceGone(new WixApiError("x", status, status < 500)), false, String(status));
+  assert.equal(wixInstanceGone(new Error("400")), false);
+  assert.equal(wixInstanceGone(null), false);
 });

@@ -3,9 +3,15 @@ import type { ActionFunctionArgs } from "react-router";
 
 import prisma from "../db.server";
 import { processWebhookOnce } from "../services/webhook-reconciliation.server";
-import { WixApiError } from "../services/wix/wix-api.server";
-import { createWixApi, wixAccessToken } from "../services/wix/wix-client.server";
-import { recordWixRefundCompleted } from "../services/wix/wix-refund-events.server";
+import {
+  createWixApi,
+  wixAccessToken,
+  wixInstanceGone,
+} from "../services/wix/wix-client.server";
+import {
+  WixRefundNotYetRecorded,
+  recordWixRefundCompleted,
+} from "../services/wix/wix-refund-events.server";
 import { provisionWixSite, removeWixSite } from "../services/wix/wix-site.server";
 import {
   WIX_APP_INSTALLED,
@@ -34,11 +40,15 @@ async function recordReceipt(id: string, shop: string, topic: string) {
   }
 }
 
+// Only Wix saying the instance is gone (400/404) counts as removed. Our own
+// credentials being refused (401/403, e.g. a rotated WIX_APP_SECRET), rate
+// limits and outages throw: the route answers 5xx and Wix retries, so a
+// credential problem plus a replayed AppRemoved can never wipe a live site.
 const stillInstalled = (instanceId: string) =>
   wixAccessToken(instanceId, { fresh: true }).then(
     () => true,
     (error: unknown) => {
-      if (error instanceof WixApiError && error.rejected) return false;
+      if (wixInstanceGone(error)) return false;
       throw error;
     },
   );
@@ -83,7 +93,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     case WIX_APP_REMOVED:
       // A replayed removal must never delete a site that still has the app,
       // so Wix confirms first: it mints no token for a removed instance. An
-      // unclear answer throws, and Wix retries.
+      // unclear answer throws, and Wix retries. If the app really was removed
+      // but Wix still issued a token here, the maintenance sweep deletes the
+      // site once Wix stops (refreshShop).
       if (await stillInstalled(event.instanceId))
         return Response.json({ ignored: true });
       // No receipt: removal deletes the site's receipts too, and repeating a
@@ -91,14 +103,23 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       await removeWixSite(event.shop);
       return Response.json({ removed: true });
     case WIX_REFUND_COMPLETED:
-      await processWebhookOnce({
-        webhookId: event.id,
-        shop: event.shop,
-        topic: event.eventType,
-        process: async (transaction) => {
-          await recordWixRefundCompleted(transaction, event.shop, wixActionBody(event));
-        },
-      });
+      try {
+        await processWebhookOnce({
+          webhookId: event.id,
+          shop: event.shop,
+          topic: event.eventType,
+          process: async (transaction) => {
+            await recordWixRefundCompleted(transaction, event.shop, wixActionBody(event));
+          },
+        });
+      } catch (error) {
+        // The return has not saved this refund yet. Nothing was recorded (the
+        // receipt rolled back with the transaction), so Wix's retry gets a
+        // fresh try.
+        if (error instanceof WixRefundNotYetRecorded)
+          return new Response("Not ready; retry later", { status: 503 });
+        throw error;
+      }
       return Response.json({ recorded: true });
     default:
       // Paid plan changes and anything else subscribed later: acknowledged

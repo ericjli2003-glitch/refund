@@ -10,8 +10,9 @@ import { wixStoreKey } from "../store-platform.server";
 //   signature = base64url(HMAC-SHA256(key = app secret, message = the data part as received))
 // both without padding. Source: Wix's "Parse the app instance query
 // parameter" guide, confirmed only through search summaries (dev.wix.com was
-// unreachable). UNVERIFIED: the exact field list; anything but instanceId is
-// optional here.
+// unreachable). UNVERIFIED: the exact field list; anything but instanceId and
+// signDate is optional here. signDate is required: without it an instance
+// would never expire, so a leaked dashboard URL would work forever.
 //
 // Wix's newer dashboard SDK instead hands the page an access token; see
 // verifyWixDashboardToken below.
@@ -33,7 +34,7 @@ export type WixDashboardInstance = {
   siteOwnerId?: string;
   // The app plan; empty when free.
   vendorProductId?: string;
-  signDate?: Date;
+  signDate: Date;
 };
 
 // A dashboard session starts from a freshly signed instance; the page should
@@ -83,13 +84,12 @@ export function verifyWixDashboardInstance(
     throw new WixInstanceRejected("Invalid Wix instance.");
   }
 
-  let signDate: Date | undefined;
-  if (payload.signDate !== undefined) {
-    signDate = new Date(String(payload.signDate));
-    const age = now.getTime() - signDate.getTime();
-    if (Number.isNaN(age) || age > maxAgeMs || age < -CLOCK_SKEW_MS)
-      throw new WixInstanceRejected("Expired Wix instance.");
-  }
+  if (typeof payload.signDate !== "string" || !payload.signDate)
+    throw new WixInstanceRejected("Wix instance has no sign date.");
+  const signDate = new Date(payload.signDate);
+  const age = now.getTime() - signDate.getTime();
+  if (Number.isNaN(age) || age > maxAgeMs || age < -CLOCK_SKEW_MS)
+    throw new WixInstanceRejected("Expired Wix instance.");
 
   return {
     instanceId: shop.slice("wix-".length),

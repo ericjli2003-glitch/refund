@@ -185,3 +185,52 @@ test("a replayed AppRemoved for a site that still has the app deletes nothing", 
   assert.deepEqual(await response.json(), { ignored: true });
   assert.equal(transaction.mock.callCount(), 0);
 });
+
+test("AppRemoved treats only 'instance not found' as removed; refused credentials are retried", async (t) => {
+  configure(t);
+  noReceipt(t);
+  let status = 404;
+  t.mock.method(globalThis, "fetch", async () => Response.json({ message: "nope" }, { status }));
+  const transaction = mockDelegate(t, prisma, "$transaction", async (ops: unknown[]) => ops);
+  mockDelegate(t, prisma.wixInstallation, "deleteMany", async () => ({ count: 1 }));
+  assert.deepEqual(await (await post(await signed("AppRemoved", { appId }))).json(), { removed: true });
+  assert.equal(transaction.mock.callCount(), 1);
+
+  // A wrong or rotated app secret, rate limits and outages say nothing about
+  // the site: the delivery fails (5xx) and Wix retries it.
+  for (status of [401, 403, 429, 500]) {
+    await assert.rejects(post(await signed("AppRemoved", { appId })), String(status));
+    assert.equal(transaction.mock.callCount(), 1, String(status));
+  }
+});
+
+test("a refund result that arrives before its return saved the refund is retried, unrecorded", async (t) => {
+  configure(t);
+  const receipts: unknown[] = [];
+  mockDelegate(t, prisma.webhookReceipt, "findUnique", async () => null);
+  mockDelegate(t, prisma, "$transaction", async (run: (tx: unknown) => Promise<unknown>) =>
+    run({
+      webhookReceipt: {
+        findUnique: async () => null,
+        create: async (args: unknown) => receipts.push(args),
+      },
+      agentReturn: {
+        updateMany: async () => ({ count: 0 }),
+        // No return holds this refund yet; one on the order is waiting for it.
+        findFirst: async (args: { where: { refundId: unknown } }) =>
+          args.where.refundId === null ? { id: "return-1" } : null,
+      },
+    }),
+  );
+  const response = await post(
+    await signed("wix.ecom.v1.order_transactions_refund_completed", {
+      id: "event-2",
+      entityId: "order-1",
+      actionEvent: {
+        body: { orderId: "order-1", refund: { id: "refund-2", transactions: [{ refundStatus: "SUCCEEDED" }] } },
+      },
+    }),
+  );
+  assert.equal(response.status, 503);
+  assert.deepEqual(receipts, []);
+});

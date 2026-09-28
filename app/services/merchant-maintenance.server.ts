@@ -4,16 +4,33 @@ import { pruneAccessLog } from "./access-log.server";
 import { pruneExpiredCustomerAccess } from "./agent-access.server";
 import { syncMerchantDirectory } from "./merchant-directory.server";
 import { prunePublicRateLimits } from "./public-rate-limit.server";
-import { isWixStore, storeInstallation } from "./store-platform.server";
+import { isWixStore, storeInstallation, wixInstanceIdOf } from "./store-platform.server";
 
 // One shop's directory row, brought back in line with Shopify. Shared by the
 // six-hourly sweep and by the shop/update webhook.
 export async function refreshShop(shop: string) {
   if (isWixStore(shop)) {
-    const [{ syncWixSite }, { wixApiFor }] = await Promise.all([
+    const [
+      { removeWixSite, syncWixSite },
+      { wixAccessToken, wixApiFor, wixCredentialsProven, wixInstanceGone },
+    ] = await Promise.all([
       import("./wix/wix-site.server"),
       import("./wix/wix-client.server"),
     ]);
+    // Wix mints no token for a site that removed the app. The AppRemoved
+    // webhook can miss that (lost, or Wix still minted a token when it
+    // checked), so the sweep asks Wix afresh and cleans up what it no longer
+    // has. Only "instance not found" (400/404) counts; refused credentials
+    // or an outage throw and the site is retried next sweep.
+    try {
+      await wixAccessToken(wixInstanceIdOf(shop), { fresh: true });
+    } catch (error) {
+      // Only once another site's token has shown the app's credentials work:
+      // a misconfigured app must never read as every site being gone.
+      if (!wixInstanceGone(error) || !wixCredentialsProven()) throw error;
+      await removeWixSite(shop);
+      return;
+    }
     await syncWixSite(shop, await wixApiFor(shop));
   } else {
     const { unauthenticated } = await import("../shopify.server");

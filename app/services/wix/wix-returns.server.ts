@@ -91,6 +91,10 @@ type WixRefund = {
   transactions?: Array<{ refundStatus?: string | null }>;
 };
 
+// Starts the reference every Gooper.io refund carries in its reason, so a
+// refund-completed webhook can tell our refunds from the merchant's.
+export const WIX_REFUND_REFERENCE_PREFIX = "Gooper.io ref ";
+
 export type WixRefundStatus = "SUCCESS" | "PENDING" | "FAILED" | "UNKNOWN";
 
 const NOTHING_SUBMITTED = "Nothing was submitted.";
@@ -583,7 +587,7 @@ export function wixRefundReference(idempotencyKey: string) {
     .update(`wix-refund:${idempotencyKey}`)
     .digest("hex")
     .slice(0, 16);
-  return `Gooper.io ref ${hash}`;
+  return `${WIX_REFUND_REFERENCE_PREFIX}${hash}`;
 }
 
 function refundReason(reference: string, reason?: string) {

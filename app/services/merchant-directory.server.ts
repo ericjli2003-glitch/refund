@@ -222,12 +222,18 @@ export async function resolveMerchant(value: string) {
   // fetch a caller-supplied hostname or infer identity from a redirect/DNS record.
   if (!canonical && isWixStore(shop)) {
     // Loaded on use: the Wix site sync builds on this module's helpers.
-    const [{ syncWixSite }, { wixApiFor }] = await Promise.all([
+    const [{ syncWixSite, WixSiteNotInstalled }, { wixApiFor }] = await Promise.all([
       import("./wix/wix-site.server"),
       import("./wix/wix-client.server"),
     ]);
-    const current = await syncWixSite(shop, await wixApiFor(shop));
-    if (current.primaryDomain !== host) return null;
+    // A site removed while this lookup runs is simply not found.
+    const current = await syncWixSite(shop, await wixApiFor(shop)).catch(
+      (error: unknown) => {
+        if (error instanceof WixSiteNotInstalled) return null;
+        throw error;
+      },
+    );
+    if (!current || current.primaryDomain !== host) return null;
     return { shop, name: current.name, domain: host };
   }
   if (!canonical) {
