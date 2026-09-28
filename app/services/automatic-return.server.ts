@@ -848,6 +848,20 @@ export async function receiveReturnedItems(
       dispose: true,
     });
   } catch (error) {
+    // Wix refunds and restocks can't be looked up and undone the way Shopify
+    // returns can, so anything but a clear refusal may already have moved
+    // money or stock: it stays received and goes to the merchant rather than
+    // back to a button that would do it again.
+    if (isWixStore(shop) && !(error instanceof ReturnNotCreatedError)) {
+      await prisma.agentReturn.update({
+        where: { id: record.id },
+        data: {
+          status: "NEEDS_ATTENTION",
+          failureReason: errorText(error, "Marking the return received failed."),
+        },
+      });
+      throw error;
+    }
     await prisma.agentReturn.update({
       where: { id: record.id },
       data: {

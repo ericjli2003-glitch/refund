@@ -1,4 +1,4 @@
-// A platform refund record is not proof that money reached the customer's bank.
+// A Shopify refund record is not proof that money reached the customer's bank.
 export function refundPaymentStatus(
   transactions: Array<{ kind: string; status: string }>,
   hasMore = false,
@@ -12,11 +12,21 @@ export function refundPaymentStatus(
   return "UNKNOWN";
 }
 
-export function describeRefundProgress(record: { status: string; refundStatus?: string | null }) {
+// The platform that holds the store's orders, as customers know it. Wix sites
+// are keyed "wix-<instanceId>"; every other store is a Shopify store. (This
+// module also runs in the browser, so it doesn't import the server helper.)
+const platformName = (shop?: string | null) => (shop?.startsWith("wix-") ? "Wix" : "Shopify");
+
+export function describeRefundProgress(record: {
+  status: string;
+  refundStatus?: string | null;
+  shop?: string | null;
+}) {
+  const platform = platformName(record.shop);
   if (record.status === "NOT_SUBMITTED") {
     return {
       title: "Not submitted",
-      message: "The store didn't accept this return request, so nothing was submitted and no refund was issued. It's safe to try again, or contact the store.",
+      message: `${platform} didn't accept this return request, so nothing was submitted and no refund was issued. It's safe to try again, or contact the store.`,
     };
   }
   if (record.status === "NEEDS_ATTENTION" || record.refundStatus === "FAILED") {
@@ -33,10 +43,10 @@ export function describeRefundProgress(record: { status: string; refundStatus?: 
   }
   if (["REFUND_SUBMITTED", "REFUND_RECORDED"].includes(record.status)) {
     return {
-      title: record.refundStatus === "SUCCESS" ? "Refund processed" : "Refund submitted",
+      title: record.refundStatus === "SUCCESS" ? `Refund processed by ${platform}` : "Refund submitted",
       message: record.refundStatus === "SUCCESS"
-        ? "The store reports your refund to the original payment method as processed. Your bank may still take time to post the credit. Follow the store's instructions for sending the item back."
-        : "The store has recorded your refund to the original payment method. Payment completion is not yet confirmed here. Bank posting time may vary. Follow the store's instructions for sending the item back.",
+        ? `${platform} reports successful refund processing through the original payment processor. Your bank may still take time to post the credit. Follow the store's instructions for sending the item back.`
+        : `${platform} has recorded your refund request to the original payment method. Payment completion is not yet confirmed here. Bank posting time may vary. Follow the store's instructions for sending the item back.`,
     };
   }
   return {

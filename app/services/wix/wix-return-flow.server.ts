@@ -6,7 +6,10 @@ import { wixApiFor } from "./wix-client.server";
 import * as wixReturns from "./wix-returns.server";
 
 // The two calls that move money or stock, replaceable in tests.
-export type WixReturnDeps = Pick<typeof wixReturns, "refundWixReturn" | "restockWixItems">;
+export type WixReturnDeps = Pick<
+  typeof wixReturns,
+  "refundWixReturn" | "restockWixItems" | "assertWixUnitsFree"
+>;
 
 // Wix has no return object of its own, so a Wix return is Gooper.io's record:
 // its returnId is minted here, and the only thing Gooper.io asks of Wix is the
@@ -19,6 +22,7 @@ type ReturnRecord = {
   orderId: string;
   idempotencyKey: string;
   refundTiming: string | null;
+  createdAt: Date;
 };
 
 const errorText = (error: unknown, fallback: string) =>
@@ -40,17 +44,24 @@ async function refund(
       amount,
       restock,
       idempotencyKey: record.idempotencyKey,
+      notBefore: record.createdAt,
     },
     api,
   );
-  const failed = result.status === "FAILED";
+  // A refund Wix says failed, or only partly went through, needs the
+  // merchant; only a clean or pending refund counts as submitted.
+  const failed = result.status === "FAILED" || result.status === "UNKNOWN";
   return prisma.agentReturn.update({
     where: { id: record.id },
     data: {
       status: failed ? "NEEDS_ATTENTION" : "REFUND_SUBMITTED",
       refundId: result.refundId,
       refundStatus: result.status,
-      failureReason: failed ? "Wix reported the refund as failed." : null,
+      failureReason: failed
+        ? result.status === "FAILED"
+          ? "Wix reported the refund as failed."
+          : "Wix reported only part of the refund as processed. Check the order in Wix."
+        : null,
     },
   });
 }
@@ -76,17 +87,28 @@ export async function submitWixReturn({
     where: { id: record.id },
     data: { returnId, status: "RETURN_OPEN", returnStatus: "OPEN" },
   });
-  if (record.refundTiming === "ON_RECEIPT")
-    return prisma.agentReturn.update({
-      where: { id: record.id },
-      data: { status: "AWAITING_ITEM" },
-    });
   const client = api ?? (await wixApiFor(record.shop));
   try {
+    // This return's record now counts against the order, so a second
+    // confirmation racing for the same units sees it and stops here.
+    await deps.assertWixUnitsFree(
+      {
+        shop: record.shop,
+        orderId: record.orderId,
+        items,
+        idempotencyKey: record.idempotencyKey,
+      },
+      client,
+    );
+    if (record.refundTiming === "ON_RECEIPT")
+      return await prisma.agentReturn.update({
+        where: { id: record.id },
+        data: { status: "AWAITING_ITEM" },
+      });
     return await refund(client, record, items, confirmed, false, deps);
   } catch (error) {
-    // A clear refusal from Wix moved no money, so the customer can confirm
-    // again. Anything else may have refunded, so the merchant checks first.
+    // A clear refusal moved no money, so the customer can confirm again.
+    // Anything else may have refunded, so the merchant checks first.
     const refused = error instanceof ReturnNotCreatedError;
     await prisma.agentReturn.update({
       where: { id: record.id },
@@ -104,7 +126,7 @@ export async function submitWixReturn({
     });
     if (refused)
       throw new Error(
-        `Nothing was submitted and no refund was issued: Wix didn't accept the refund (${errorText(error, "no reason given")}). It's safe to confirm again once that's sorted out, or the customer can contact the store.`,
+        `Nothing was submitted and no refund was issued: ${errorText(error, "Wix didn't accept the refund")} It's safe to confirm again once that's sorted out, or the customer can contact the store.`,
       );
     throw error;
   }

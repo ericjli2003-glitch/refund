@@ -395,6 +395,7 @@ async function installationFor(identity: WixDashboardIdentity) {
 function wixStatusTitle(record: {
   status: string;
   refundStatus: string | null;
+  shop: string;
 }) {
   return describeRefundProgress(record).title;
 }

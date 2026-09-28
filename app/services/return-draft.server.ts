@@ -195,7 +195,7 @@ export async function getReturnSession(context: CustomerContext) {
     }),
   ]);
   const submissions = records.map(record => ({
-    ...record, ...describeRefundProgress(record),
+    ...record, ...describeRefundProgress({ ...record, shop: context.shop }),
     paymentMethod: "Original payment method",
     createdAt: record.createdAt.toISOString(),
   }));

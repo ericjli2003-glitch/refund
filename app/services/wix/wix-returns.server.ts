@@ -79,9 +79,15 @@ type Refundability = {
   }>;
 };
 
+type RefundedLine = { lineItemId?: string | null; quantity?: number | null };
 type WixRefund = {
   id?: string;
-  details?: { reason?: string | null };
+  createdDate?: string | null;
+  details?: {
+    reason?: string | null;
+    items?: RefundedLine[];
+    lineItems?: RefundedLine[];
+  };
   transactions?: Array<{ refundStatus?: string | null }>;
 };
 
@@ -261,9 +267,55 @@ const productIdOf = (line: WixLineItem) =>
     ? line.catalogReference.catalogItemId ?? undefined
     : undefined;
 
+// Statuses of a Gooper.io return whose units Wix hasn't refunded yet, or may
+// have without Gooper.io knowing (NEEDS_ATTENTION). Wix has no return object
+// to hold them, so these rows are what keeps two returns from claiming the
+// same unit.
+const IN_FLIGHT = [
+  "IN_PROGRESS",
+  "RETURN_REQUESTED",
+  "RETURN_OPEN",
+  "AWAITING_ITEM",
+  "RECEIVING",
+  "RETRYING",
+  "NEEDS_ATTENTION",
+];
+
+// Units each order line has in Gooper.io returns that aren't refunded yet,
+// leaving out the return with `exceptKey` (the one being refunded).
+async function reservedUnits(shop: string, orderIds: string[], exceptKey?: string) {
+  const reserved = new Map<string, number>();
+  if (!orderIds.length) return reserved;
+  const rows = await prisma.agentReturn.findMany({
+    where: {
+      shop,
+      orderId: { in: orderIds },
+      refundId: null,
+      status: { in: IN_FLIGHT },
+      ...(exceptKey ? { NOT: { idempotencyKey: exceptKey } } : {}),
+    },
+    select: { orderId: true, requestedLineItems: true },
+  });
+  for (const row of rows) {
+    const items = Array.isArray(row.requestedLineItems) ? row.requestedLineItems : [];
+    for (const entry of items) {
+      const item = entry as { lineItemId?: unknown; quantity?: unknown } | null;
+      if (typeof item?.lineItemId !== "string" || !Number.isInteger(item.quantity)) continue;
+      const key = `${row.orderId}:${item.lineItemId}`;
+      reserved.set(key, (reserved.get(key) ?? 0) + (item.quantity as number));
+    }
+  }
+  return reserved;
+}
+
 // Builds the shared ReturnableOrder shape for Wix orders, with what each line
 // can still be returned and refunded for.
-async function returnableOrders(api: WixApi, rules: Rules, orders: WixOrder[]) {
+async function returnableOrders(
+  api: WixApi,
+  rules: Rules,
+  orders: WixOrder[],
+  reserved: Map<string, number> = new Map(),
+) {
   const eligible = orders.filter(orderIsRefundable);
   const finalSale = rules.finalSaleCollectionIds.slice(0, FINAL_SALE_COLLECTION_LIMIT);
   const [refundabilities, shipped, excluded] = await Promise.all([
@@ -309,7 +361,11 @@ async function returnableOrders(api: WixApi, rules: Rules, orders: WixOrder[]) {
               orderShipped === "ALL" ? ordered : orderShipped?.get(line.id) ?? 0;
             // Refunded units may be ones that never shipped, so this errs on
             // the side of returning fewer.
-            const quantity = Math.max(0, Math.min(available, ordered - refunded, sent - refunded));
+            const quantity = Math.max(
+              0,
+              Math.min(available, ordered - refunded, sent - refunded) -
+                (reserved.get(`${order.id}:${line.id}`) ?? 0),
+            );
             if (quantity < 1) return [];
             const productId = productIdOf(line);
             if (productId && excluded.has(productId)) {
@@ -364,9 +420,13 @@ export async function wixCustomerOrders(
   const { orders } = await searchByEmail(api, email, 20);
   // The search narrows the list; ownership is still checked on every order.
   const owned = (orders ?? []).filter((order) => order.id && ownedBy(order, email));
+  const reserved = await reservedUnits(
+    shop,
+    owned.map((order) => order.id),
+  );
   return {
     customerId: emailSubject(email),
-    orders: (await returnableOrders(api, rules, owned)).orders,
+    orders: (await returnableOrders(api, rules, owned, reserved)).orders,
   };
 }
 
@@ -552,20 +612,75 @@ export function wixRefundStatus(
   return "UNKNOWN";
 }
 
-async function findEarlierRefund(api: WixApi, orderId: string, reference: string) {
-  const { orderTransactions } = await api<{
-    orderTransactions?: { refunds?: WixRefund[] };
-  }>("GET", `/ecom/v1/payments/orders/${encodeURIComponent(orderId)}`);
-  const matches = (orderTransactions?.refunds ?? []).filter(
-    (refund) => refund.id && refund.details?.reason?.includes(reference),
+// This return's own earlier refund, found by its reference; or, when the order
+// was refunded some other way since the customer's request for any of these
+// line items, a refusal to refund again (as Shopify's settledOrBlocked does).
+type OrderTransactions = {
+  refunds?: WixRefund[];
+  payments?: Array<{
+    giftcardPaymentDetails?: { voided?: boolean | null } | null;
+    membershipPaymentDetails?: { voided?: boolean | null } | null;
+  }>;
+};
+
+async function orderTransactionsOf(api: WixApi, orderId: string) {
+  const { orderTransactions } = await api<{ orderTransactions?: OrderTransactions }>(
+    "GET",
+    `/ecom/v1/payments/orders/${encodeURIComponent(orderId)}`,
   );
-  // A refund that failed outright moved no money, so it can be tried again.
-  const earlier = matches.find(
-    (refund) => wixRefundStatus(refund.transactions) !== "FAILED",
+  return orderTransactions ?? {};
+}
+
+// Wix refunds a gift card's or membership's whole credit rather than an
+// amount, so an order paid partly that way can't be refunded exactly: the
+// store handles it. Checked on Wix's own payment records, not payment names.
+function assertNoStoredValuePayments(transactions: OrderTransactions) {
+  if (
+    (transactions.payments ?? []).some(
+      (payment) =>
+        (payment.giftcardPaymentDetails && !payment.giftcardPaymentDetails.voided) ||
+        (payment.membershipPaymentDetails && !payment.membershipPaymentDetails.voided),
+    )
+  )
+    throw new ReturnNotCreatedError(
+      `This order was paid partly with a gift card or membership, so the store needs to handle this refund itself. The customer can contact the store. ${NOTHING_SUBMITTED}`,
+    );
+}
+
+function findEarlierRefund(
+  orderTransactions: OrderTransactions,
+  reference: string,
+  items: RequestedItem[],
+  notBefore?: Date,
+) {
+  // A refund that failed outright moved no money, so it doesn't count.
+  const refunds = (orderTransactions?.refunds ?? []).filter(
+    (refund) => refund.id && wixRefundStatus(refund.transactions) !== "FAILED",
   );
-  return earlier?.id
-    ? { refundId: earlier.id, status: wixRefundStatus(earlier.transactions) }
-    : null;
+  const earlier = refunds.find((refund) =>
+    refund.details?.reason?.includes(reference),
+  );
+  if (earlier?.id)
+    return { refundId: earlier.id, status: wixRefundStatus(earlier.transactions) };
+  if (notBefore) {
+    const lines = new Set(items.map((item) => item.lineItemId));
+    const since = refunds.filter((refund) => {
+      const created = Date.parse(refund.createdDate ?? "");
+      // An undated refund can't be ruled out, so it counts as recent.
+      return !Number.isFinite(created) || created >= notBefore.getTime() - 60_000;
+    });
+    if (
+      since.some((refund) =>
+        [...(refund.details?.items ?? []), ...(refund.details?.lineItems ?? [])].some(
+          (line) => line.lineItemId && lines.has(line.lineItemId),
+        ),
+      )
+    )
+      throw new Error(
+        "This order was refunded in Wix after the customer's request. Gooper.io issued no further refund; check the order in Wix.",
+      );
+  }
+  return null;
 }
 
 async function getOrder(api: WixApi, orderId: string) {
@@ -611,6 +726,7 @@ async function prepareRefund(
     orderId: string;
     items: RequestedItem[];
     amount: Money;
+    idempotencyKey: string;
   },
   api: WixApi,
 ) {
@@ -618,7 +734,12 @@ async function prepareRefund(
   const wixOrder = await getOrder(api, input.orderId);
   if (!orderIsRefundable(wixOrder))
     throw new Error(`This order can't be refunded right now. ${NOTHING_SUBMITTED}`);
-  const built = await returnableOrders(api, rules, [wixOrder]);
+  const built = await returnableOrders(
+    api,
+    rules,
+    [wixOrder],
+    await reservedUnits(input.shop, [wixOrder.id], input.idempotencyKey),
+  );
   const calculation = await quote(api, rules, built.orders[0], input.items);
   const total = calculation.financialSummary.returnTotalSet.presentmentMoney;
   const owed = -units(total.amount);
@@ -636,6 +757,53 @@ async function prepareRefund(
       `The store's payment provider can't refund this order automatically. The customer can contact the store. ${NOTHING_SUBMITTED}`,
     );
   return splitAcross(payments, owed, currencyDigits(total.currencyCode));
+}
+
+// Whether these units are still free for the return with this key, counting
+// every other Gooper.io return on the order that Wix hasn't refunded yet.
+// Called once that return's record exists, so two confirmations racing for the
+// same unit can't both go ahead. Throws ReturnNotCreatedError: nothing moved.
+export async function assertWixUnitsFree(
+  input: { shop: string; orderId: string; items: RequestedItem[]; idempotencyKey: string },
+  api: WixApi,
+) {
+  // Only reads, so any failure here means nothing moved.
+  return checkUnitsFree(input, api).catch((error: unknown) => {
+    if (error instanceof ReturnNotCreatedError) throw error;
+    throw new ReturnNotCreatedError(
+      error instanceof Error && error.message
+        ? `${error.message} ${NOTHING_SUBMITTED}`
+        : `Gooper.io couldn't check this order with Wix. ${NOTHING_SUBMITTED}`,
+    );
+  });
+}
+
+async function checkUnitsFree(
+  input: { shop: string; orderId: string; items: RequestedItem[]; idempotencyKey: string },
+  api: WixApi,
+) {
+  const rules = await confirmedRules(input.shop);
+  const [wixOrder, transactions] = await Promise.all([
+    getOrder(api, input.orderId),
+    orderTransactionsOf(api, input.orderId),
+  ]);
+  assertNoStoredValuePayments(transactions);
+  const built = await returnableOrders(
+    api,
+    rules,
+    [wixOrder],
+    await reservedUnits(input.shop, [wixOrder.id], input.idempotencyKey),
+  );
+  const free = new Map(
+    built.orders[0].returnInformation.returnableLineItems.nodes.map((node) => [
+      node.lineItem.id,
+      node.quantity,
+    ]),
+  );
+  if (input.items.some((item) => item.quantity > (free.get(item.lineItemId) ?? 0)))
+    throw new ReturnNotCreatedError(
+      `Some of these items are already part of another return. ${NOTHING_SUBMITTED}`,
+    );
 }
 
 // Refunds the returned items to the original payment. `amount` is the refund
@@ -659,6 +827,9 @@ export async function refundWixReturn(
     restock: boolean;
     idempotencyKey: string;
     reason?: string;
+    // When the customer asked for this return. A refund of these items made
+    // since then outside this return stops this one.
+    notBefore?: Date;
   },
   api: WixApi,
 ): Promise<{ refundId: string; status: WixRefundStatus }> {
@@ -666,8 +837,10 @@ export async function refundWixReturn(
   const reference = wixRefundReference(input.idempotencyKey);
   // A failure here leaves open whether an earlier attempt refunded, so it is
   // not reported as "nothing submitted".
-  const earlier = await findEarlierRefund(api, input.orderId, reference);
+  const transactions = await orderTransactionsOf(api, input.orderId);
+  const earlier = findEarlierRefund(transactions, reference, input.items, input.notBefore);
   if (earlier) return earlier;
+  assertNoStoredValuePayments(transactions);
 
   const paymentRefunds = await prepareRefund(input, api).catch((error: unknown) => {
     if (error instanceof ReturnNotCreatedError) throw error;

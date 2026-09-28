@@ -10,6 +10,7 @@ import {
   currencyDigits,
   hasWixOrdersForEmail,
   listWixCollections,
+  assertWixUnitsFree,
   refundWixReturn,
   restockWixItems,
   wixCustomerOrders,
@@ -55,7 +56,17 @@ function store(t: TestContext, overrides: Record<string, unknown> = {}) {
   };
   mockDelegate(t, prisma.storePolicy, "findUnique", async () => current);
   mockDelegate(t, prisma.wixInstallation, "findUnique", async () => install);
+  // Gooper.io returns on these orders that Wix hasn't refunded yet.
+  let inFlight: Array<{ orderId: string; idempotencyKey: string; requestedLineItems: unknown }> = [];
+  const reservations = mockDelegate(t, prisma.agentReturn, "findMany", async (args: never) => {
+    const where = (args as { where: { NOT?: { idempotencyKey: string } } }).where;
+    return inFlight.filter((row) => row.idempotencyKey !== where.NOT?.idempotencyKey);
+  });
   return {
+    reservations,
+    setInFlight: (rows: typeof inFlight) => {
+      inFlight = rows;
+    },
     setPolicy: (next: Record<string, unknown>) => {
       current = policy(next);
     },
@@ -277,6 +288,34 @@ test("final-sale Catalog V3 categories, parents included, exclude their products
   assert.deepEqual(orders[0].returnInformation.nonReturnableSummary, { nonReturnableReasons: ["FINAL_SALE"] });
 });
 
+test("units held by another unrefunded Gooper.io return aren't offered again", async (t) => {
+  const site = store(t);
+  site.setInFlight([
+    { orderId: "order-1", idempotencyKey: "other", requestedLineItems: [{ lineItemId: "line-a", quantity: 1 }] },
+  ]);
+  const wix = refundSite();
+  const { orders } = await wixCustomerOrders(shop, { email: "jane@example.com" }, wix.api);
+  const line = orders[0].returnInformation.returnableLineItems.nodes.find((node) => node.lineItem.id === "line-a");
+  assert.equal(line?.quantity, 1);
+  // Only in-flight returns without a refund count; Wix already counts refunded ones.
+  const where = (site.reservations.mock.calls[0].arguments[0] as unknown as { where: Record<string, unknown> }).where;
+  assert.equal(where.refundId, null);
+
+  // The return being refunded doesn't hold units against itself...
+  site.setInFlight([
+    { orderId: "order-1", idempotencyKey: "mine", requestedLineItems: [{ lineItemId: "line-a", quantity: 2 }] },
+  ]);
+  await assertWixUnitsFree({ shop, orderId: "order-1", items: [{ lineItemId: "line-a", quantity: 2 }], idempotencyKey: "mine" }, wix.api);
+  // ...but another return's units stop it before anything moves.
+  site.setInFlight([
+    { orderId: "order-1", idempotencyKey: "other", requestedLineItems: [{ lineItemId: "line-a", quantity: 1 }] },
+  ]);
+  await assert.rejects(
+    assertWixUnitsFree({ shop, orderId: "order-1", items: [{ lineItemId: "line-a", quantity: 2 }], idempotencyKey: "mine" }, wix.api),
+    (error: unknown) => error instanceof ReturnNotCreatedError && /another return/.test(error.message),
+  );
+});
+
 test("stores that haven't confirmed their rules are refused before Wix is asked", async (t) => {
   const site = store(t, { returnRulesConfirmedAt: null });
   site.setInstall({ permissions: [] });
@@ -445,12 +484,21 @@ test("never quotes a return that gives no money back, or items it can't return",
 // A refundable order, its calculation and its transactions, for refund tests.
 function refundSite(options: {
   refunds?: unknown[];
+  transactionPayments?: unknown[];
   refundPayments?: Route;
   payments?: Array<[string, string]>;
 } = {}) {
+  const refundable = order("order-1", { lineItems: [line("line-a", { quantity: 2 })] });
   return fakeWix({
-    "GET /ecom/v1/payments/orders/order-1": { orderTransactions: { orderId: "order-1", refunds: options.refunds ?? [] } },
-    "GET /ecom/v1/orders/order-1": { order: order("order-1", { lineItems: [line("line-a", { quantity: 2 })] }) },
+    "POST /ecom/v1/orders/search": { orders: [refundable] },
+    "GET /ecom/v1/payments/orders/order-1": {
+      orderTransactions: {
+        orderId: "order-1",
+        payments: options.transactionPayments ?? [{ regularPaymentDetails: { offlinePayment: false } }],
+        refunds: options.refunds ?? [],
+      },
+    },
+    "GET /ecom/v1/orders/order-1": { order: refundable },
     "POST /ecom/v1/order-billing/get-order-refundability": refundability(
       [["line-a", 2, 0]],
       options.payments ?? [["payment-first", "10.00"], ["payment-card", "100.00"]],
@@ -563,6 +611,51 @@ test("a retry returns the earlier refund instead of refunding twice", async (t) 
   });
   assert.deepEqual(await refundWixReturn(refundInput, failed.api), { refundId: "refund-1", status: "PENDING" });
   assert.equal(failed.called("POST /ecom/v1/order-billing/refund-payments").length, 1);
+});
+
+test("an order refunded in Wix since the customer's request is never refunded again", async (t) => {
+  store(t, { restockingFeePercent: "10" });
+  const notBefore = new Date("2026-09-28T10:00:00Z");
+  const outside = (createdDate: string, lineItemId = "line-a") => ({
+    id: "refund-by-merchant",
+    createdDate,
+    details: { reason: "Refunded in the Wix dashboard", lineItems: [{ lineItemId, quantity: 1 }] },
+    transactions: [{ refundStatus: "SUCCEEDED" }],
+  });
+  const since = refundSite({ refunds: [outside("2026-09-28T10:05:00Z")] });
+  await assert.rejects(
+    refundWixReturn({ ...refundInput, notBefore }, since.api),
+    (error: unknown) =>
+      !(error instanceof ReturnNotCreatedError) && /refunded in Wix after the customer's request/.test(error instanceof Error ? error.message : ""),
+  );
+  assert.equal(since.called("POST /ecom/v1/order-billing/refund-payments").length, 0);
+
+  // Older refunds, and refunds of other items, don't stop this one.
+  for (const refunds of [[outside("2026-09-20T10:00:00Z")], [outside("2026-09-28T10:05:00Z", "line-b")]]) {
+    const wix = refundSite({ refunds });
+    assert.equal((await refundWixReturn({ ...refundInput, notBefore }, wix.api)).refundId, "refund-1");
+  }
+});
+
+test("orders paid partly by gift card or membership are left to the store", async (t) => {
+  store(t, { restockingFeePercent: "10" });
+  for (const stored of [{ giftcardPaymentDetails: { voided: false } }, { membershipPaymentDetails: { voided: false } }]) {
+    const wix = refundSite({ transactionPayments: [{ regularPaymentDetails: {} }, stored] });
+    await assert.rejects(
+      refundWixReturn(refundInput, wix.api),
+      (error: unknown) => error instanceof ReturnNotCreatedError && /gift card or membership/.test(error.message),
+    );
+    await assert.rejects(
+      assertWixUnitsFree({ ...refundInput, idempotencyKey: "mine" }, wix.api),
+      (error: unknown) => error instanceof ReturnNotCreatedError && /gift card or membership/.test(error.message),
+    );
+    assert.equal(wix.called("POST /ecom/v1/order-billing/refund-payments").length, 0);
+  }
+  // A voided gift card payment took no money, so it doesn't block the refund.
+  const voided = refundSite({
+    transactionPayments: [{ regularPaymentDetails: {} }, { giftcardPaymentDetails: { voided: true } }],
+  });
+  assert.equal((await refundWixReturn(refundInput, voided.api)).refundId, "refund-1");
 });
 
 test("only a clear refusal from Wix counts as nothing submitted", async (t) => {
