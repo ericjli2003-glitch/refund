@@ -3,7 +3,10 @@ import type { Money } from "../automatic-return.server";
 import { ReturnNotCreatedError, type RequestedItem } from "../return-guards.server";
 import type { WixApi } from "./wix-api.server";
 import { wixApiFor } from "./wix-client.server";
-import { refundWixReturn, restockWixItems } from "./wix-returns.server";
+import * as wixReturns from "./wix-returns.server";
+
+// The two calls that move money or stock, replaceable in tests.
+export type WixReturnDeps = Pick<typeof wixReturns, "refundWixReturn" | "restockWixItems">;
 
 // Wix has no return object of its own, so a Wix return is Gooper.io's record:
 // its returnId is minted here, and the only thing Gooper.io asks of Wix is the
@@ -27,8 +30,9 @@ async function refund(
   items: RequestedItem[],
   amount: Money,
   restock: boolean,
+  deps: WixReturnDeps,
 ) {
-  const result = await refundWixReturn(
+  const result = await deps.refundWixReturn(
     {
       shop: record.shop,
       orderId: record.orderId,
@@ -39,15 +43,14 @@ async function refund(
     },
     api,
   );
+  const failed = result.status === "FAILED";
   return prisma.agentReturn.update({
     where: { id: record.id },
     data: {
-      status: "REFUND_SUBMITTED",
-      returnStatus: "CLOSED",
+      status: failed ? "NEEDS_ATTENTION" : "REFUND_SUBMITTED",
       refundId: result.refundId,
       refundStatus: result.status,
-      failureReason: result.status === "FAILED" ? "Wix reported the refund as failed." : null,
-      ...(result.status === "FAILED" ? { status: "NEEDS_ATTENTION" } : {}),
+      failureReason: failed ? "Wix reported the refund as failed." : null,
     },
   });
 }
@@ -60,11 +63,13 @@ export async function submitWixReturn({
   items,
   confirmed,
   api,
+  deps = wixReturns,
 }: {
   record: ReturnRecord;
   items: RequestedItem[];
   confirmed: Money;
   api?: WixApi;
+  deps?: WixReturnDeps;
 }) {
   const returnId = wixReturnId(record.id);
   await prisma.agentReturn.update({
@@ -78,7 +83,7 @@ export async function submitWixReturn({
     });
   const client = api ?? (await wixApiFor(record.shop));
   try {
-    return await refund(client, record, items, confirmed, false);
+    return await refund(client, record, items, confirmed, false, deps);
   } catch (error) {
     // A clear refusal from Wix moved no money, so the customer can confirm
     // again. Anything else may have refunded, so the merchant checks first.
@@ -111,6 +116,7 @@ export async function retryWixReturn(
   record: ReturnRecord & { amount: string; currencyCode: string; itemReceivedAt: Date | null },
   items: RequestedItem[],
   api?: WixApi,
+  deps: WixReturnDeps = wixReturns,
 ) {
   if (record.refundTiming === "ON_RECEIPT" && !record.itemReceivedAt)
     return prisma.agentReturn.update({
@@ -125,6 +131,7 @@ export async function retryWixReturn(
     { amount: record.amount, currencyCode: record.currencyCode },
     // An on-receipt return's item is back, so its refund restocks it.
     record.refundTiming === "ON_RECEIPT",
+    deps,
   );
 }
 
@@ -135,6 +142,7 @@ export async function receiveWixReturn(
   items: RequestedItem[],
   restock: boolean,
   api?: WixApi,
+  deps: WixReturnDeps = wixReturns,
 ) {
   const client = api ?? (await wixApiFor(record.shop));
   if (record.refundTiming === "ON_RECEIPT")
@@ -144,9 +152,10 @@ export async function receiveWixReturn(
       items,
       { amount: record.amount, currencyCode: record.currencyCode },
       restock,
+      deps,
     );
   if (restock)
-    await restockWixItems(
+    await deps.restockWixItems(
       { shop: record.shop, orderId: record.orderId, items },
       client,
     );

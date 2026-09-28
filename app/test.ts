@@ -40,3 +40,4 @@ import "./services/wix/wix-refund-events.server.test";
 import "./services/wix/wix-dashboard.server.test";
 import "./routes/webhooks.wix.test";
 import "./services/wix/wix-returns.server.test";
+import "./services/wix/wix-return-flow.server.test";
