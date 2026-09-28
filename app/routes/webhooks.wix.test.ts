@@ -126,11 +126,10 @@ test("AppInstalled provisions the site through Wix and records the delivery", as
   assert.equal(receipt.data.topic, "AppInstalled");
 });
 
-test("duplicates and unknown events are acknowledged without work", async (t) => {
+test("duplicate deliveries are acknowledged without work", async (t) => {
   configure(t);
   noReceipt(t, true);
   assert.deepEqual(await (await post(await signed("AppInstalled", { appId }))).json(), { duplicate: true });
-  t.mock.restoreAll();
 });
 
 test("paid plan and other events are ignored", async (t) => {

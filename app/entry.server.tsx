@@ -14,7 +14,10 @@ export default async function handleRequest(
   responseHeaders: Headers,
   reactRouterContext: EntryContext
 ) {
-  addDocumentResponseHeaders(request, responseHeaders);
+  // Shopify's admin headers would replace the frame-ancestors policy that lets
+  // the Wix dashboard frame its own pages.
+  if (!new URL(request.url).pathname.startsWith("/wix/"))
+    addDocumentResponseHeaders(request, responseHeaders);
   const userAgent = request.headers.get("user-agent");
   const callbackName = isbot(userAgent ?? '')
     ? "onAllReady"

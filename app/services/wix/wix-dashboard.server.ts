@@ -389,13 +389,12 @@ async function installationFor(identity: WixDashboardIdentity) {
   return prisma.wixInstallation.findUnique({ where: { shop: identity.shop } });
 }
 
-// Status wording for the merchant. The shared wording names Shopify, which a
-// Wix merchant would find confusing.
+// Status wording for the merchant, shared with the customer's status.
 function wixStatusTitle(record: {
   status: string;
   refundStatus: string | null;
 }) {
-  return describeRefundProgress(record).title.replace(/Shopify/g, "Wix");
+  return describeRefundProgress(record).title;
 }
 
 function statusTone(record: { status: string; refundStatus: string | null }) {

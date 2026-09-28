@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { shopUpdateWebhookAction } from "./merchant-maintenance.server";
+import prisma from "../db.server";
+import {
+  refreshInstalledMerchants,
+  shopUpdateWebhookAction,
+} from "./merchant-maintenance.server";
 
 const SHOP = "pied-piper.myshopify.com";
 const request = new Request("https://gooper.io/webhooks/shop/update", {
@@ -64,4 +68,27 @@ test("an unverified webhook never reaches the refresh", async () => {
     /Invalid webhook signature/,
   );
   assert.deepEqual(refreshed, []);
+});
+
+test("the directory sweep refreshes Shopify stores and Wix sites alike", async (t) => {
+  const wixShop = "wix-0f8a7c1e-2b3d-4e5f-8a9b-0c1d2e3f4a5b";
+  const pages = {
+    shopify: [[{ shop: SHOP }], []],
+    wix: [[{ shop: wixShop }], []],
+  };
+  const replace = (target: object, name: string, value: unknown) => {
+    const original = Reflect.get(target, name);
+    Reflect.set(target, name, value);
+    t.after(() => Reflect.set(target, name, original));
+  };
+  replace(prisma.session, "groupBy", async () => pages.shopify.shift() ?? []);
+  replace(prisma.wixInstallation, "findMany", async () => pages.wix.shift() ?? []);
+  const refreshed: string[] = [];
+  const result = await refreshInstalledMerchants(async (shop) => {
+    refreshed.push(shop);
+    // One store's outage never stops the others.
+    if (shop === SHOP) throw new Error("Shopify is down");
+  });
+  assert.deepEqual(refreshed, [SHOP, wixShop]);
+  assert.deepEqual(result, { refreshed: 1, failed: 1 });
 });
