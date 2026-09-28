@@ -3,6 +3,11 @@ import type { Prisma } from "@prisma/client";
 import prisma from "../db.server";
 import { normalizeShopDomain } from "./customer-account.server";
 import {
+  installedStores,
+  normalizeStoreKey,
+  storeInstallation,
+} from "./store-platform.server";
+import {
   appOrigin,
   customerIdentityHashes,
   digest,
@@ -290,16 +295,13 @@ export async function connectionStore(
   now = Date.now(),
   lookup?: OrderEmailLookup,
 ) {
-  const shop = normalizeShopDomain(shopInput);
+  const shop = normalizeStoreKey(shopInput);
   const [existing, installed, policy] = await Promise.all([
     prisma.agentStoreLink.findUnique({
       where: { connectionId_shop: { connectionId, shop } },
       include: { session: true },
     }),
-    prisma.session.findFirst({
-      where: { shop, isOnline: false },
-      select: { id: true, scope: true },
-    }),
+    storeInstallation(shop),
     prisma.storePolicy.findUnique({ where: { shop } }),
   ]);
   if (!installed) throw new Error(`${shop} no longer uses Gooper.io.`);
@@ -433,14 +435,11 @@ export async function listConnectionStores(connectionId: string, now = Date.now(
       select: { shop: true, name: true },
     }),
     prisma.storePolicy.findMany({ where: { shop: { in: shops } } }),
-    prisma.session.findMany({
-      where: { shop: { in: shops }, isOnline: false },
-      select: { shop: true, scope: true },
-    }),
+    installedStores(shops),
   ]);
   return links.map((link) => {
     const policy = policies.find((entry) => entry.shop === link.shop);
-    const scope = installs.find((entry) => entry.shop === link.shop)?.scope;
+    const scope = installs.get(link.shop);
     return {
       shop: link.shop,
       name: directory.find((entry) => entry.shop === link.shop)?.name ?? link.shop,

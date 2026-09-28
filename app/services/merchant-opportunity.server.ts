@@ -1,6 +1,7 @@
 import * as z from "zod/v4";
 import prisma from "../db.server";
 import { digest } from "./customer-security.server";
+import { installedStores } from "./store-platform.server";
 import {
   merchantHost,
   normalizeMerchantName,
@@ -80,16 +81,9 @@ export async function recordMerchantOpportunity(
     select: { shop: true },
     take: 100,
   });
-  const sessions = profiles.length
-    ? await prisma.session.findMany({
-        where: {
-          shop: { in: profiles.map((profile) => profile.shop) },
-          isOnline: false,
-        },
-        select: { shop: true },
-      })
+  const installed = profiles.length
+    ? [...(await installedStores(profiles.map((profile) => profile.shop))).keys()]
     : [];
-  const installed = [...new Set(sessions.map((session) => session.shop))];
   const knownShop = installed.length === 1 ? installed[0] : null;
   const kind = knownShop
     ? "DISCOVERY_GAP"

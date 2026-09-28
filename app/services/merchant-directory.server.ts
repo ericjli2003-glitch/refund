@@ -1,6 +1,7 @@
 import type { AdminApiContext } from "@shopify/shopify-app-react-router/server";
 import prisma from "../db.server";
 import { normalizeShopDomain } from "./customer-account.server";
+import { installedStores } from "./store-platform.server";
 
 export const normalizeMerchantName = (value: string) =>
   value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
@@ -41,14 +42,7 @@ export async function findPublishedMerchants(query = "") {
     },
   });
   if (!profiles.length) return [];
-  const installed = await prisma.session.findMany({
-    where: {
-      shop: { in: profiles.map((profile) => profile.shop) },
-      isOnline: false,
-    },
-    select: { shop: true },
-  });
-  const shops = new Set(installed.map((session) => session.shop));
+  const shops = await installedStores(profiles.map((profile) => profile.shop));
   return profiles.filter((profile) => shops.has(profile.shop));
 }
 
