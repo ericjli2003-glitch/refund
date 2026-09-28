@@ -120,3 +120,9 @@ export async function requireInstalledWixSite(value: string) {
     });
   return shop;
 }
+
+// The store's own website for customers and assistants. A Wix site on a free
+// Wix address is listed under its store key instead (the address is shared by
+// the owner's sites), and that key is never shown as a website.
+export const publicWebsite = (primaryDomain: string) =>
+  isWixStore(primaryDomain) ? null : primaryDomain;

@@ -3,8 +3,9 @@ import {
   merchantProfilePath,
 } from "../services/merchant-directory.server";
 import { appOrigin } from "../services/customer-security.server";
+import { publicWebsite } from "../services/store-platform.server";
 
-// Store names come from Shopify and are merchant-controlled; keep them on one
+// Store names come from Shopify or Wix and are merchant-controlled; keep them on one
 // line and unable to break the markdown link syntax.
 const linkText = (value: string) =>
   value.replace(/[\r\n]+/g, " ").replace(/[[\]()\\]/g, "\\$&");
@@ -16,14 +17,15 @@ export async function loader() {
     ? stores
         .map(
           (store) =>
-            `- [${linkText(store.name)}](${origin}${merchantProfilePath(store.shop)}): ${store.primaryDomain}`,
+            `- [${linkText(store.name)}](${origin}${merchantProfilePath(store.shop)})` +
+            (publicWebsite(store.primaryDomain) ? `: ${store.primaryDomain}` : ""),
         )
         .join("\n")
     : "- No stores are listed yet.";
   return new Response(
     `# Gooper.io
 
-> Gooper.io handles customer-confirmed returns for Shopify stores. Find the store a purchase came from; the customer verifies the purchase and confirms an exact quote before any return or refund is submitted.
+> Gooper.io handles customer-confirmed returns for Shopify and Wix stores. Find the store a purchase came from; the customer verifies the purchase and confirms an exact quote before any return or refund is submitted.
 
 ## Find a store
 
@@ -40,7 +42,7 @@ export async function loader() {
 - On the all-stores connection, pass the store's shop to every return tool. If a store isn't linked, ask for the email the customer used at checkout and call link_store with it. Gooper.io emails them a one-tap confirmation; tell them the number to pick. If a store isn't set up for returns through assistants yet, say so kindly and suggest the store's own returns page.
 - If exactly one store matches, go ahead with it and mention its name. If several match, ask which one.
 - Keep the conversation warm, brief and in plain words: no IDs, tokens or tool names.
-- start_return only prepares a verification link. Shopify customer accounts are separate for each store, so the customer signs in with the store they bought from, personally, on Shopify's page.
+- start_return only prepares a verification link for Shopify stores. Shopify customer accounts are separate for each store, so the customer signs in with the store they bought from, personally, on Shopify's page. Wix stores are reached only through the all-stores connection, by the customer's confirmed email.
 - On the all-stores connection, one quote can cover items from several of that store's orders. Show the items, any fees and the refund total, ask once, and submit only after a clear yes. Don't ask for order numbers, reasons, or which store when only one matches.
 - On a store's hosted return page, sign-in and a quote are not consent: submit only after the customer confirms the exact quote, including any return fees.
 - Refunds go only to the original payment method.

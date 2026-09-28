@@ -4,6 +4,7 @@ import { normalizeShopDomain } from "./customer-account.server";
 import {
   installedStores,
   isWixStore,
+  publicWebsite,
   storeInstallation,
 } from "./store-platform.server";
 
@@ -202,7 +203,7 @@ export async function resolveMerchant(value: string) {
     return {
       shop: key,
       name: directory?.name || key,
-      domain: directory?.primaryDomain ?? key,
+      domain: directory ? publicWebsite(directory.primaryDomain) : null,
     };
   }
   if (!/[:/\\.]/.test(value)) {

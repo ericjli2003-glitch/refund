@@ -1,7 +1,7 @@
 import * as z from "zod/v4";
 
 import type { ReturnableOrder } from "./automatic-return.server";
-import { normalizeStoreKey } from "./store-platform.server";
+import { normalizeStoreKey, publicWebsite } from "./store-platform.server";
 import { resolveMerchant } from "./merchant-directory.server";
 import { searchPublishedMerchants } from "./merchant-lookup.server";
 import type { OrderSelection } from "./return-quote.server";
@@ -99,7 +99,10 @@ export async function resolveStore(value: string) {
   if (similar.length > 1)
     throw new Error(
       `More than one store matches "${named}": ${similar
-        .map((entry) => `${entry.name} (${entry.primaryDomain})`)
+        .map((entry) => {
+          const website = publicWebsite(entry.primaryDomain);
+          return website ? `${entry.name} (${website})` : entry.name;
+        })
         .join(", ")}. Ask the customer which one they bought from, then use that store's website.`,
     );
   throw new Error(

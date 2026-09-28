@@ -7,7 +7,7 @@ import {
   normalizeMerchantName,
 } from "./merchant-directory.server";
 import { appOrigin } from "./customer-security.server";
-import { installedStores } from "./store-platform.server";
+import { installedStores, publicWebsite } from "./store-platform.server";
 import {
   noteUnresolvedMerchant,
   opportunityLabel,
@@ -32,7 +32,7 @@ export async function lookupMerchant(query: string, recordFailure = false) {
       {
         name,
         shop,
-        domain: primaryDomain,
+        domain: publicWebsite(primaryDomain),
         returnPage: appOrigin() + merchantProfilePath(shop),
       },
     ],
@@ -86,7 +86,7 @@ export async function findStore(query: string) {
     ({ name, shop, primaryDomain }) => ({
       name,
       shop,
-      domain: primaryDomain,
+      domain: publicWebsite(primaryDomain),
       returnPage: appOrigin() + merchantProfilePath(shop),
     }),
   );
