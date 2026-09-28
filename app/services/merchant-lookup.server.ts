@@ -7,6 +7,7 @@ import {
   normalizeMerchantName,
 } from "./merchant-directory.server";
 import { appOrigin } from "./customer-security.server";
+import { installedStores, publicWebsite } from "./store-platform.server";
 import {
   noteUnresolvedMerchant,
   opportunityLabel,
@@ -31,7 +32,7 @@ export async function lookupMerchant(query: string, recordFailure = false) {
       {
         name,
         shop,
-        domain: primaryDomain,
+        domain: publicWebsite(primaryDomain),
         returnPage: appOrigin() + merchantProfilePath(shop),
       },
     ],
@@ -66,17 +67,7 @@ export async function searchPublishedMerchants(query: string, limit = 20) {
     select: { shop: true, name: true, primaryDomain: true },
   });
   if (!profiles.length) return [];
-  const installed = new Set(
-    (
-      await prisma.session.findMany({
-        where: {
-          shop: { in: profiles.map((profile) => profile.shop) },
-          isOnline: false,
-        },
-        select: { shop: true },
-      })
-    ).map((session) => session.shop),
-  );
+  const installed = await installedStores(profiles.map((profile) => profile.shop));
   return profiles.filter((profile) => installed.has(profile.shop)).slice(0, limit);
 }
 
@@ -95,7 +86,7 @@ export async function findStore(query: string) {
     ({ name, shop, primaryDomain }) => ({
       name,
       shop,
-      domain: primaryDomain,
+      domain: publicWebsite(primaryDomain),
       returnPage: appOrigin() + merchantProfilePath(shop),
     }),
   );

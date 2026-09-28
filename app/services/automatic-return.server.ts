@@ -36,6 +36,14 @@ import {
   buildReturnProcessTransactions,
   type SuggestedRefundTransaction,
 } from "./shopify-inputs.server";
+import { isWixStore } from "./store-platform.server";
+import { wixApiFor } from "./wix/wix-client.server";
+import {
+  receiveWixReturn,
+  retryWixReturn,
+  submitWixReturn,
+} from "./wix/wix-return-flow.server";
+import { calculateWixReturn, wixCustomerOrders } from "./wix/wix-returns.server";
 
 export type { RequestedItem } from "./return-guards.server";
 export { adminData, adminFor, type AdminGraphql } from "./shopify-admin.server";
@@ -716,6 +724,11 @@ export async function retryApprovedReturn(
     throw new Error("This return is already being retried.");
   const returnId = record.returnId!;
   try {
+    if (isWixStore(shop))
+      return await retryWixReturn(
+        { ...record, amount: record.amount!, currencyCode: record.currencyCode! },
+        items,
+      );
     const client = admin ?? (await adminFor(shop));
     const settled = await settledOrBlocked(client, { ...record, returnId }, true);
     if (settled) return settled;
@@ -785,6 +798,12 @@ export async function receiveReturnedItems(
     throw new Error("This return is already being marked received.");
   const returnId = record.returnId!;
   try {
+    if (isWixStore(shop))
+      return await receiveWixReturn(
+        { ...record, amount: record.amount!, currencyCode: record.currencyCode! },
+        items,
+        restock,
+      );
     const client = admin ?? (await adminFor(shop));
     if (!onReceipt) {
       const dispositionInputs = (
@@ -829,6 +848,20 @@ export async function receiveReturnedItems(
       dispose: true,
     });
   } catch (error) {
+    // Wix refunds and restocks can't be looked up and undone the way Shopify
+    // returns can, so anything but a clear refusal may already have moved
+    // money or stock: it stays received and goes to the merchant rather than
+    // back to a button that would do it again.
+    if (isWixStore(shop) && !(error instanceof ReturnNotCreatedError)) {
+      await prisma.agentReturn.update({
+        where: { id: record.id },
+        data: {
+          status: "NEEDS_ATTENTION",
+          failureReason: errorText(error, "Marking the return received failed."),
+        },
+      });
+      throw error;
+    }
     await prisma.agentReturn.update({
       where: { id: record.id },
       data: {
@@ -848,6 +881,12 @@ export async function getReturnableOrders(
   shop: string,
   access: CustomerAccess,
 ): Promise<{ customerId: string; orders: ReturnableOrder[] }> {
+  if (isWixStore(shop)) {
+    // Wix customers are always reached by their confirmed order email.
+    if (typeof access === "string" || !("email" in access))
+      throw new Error("This store link can't reach Wix orders. Link the store again by email.");
+    return wixCustomerOrders(shop, access, await wixApiFor(shop));
+  }
   if (typeof access !== "string") return verifiedCustomerOrders(shop, access);
   const result = await customerAccountGraphql<CustomerOrdersResponse>(
     shop,
@@ -868,6 +907,8 @@ export async function calculateReturn(
   order: ReturnableOrder,
   items: RequestedItem[],
 ): Promise<ReturnCalculation> {
+  if (isWixStore(shop))
+    return calculateWixReturn(shop, order, items, await wixApiFor(shop));
   if (typeof access !== "string")
     return calculateVerifiedReturn(shop, order, items);
   const result = await customerAccountGraphql<ReturnCalculationResponse>(
@@ -1083,6 +1124,13 @@ export async function executeAutomaticReturn({
       throw error;
     }
   }
+
+  if (isWixStore(shop))
+    return submitWixReturn({
+      record: { ...record, refundTiming },
+      items,
+      confirmed: quote,
+    });
 
   let returnId: string;
   try {

@@ -25,6 +25,7 @@ import { maskEmail, normalizeEmail } from "./email-address.server";
 import { emailConfigured, escapeHtml, sendEmail } from "./email.server";
 import { resolveMerchant } from "./merchant-directory.server";
 import type { AdminGraphql } from "./shopify-admin.server";
+import { storeInstallation } from "./store-platform.server";
 import {
   emailSubject,
   verifiedLinksAllowed,
@@ -192,10 +193,7 @@ export async function linkStore(
       include: { session: true },
     }),
     prisma.storePolicy.findUnique({ where: { shop: store.shop } }),
-    prisma.session.findFirst({
-      where: { shop: store.shop, isOnline: false },
-      select: { scope: true },
-    }),
+    storeInstallation(store.shop),
   ]);
   if (existing && storeLinkAccess(existing, policy, installed?.scope, now))
     return {

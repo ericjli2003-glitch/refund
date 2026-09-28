@@ -34,3 +34,21 @@ test("customer messages distinguish processor success, pending funds, and mercha
   assert.match(waiting.title, /refund when the store receives it/);
   assert.match(waiting.message, /after it receives the item/);
 });
+
+test("status wording names the store's own platform", () => {
+  const wix = "wix-0f8a7c1e-2b3d-4e5f-8a9b-0c1d2e3f4a5b";
+  assert.equal(
+    describeRefundProgress({ status: "REFUND_SUBMITTED", refundStatus: "SUCCESS", shop: wix }).title,
+    "Refund processed by Wix",
+  );
+  assert.match(
+    describeRefundProgress({ status: "NOT_SUBMITTED", refundStatus: null, shop: wix }).message,
+    /^Wix didn't accept/,
+  );
+  // Shopify stores, and records that don't say, read exactly as before.
+  for (const shop of ["example.myshopify.com", undefined])
+    assert.equal(
+      describeRefundProgress({ status: "REFUND_SUBMITTED", refundStatus: "SUCCESS", shop }).title,
+      "Refund processed by Shopify",
+    );
+});

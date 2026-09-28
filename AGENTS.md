@@ -6,4 +6,7 @@ Read [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md) before starting work. It rec
 current Shopify App Store compliance status, the open decisions that block
 implementation, and outstanding review findings.
 
+Wix stores are served alongside Shopify stores; read [docs/WIX.md](docs/WIX.md)
+before changing shared return, store or connection code.
+
 Use the [Shopify AI Toolkit](https://shopify.dev/docs/apps/build/ai-toolkit) for all Shopify API and platform work. If missing, install it in the agent host per that page (or `npx skills add Shopify/shopify-ai-toolkit --list` for skill-compatible hosts) — do not add tooling to this repo.

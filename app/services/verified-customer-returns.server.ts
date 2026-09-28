@@ -5,6 +5,7 @@ import type {
 } from "./automatic-return.server";
 import { ReturnNotCreatedError, type RequestedItem } from "./return-guards.server";
 import { otherReturnReasonId } from "./return-reasons.server";
+import { storeInstallation } from "./store-platform.server";
 import {
   adminData,
   adminFor,
@@ -62,10 +63,7 @@ export function verifiedLinksAllowed(
 async function confirmedRules(shop: string) {
   const [policy, installed] = await Promise.all([
     prisma.storePolicy.findUnique({ where: { shop } }),
-    prisma.session.findFirst({
-      where: { shop, isOnline: false },
-      select: { scope: true },
-    }),
+    storeInstallation(shop),
   ]);
   if (!policy || !verifiedLinksAllowed(policy, installed?.scope))
     throw new Error(

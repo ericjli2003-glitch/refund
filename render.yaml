@@ -37,6 +37,12 @@ services:
         sync: false
       - key: INBOUND_EMAIL_FORWARD_TO
         sync: false
+      - key: WIX_APP_ID
+        sync: false
+      - key: WIX_APP_SECRET
+        sync: false
+      - key: WIX_WEBHOOK_PUBLIC_KEY
+        sync: false
 
 databases:
   - name: refund-db

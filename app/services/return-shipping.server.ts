@@ -6,6 +6,7 @@ import {
   type AdminGraphql,
 } from "./automatic-return.server";
 import type { CustomerContext } from "./return-draft.server";
+import { isWixStore } from "./store-platform.server";
 
 type UserError = { field?: string[]; message: string };
 
@@ -145,9 +146,19 @@ export async function returnShippingFor(
     },
     orderBy: { createdAt: "desc" },
     take: 5,
-    select: { id: true, returnId: true },
+    select: { id: true, returnId: true, trackingNumber: true, trackingUrl: true },
   });
   if (!records.length) return [];
+  // Wix sends no return labels; the customer's own tracking is on the record.
+  if (isWixStore(context.shop))
+    return records.map((record) => ({
+      agentReturnId: record.id,
+      labelUrl: null,
+      trackingNumber: record.trackingNumber,
+      trackingUrl: httpsOrNull(record.trackingUrl),
+      carrierName: null,
+      canAddTracking: !record.trackingNumber,
+    }));
   const client = admin ?? (await adminFor(context.shop));
   const shipping = await Promise.all(
     records.map(async (record) => {
@@ -196,6 +207,22 @@ export async function addReturnTracking(
     throw new Error(
       "Tracking can only be added to your own approved return before the store receives it.",
     );
+  if (isWixStore(context.shop)) {
+    if (record.trackingNumber)
+      throw new Error("This return already has a tracking number.");
+    const saved = await prisma.agentReturn.update({
+      where: { id: record.id },
+      data: { trackingNumber, trackingUrl: trackingUrl ?? null },
+    });
+    return {
+      agentReturnId: saved.id,
+      labelUrl: null,
+      trackingNumber: saved.trackingNumber,
+      trackingUrl: httpsOrNull(saved.trackingUrl),
+      carrierName: null,
+      canAddTracking: false,
+    };
+  }
   const client = admin ?? (await adminFor(context.shop));
   const shipping = await readShipping(client, record.returnId);
   if (shipping.delivery?.deliverable?.tracking?.number)

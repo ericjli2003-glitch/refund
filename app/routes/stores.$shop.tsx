@@ -11,8 +11,14 @@ import { appOrigin } from "../services/customer-security.server";
 import { merchantProfilePath } from "../services/merchant-directory.server";
 import { publicReturnGuidance } from "../services/return-guidance.server";
 import styles from "../styles/public.module.css";
+import { WixStorePage } from "../components/WixStorePage";
+import { isWixStore } from "../services/store-platform.server";
+import { wixStorePageData } from "../services/wix/wix-store-page.server";
 
 export async function loader({ params }: LoaderFunctionArgs) {
+  // Wix sites have their own page; everything below is the Shopify page.
+  if (isWixStore((params.shop || "").trim().toLowerCase()))
+    return wixStorePageData(params.shop || "");
   const shop = await requireInstalledShop(params.shop || "");
   const merchant = await prisma.merchantDirectory.findUnique({
     where: { shop },
@@ -42,7 +48,16 @@ export async function loader({ params }: LoaderFunctionArgs) {
   );
 }
 export const meta: MetaFunction<typeof loader> = ({ data: value }) =>
-  value
+  value && "wix" in value
+    ? [
+        { title: `${value.displayName} returns | Gooper.io` },
+        {
+          name: "description",
+          content: `Return a purchase from ${value.displayName} with Gooper.io in ChatGPT or Claude. Find your items and review a return quote.`,
+        },
+        { tagName: "link", rel: "canonical", href: value.canonical },
+      ]
+    : value
     ? [
         { title: `${value.displayName} returns | Gooper.io` },
         {
@@ -54,8 +69,22 @@ export const meta: MetaFunction<typeof loader> = ({ data: value }) =>
     : [{ title: "Store not found | Gooper.io" }];
 
 export default function MerchantReturns() {
-  const { merchant, displayName, origin, guidance, canonical, continueUrl } =
-    useLoaderData<typeof loader>();
+  const loaded = useLoaderData<typeof loader>();
+  return "wix" in loaded ? (
+    <WixStorePage {...loaded} />
+  ) : (
+    <ShopifyMerchantReturns {...loaded} />
+  );
+}
+
+function ShopifyMerchantReturns({
+  merchant,
+  displayName,
+  origin,
+  guidance,
+  canonical,
+  continueUrl,
+}: Exclude<ReturnType<typeof useLoaderData<typeof loader>>, { wix: true }>) {
   const structured = {
     "@context": "https://schema.org",
     "@type": "WebPage",

@@ -521,3 +521,60 @@ test("protected HTTP rejects cookie/upstream access and does not advertise Shopi
   assert.equal(metadata.authorization_servers, undefined);
   assert.equal(upstream.mock.callCount(), 0);
 });
+
+test("one connection reaches a Shopify store and a Wix site side by side", async (t) => {
+  setup(t);
+  const connectionId = "0d9b7c1e-5a4f-4e2b-8c3d-1f6a7b8c9d0e";
+  const wixShop = "wix-0f8a7c1e-2b3d-4e5f-8a9b-0c1d2e3f4a5b";
+  const email = "pat@example.com";
+  mockDelegate(t, prisma.agentStoreLink, "findUnique", async () => null);
+  mockDelegate(t, prisma.session, "findFirst", async (args: never) =>
+    (args as { where: { shop: string } }).where.shop === shop
+      ? { id: "offline", scope: "read_orders" }
+      : null,
+  );
+  mockDelegate(t, prisma.wixInstallation, "findUnique", async (args: never) =>
+    (args as { where: { shop: string } }).where.shop === wixShop
+      ? { permissions: [] }
+      : null,
+  );
+  mockDelegate(t, prisma.storePolicy, "findUnique", async () => ({
+    verifiedStoreLinks: true,
+    returnRulesConfirmedAt: new Date(now),
+    finalSaleCollectionIds: [],
+  }));
+  mockDelegate(t, prisma.connectionEmail, "findMany", async () => [
+    {
+      id: "email-1",
+      connectionId,
+      sealedEmail: seal(email, connectionEmailContext(connectionId)),
+      emailHash: customerIdentityHash(`email:${email}`),
+      source: "ONBOARDING",
+      sourceShop: null,
+      confirmedAt: new Date(now),
+    },
+  ]);
+  mockDelegate(t, prisma.agentStoreLink, "upsert", async (args: never) => {
+    const { create } = args as unknown as { create: Record<string, unknown> };
+    return { id: `link-${String(create.shop)}`, ...create, session: null };
+  });
+  const searched: string[] = [];
+  const lookup = async (store: string, address: string) => {
+    searched.push(store);
+    return address === email;
+  };
+
+  const shopify = await connectionStore(connectionId, shop, now, lookup);
+  const wix = await connectionStore(connectionId, wixShop.toUpperCase(), now, lookup);
+  assert.equal(shopify.shop, shop);
+  assert.equal(wix.shop, wixShop);
+  assert.deepEqual(shopify.customerToken, { email });
+  assert.deepEqual(wix.customerToken, { email });
+  assert.deepEqual(searched, [shop, wixShop]);
+
+  // A Wix key for a site without the app opens nothing.
+  await assert.rejects(
+    connectionStore(connectionId, "wix-11111111-2222-4333-8444-555555555555", now, lookup),
+    /no longer uses Gooper\.io/,
+  );
+});

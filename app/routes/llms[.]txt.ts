@@ -3,6 +3,7 @@ import {
   merchantProfilePath,
 } from "../services/merchant-directory.server";
 import { appOrigin } from "../services/customer-security.server";
+import { publicWebsite } from "../services/store-platform.server";
 
 // Store names come from Shopify and are merchant-controlled; keep them on one
 // line and unable to break the markdown link syntax.
@@ -16,7 +17,8 @@ export async function loader() {
     ? stores
         .map(
           (store) =>
-            `- [${linkText(store.name)}](${origin}${merchantProfilePath(store.shop)}): ${store.primaryDomain}`,
+            `- [${linkText(store.name)}](${origin}${merchantProfilePath(store.shop)})` +
+            (publicWebsite(store.primaryDomain) ? `: ${store.primaryDomain}` : ""),
         )
         .join("\n")
     : "- No stores are listed yet.";

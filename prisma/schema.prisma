@@ -370,6 +370,10 @@ model AgentReturn {
   // The store's refund timing when the customer confirmed; null before it existed.
   refundTiming        String?
   itemReceivedAt      DateTime?
+  // Tracking the customer entered for a return with no platform return
+  // object to hold it (Wix). Shopify returns keep tracking on the return.
+  trackingNumber      String?
+  trackingUrl         String?
   // Set when the merchant clears a finished return off the dashboard. The
   // record stays: it is the store's account of a refund, and a customer data
   // request still reports it.
@@ -536,4 +540,21 @@ model PersonalDataAccess {
   @@index([shop, occurredAt])
   @@index([customerSubjectHash, occurredAt])
   @@index([expiresAt])
+}
+
+// One Wix site that installed Gooper.io. Wix sites share every table above
+// through `shop`, which for Wix is "wix-<instanceId>" (see
+// store-platform.server.ts), so it can never collide with a myshopify.com
+// domain. Deleted on uninstall along with the rest of the site's data.
+model WixInstallation {
+  instanceId   String   @id
+  shop         String   @unique
+  // Wix permission names granted to the app, as reported by Wix. Stands in
+  // for a Shopify session's scope list.
+  permissions  String[] @default([])
+  siteName     String?
+  siteUrl      String?
+  currencyCode String?
+  installedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }

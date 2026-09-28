@@ -586,7 +586,7 @@ export function createCustomerReturnsMcpServer({
                   // Null when no return was opened, so nobody is told to ship
                   // an item back for a submission that failed.
                   returnShipping: result.orders.some((order) => order.returnId)
-                    ? submittedReturnShipping(await publicReturnGuidance(shop))
+                    ? submittedReturnShipping(await publicReturnGuidance(shop), shop)
                     : null,
                 },
                 null,

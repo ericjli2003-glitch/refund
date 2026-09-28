@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import { isWixStore } from "./store-platform.server";
 
 export const RETURN_INSTRUCTIONS_MAX_LENGTH = 1000;
 const PROXY_PREFIX = /^\/(apps|a|community|tools)\/[a-zA-Z0-9_-]+$/;
@@ -98,11 +99,14 @@ export function returnInstructionsSentence(
 
 // Said once the return exists: what to do with the item, where a label comes
 // from, and the store's policy page when it set one.
-export function submittedReturnShipping(guidance: ReturnGuidance) {
+export function submittedReturnShipping(guidance: ReturnGuidance, shop?: string) {
   return (
     "The return is open, so send the item back." +
     returnInstructionsSentence(guidance.returnInstructions) +
-    " The store may add a return shipping label in Shopify; ask to check this return's status later for the label and tracking." +
+    // Wix sends no return labels; the customer can add their own tracking.
+    (shop && isWixStore(shop)
+      ? " If you ship it yourself, you can add the tracking number here."
+      : " The store may add a return shipping label in Shopify; ask to check this return's status later for the label and tracking.") +
     (guidance.returnPolicyUrl
       ? ` Return policy: ${guidance.returnPolicyUrl}`
       : "")

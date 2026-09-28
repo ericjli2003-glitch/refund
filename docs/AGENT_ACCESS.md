@@ -14,6 +14,12 @@ Gooper.io automatically. Customers must enable a connection in the host for this
 first version. Assistants find stores across merchants through `/stores`, `/llms.txt`
 and the public MCP `find_store` tool.
 
+## Wix stores
+
+The same connection reaches Wix stores that use Gooper.io. They are found and
+linked the same way, by the customer's confirmed email only (there is no Wix
+sign-in), and their store key is `wix-<instanceId>`. See [WIX.md](WIX.md).
+
 ## One connection for every store
 
 Setup page: `/connect`. MCP URL:

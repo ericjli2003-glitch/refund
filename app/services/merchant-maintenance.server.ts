@@ -4,21 +4,43 @@ import { pruneAccessLog } from "./access-log.server";
 import { pruneExpiredCustomerAccess } from "./agent-access.server";
 import { syncMerchantDirectory } from "./merchant-directory.server";
 import { prunePublicRateLimits } from "./public-rate-limit.server";
+import { isWixStore, storeInstallation, wixInstanceIdOf } from "./store-platform.server";
 
 // One shop's directory row, brought back in line with Shopify. Shared by the
 // six-hourly sweep and by the shop/update webhook.
 export async function refreshShop(shop: string) {
-  const { unauthenticated } = await import("../shopify.server");
-  const { admin } = await unauthenticated.admin(shop);
-  await syncMerchantDirectory(shop, admin);
-  // If uninstall finished while the Admin query was in flight, remove the stale
-  // mapping. Publication still requires a current installation on every lookup.
-  if (
-    !(await prisma.session.findFirst({
-      where: { shop, isOnline: false },
-      select: { id: true },
-    }))
-  )
+  if (isWixStore(shop)) {
+    const [
+      { removeWixSite, syncWixSite },
+      { wixAccessToken, wixApiFor, wixCredentialsProven, wixInstanceGone },
+    ] = await Promise.all([
+      import("./wix/wix-site.server"),
+      import("./wix/wix-client.server"),
+    ]);
+    // Wix mints no token for a site that removed the app. The AppRemoved
+    // webhook can miss that (lost, or Wix still minted a token when it
+    // checked), so the sweep asks Wix afresh and cleans up what it no longer
+    // has. Only "instance not found" (400/404) counts; refused credentials
+    // or an outage throw and the site is retried next sweep.
+    try {
+      await wixAccessToken(wixInstanceIdOf(shop), { fresh: true });
+    } catch (error) {
+      // Only once another site's token has shown the app's credentials work:
+      // a misconfigured app must never read as every site being gone.
+      if (!wixInstanceGone(error) || !wixCredentialsProven()) throw error;
+      await removeWixSite(shop);
+      return;
+    }
+    await syncWixSite(shop, await wixApiFor(shop));
+  } else {
+    const { unauthenticated } = await import("../shopify.server");
+    const { admin } = await unauthenticated.admin(shop);
+    await syncMerchantDirectory(shop, admin);
+  }
+  // If uninstall finished while the platform query was in flight, remove the
+  // stale mapping. Publication still requires a current installation on every
+  // lookup.
+  if (!(await storeInstallation(shop)))
     await prisma.merchantDirectory.deleteMany({ where: { shop } });
 }
 
@@ -28,14 +50,29 @@ export async function refreshInstalledMerchants(
 ) {
   let cursor: string | undefined;
   const result = { refreshed: 0, failed: 0 };
+  // Shopify stores first, then Wix sites, each in key order.
+  let platform: "shopify" | "wix" = "shopify";
   for (;;) {
-    const shops = await prisma.session.groupBy({
-      by: ["shop"],
-      where: { isOnline: false, ...(cursor ? { shop: { gt: cursor } } : {}) },
-      orderBy: { shop: "asc" },
-      take: 50,
-    });
-    if (!shops.length) return result;
+    const shops =
+      platform === "shopify"
+        ? await prisma.session.groupBy({
+            by: ["shop"],
+            where: { isOnline: false, ...(cursor ? { shop: { gt: cursor } } : {}) },
+            orderBy: { shop: "asc" },
+            take: 50,
+          })
+        : await prisma.wixInstallation.findMany({
+            where: cursor ? { shop: { gt: cursor } } : {},
+            orderBy: { shop: "asc" },
+            take: 50,
+            select: { shop: true },
+          });
+    if (!shops.length) {
+      if (platform === "wix") return result;
+      platform = "wix";
+      cursor = undefined;
+      continue;
+    }
     for (const { shop } of shops) {
       await renew();
       try {

@@ -1,7 +1,7 @@
 import * as z from "zod/v4";
 
 import type { ReturnableOrder } from "./automatic-return.server";
-import { normalizeShopDomain } from "./customer-account.server";
+import { normalizeStoreKey, publicWebsite } from "./store-platform.server";
 import { resolveMerchant } from "./merchant-directory.server";
 import { searchPublishedMerchants } from "./merchant-lookup.server";
 import type { OrderSelection } from "./return-quote.server";
@@ -82,14 +82,14 @@ const describe = (entries: Candidate[]) => {
     .join(", ");
 };
 
-// The store's name, website or myshopify.com domain, as one store's domain.
+// The store's name, website or store key, as one store's key.
 // A name that matches no store, or more than one, stops the request rather
 // than picking a store the customer never named.
 export async function resolveStore(value: string) {
   const named = value.trim();
   try {
-    // Already a store domain: use it unchanged, as callers always could.
-    return normalizeShopDomain(named);
+    // Already a store key (myshopify.com domain or Wix site): use it unchanged.
+    return normalizeStoreKey(named);
   } catch {
     /* A store's name or website, not its myshopify.com domain. */
   }
@@ -99,7 +99,10 @@ export async function resolveStore(value: string) {
   if (similar.length > 1)
     throw new Error(
       `More than one store matches "${named}": ${similar
-        .map((entry) => `${entry.name} (${entry.primaryDomain})`)
+        .map((entry) => {
+          const website = publicWebsite(entry.primaryDomain);
+          return website ? `${entry.name} (${website})` : entry.name;
+        })
         .join(", ")}. Ask the customer which one they bought from, then use that store's website.`,
     );
   throw new Error(

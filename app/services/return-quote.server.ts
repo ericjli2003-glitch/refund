@@ -22,6 +22,7 @@ import {
 } from "./customer-security.server";
 import { resolveReturning, returningSchema } from "./return-wording.server";
 import { returnInstructionsSentence } from "./return-guidance.server";
+import { isWixStore } from "./store-platform.server";
 
 // A basket holds items from a few of the customer's orders at one store.
 // Shopify opens a return per order, so each order keeps its own quote, refund
@@ -356,7 +357,9 @@ export async function createReturnQuote(
     },
     returnShipping:
       (submissionAvailable
-        ? "A return is opened for each order after confirmation. The store may add return shipping labels in Shopify."
+        ? isWixStore(shop)
+          ? "A return is opened for each order after confirmation."
+          : "A return is opened for each order after confirmation. The store may add return shipping labels in Shopify."
         : "Contact the merchant for return approval. No shipping label has been created.") +
       instructions,
   };

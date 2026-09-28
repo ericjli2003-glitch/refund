@@ -5,6 +5,24 @@ when a decision below is resolved; do not let it drift into a changelog.
 
 Last reviewed: 2026-09-12, against `claude/project-state`.
 
+## Wix stores alongside Shopify (2026-09-28)
+
+Gooper.io now also serves Wix stores, next to Shopify stores and through the
+same customer connection, directory, return rules and return records. Wix
+sites are keyed `wix-<instanceId>`; every Wix path is chosen by that key, so
+Shopify behaviour is unchanged (all Shopify unit and database integration
+suites pass). Merchants use a page inside the Wix dashboard (`/wix/dashboard`);
+customers reach Wix stores only through the assistant connection, by confirmed
+email. Wix has no return object or refund idempotency, so Gooper.io's records
+hold Wix returns and guard against double refunds itself.
+
+Setup, behaviour and the items still to confirm on a live Wix site are in
+[WIX.md](WIX.md). Not yet done: a live test against a Wix test site with Wix
+Stores, the Wix App Market listing, and privacy policy and terms updates
+(with counsel review) disclosing Wix processing before Wix launches publicly.
+Shopify-facing pages are byte-for-byte unchanged. Gooper-funded refunds stay
+Shopify-only.
+
 ## Gooper-funded product work (2026-09-17)
 
 The user clarified that the intended new product fronts Gooper's money to the
