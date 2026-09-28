@@ -25,6 +25,7 @@
     "funded:worker": "vite-node --config vite.test.config.ts scripts/funded-payments-worker.ts",
     "test:funded-sandbox": "vite-node --config vite.test.config.ts tests/funded-return-sandbox.integration.ts && vite-node --config vite.test.config.ts tests/funded-payment-intents.integration.ts && vite-node --config vite.test.config.ts tests/funded-returns-admin.integration.ts && vite-node --config vite.test.config.ts tests/funded-payments-worker.integration.ts && vite-node --config vite.test.config.ts tests/funded-entitlements.integration.ts && vite-node --config vite.test.config.ts tests/funded-shopify-return.integration.ts && vite-node --config vite.test.config.ts tests/funded-limits.integration.ts",
     "test:oauth": "vite-node --config vite.test.config.ts tests/agent-oauth.integration.ts",
+    "test:wix": "vite-node --config vite.test.config.ts tests/wix-lifecycle.integration.ts",
     "shopify": "shopify",
     "prisma": "prisma",
     "graphql-codegen": "graphql-codegen",
