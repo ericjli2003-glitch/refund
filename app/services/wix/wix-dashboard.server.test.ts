@@ -390,3 +390,41 @@ test("only Wix may frame the dashboard, and the instance never leaks by Referer"
   assert.equal(headers["Cache-Control"], "no-store, private");
   assert.equal("X-Frame-Options" in headers, false);
 });
+
+test("a real Wix-signed instance survives the round trip from load to post", async () => {
+  const { createHmac } = await import("node:crypto");
+  const data = Buffer.from(
+    JSON.stringify({
+      instanceId: INSTANCE_ID,
+      signDate: NOW.toISOString(),
+      uid: "u1",
+    }),
+  ).toString("base64url");
+  const signed = `${createHmac("sha256", SECRET).update(data).digest("base64url")}.${data}`;
+  const options = { secret: SECRET, now: NOW, origin: ORIGIN };
+  const loaded = await requireWixDashboardSession(
+    get(signed),
+    undefined,
+    options,
+  );
+  assert.equal(loaded.identity.shop, SHOP);
+  const posted = await requireWixDashboardSession(
+    post(null),
+    form({ instance: loaded.signedInstance }),
+    options,
+  );
+  assert.equal(posted.identity.shop, SHOP);
+  // Signed with another secret, or a day later, it no longer works.
+  await assert.rejects(
+    requireWixDashboardSession(get(signed), undefined, {
+      ...options,
+      secret: "other",
+    }),
+  );
+  await assert.rejects(
+    requireWixDashboardSession(get(signed), undefined, {
+      ...options,
+      now: new Date(NOW.getTime() + 25 * 3_600_000),
+    }),
+  );
+});
