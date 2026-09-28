@@ -9,8 +9,8 @@ import {
   useRouteError,
 } from "react-router";
 
+import { WIX_INSTANCE_FIELD } from "../wix-dashboard-fields";
 import {
-  WIX_INSTANCE_FIELD,
   loadWixDashboard,
   requireWixDashboardSession,
   runWixDashboardAction,

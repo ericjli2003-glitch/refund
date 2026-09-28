@@ -1,3 +1,4 @@
+import { WIX_INSTANCE_FIELD } from "../../wix-dashboard-fields";
 import prisma from "../../db.server";
 import {
   canArchiveReturn,
@@ -37,7 +38,8 @@ import { provisionWixSite } from "./wix-site.server";
 // forge a post, because it can't read or mint that value.
 // ---------------------------------------------------------------------------
 
-export const WIX_INSTANCE_FIELD = "instance";
+export { WIX_INSTANCE_FIELD };
+
 // Real instances are a few hundred characters; this only bounds the work an
 // oversized value can cause before the signature check.
 const MAX_INSTANCE_LENGTH = 4096;

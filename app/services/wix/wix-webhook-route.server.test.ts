@@ -4,9 +4,9 @@ import test, { type TestContext } from "node:test";
 import { SignJWT, importPKCS8 } from "jose";
 import type { ActionFunctionArgs } from "react-router";
 
-import prisma from "../db.server";
-import { resetWixTokenCache } from "../services/wix/wix-client.server";
-import { action, loader } from "./webhooks.wix";
+import prisma from "../../db.server";
+import { resetWixTokenCache } from "./wix-client.server";
+import { action, loader } from "../../routes/webhooks.wix";
 
 const appId = "0b1c2d3e-4f50-4a6b-8c7d-9e0f1a2b3c4d";
 const instanceId = "1b4f3c2a-9d8e-4f7a-8b6c-5d4e3f2a1b0c";

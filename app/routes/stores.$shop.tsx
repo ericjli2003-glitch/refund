@@ -106,8 +106,9 @@ export default function MerchantReturns() {
         <p className={styles.eyebrow}>Returns with Gooper.io</p>
         <h1>{displayName} returns.</h1>
         <p>
-          Bought something from {displayName}? Start here to verify your
-          purchase, find the item, and review a return estimate.
+          {wix
+            ? `Bought something from ${displayName}? Your AI assistant can find the item and show you the refund before anything is submitted.`
+            : `Bought something from ${displayName}? Start here to verify your purchase, find the item, and review a return estimate.`}
         </p>
         {wix ? (
           website && (

@@ -38,6 +38,6 @@ import "./services/wix/wix-site.server.test";
 import "./services/wix/wix-instance.server.test";
 import "./services/wix/wix-refund-events.server.test";
 import "./services/wix/wix-dashboard.server.test";
-import "./routes/webhooks.wix.test";
+import "./services/wix/wix-webhook-route.server.test";
 import "./services/wix/wix-returns.server.test";
 import "./services/wix/wix-return-flow.server.test";
