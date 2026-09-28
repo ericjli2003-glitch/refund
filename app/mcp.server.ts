@@ -37,7 +37,7 @@ const itemSchema = z.object({
   lineItemId: z
     .string()
     .min(1)
-    .describe("The line-item ID returned by find_returnable_items"),
+    .describe("The Shopify line-item ID returned by find_returnable_items"),
   quantity: z.number().int().positive().describe("Quantity to return"),
 });
 
@@ -156,7 +156,7 @@ export function createCustomerReturnsMcpServer({
     .min(1)
     .max(255)
     .describe(
-      'The store, in the customer\'s own words: its name or website, like "Testing" or "testing.com". Its store key from find_store (a myshopify.com domain or wix-… key) works too.',
+      'The store, in the customer\'s own words: its name or website, like "Testing" or "testing.com". Its myshopify.com domain works too.',
     );
   const withStore = <T extends z.ZodRawShape>(shape: T) =>
     (stores ? { store: storeSchema, ...shape } : shape) as T & {
@@ -356,7 +356,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Find what you can return",
       description:
-        "Lists returnable items from the authenticated customer's own recent orders at that store. Pick the item yourself: when one matches what the customer described, or it's their only returnable item, use it without asking. Ask one short question only when several items could match. Never ask for an order number, a reason or card details.",
+        "Lists returnable items from the authenticated customer's own recent Shopify orders. Pick the item yourself: when one matches what the customer described, or it's their only returnable item, use it without asking. Ask one short question only when several items could match. Never ask for an order number, a reason or card details.",
       inputSchema: withStore({
         query: z
           .string()
@@ -446,17 +446,17 @@ export function createCustomerReturnsMcpServer({
           .string()
           .min(1)
           .optional()
-          .describe("One order's ID, when you already have it"),
+          .describe("One order's Shopify ID, when you already have it"),
         items: itemsSchema
           .optional()
-          .describe("That order's line items by ID"),
+          .describe("That order's line items by Shopify ID"),
         orders: z
           .array(z.object({ orderId: z.string().min(1), items: itemsSchema }))
           .min(1)
           .max(5)
           .optional()
           .describe(
-            "Items from up to five of this store's orders by ID, quoted as one refund",
+            "Items from up to five of this store's orders by Shopify ID, quoted as one refund",
           ),
       }),
       annotations: {
@@ -500,7 +500,7 @@ export function createCustomerReturnsMcpServer({
     {
       title: "Submit your return and refund",
       description:
-        "Submits the quoted return: opens a return with the store for each order in the quote and refunds the original payment method, either immediately or after the store receives the items, as the quote's refundTiming states. Pass the quoteId from quote_return. Call it only after the customer says yes to these exact items and this refund total. Before calling, say briefly in the conversation what you're doing, such as \"I'll submit that return for you now.\" Never paste the tool arguments or JSON into the conversation. Each order reports its own result, so one order failing never undoes another.",
+        "Submits the quoted return: opens a Shopify return for each order in the quote and refunds the original payment method, either immediately or after the store receives the items, as the quote's refundTiming states. Pass the quoteId from quote_return. Call it only after the customer says yes to these exact items and this refund total. Before calling, say briefly in the conversation what you're doing, such as \"I'll submit that return for you now.\" Never paste the tool arguments or JSON into the conversation. Each order reports its own result, so one order failing never undoes another.",
       inputSchema: withStore({
         quoteId: z
           .string()
@@ -586,7 +586,7 @@ export function createCustomerReturnsMcpServer({
                   // Null when no return was opened, so nobody is told to ship
                   // an item back for a submission that failed.
                   returnShipping: result.orders.some((order) => order.returnId)
-                    ? submittedReturnShipping(await publicReturnGuidance(shop))
+                    ? submittedReturnShipping(await publicReturnGuidance(shop), shop)
                     : null,
                 },
                 null,

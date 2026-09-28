@@ -20,21 +20,20 @@ export default function Privacy() {
         <p className={styles.updated}>Effective September 25, 2026</p>
 
         <p>
-          Gooper.io helps Shopify and Wix merchants offer customer-confirmed
-          returns through compatible AI assistants. This policy explains the
-          data the app uses to provide that service.
+          Gooper.io helps Shopify merchants offer customer-confirmed returns
+          through compatible AI assistants. This policy explains the data the
+          app uses to provide that service.
         </p>
 
         <h2>Information we process</h2>
         <ul>
           <li>
-            Merchant account and shop information, including the shop domain or
-            Wix site, the Shopify session or Wix app instance, granted
-            permissions, and configured return policy.
+            Merchant account and shop information, including the shop domain,
+            Shopify session, access scopes, and configured return policy.
           </li>
           <li>
-            Return records, including Shopify or Wix order, line-item, return,
-            and refund identifiers, quantities, status, amount, currency, and
+            Return records, including Shopify order, line-item, return, and
+            refund identifiers, quantities, status, amount, currency, and
             timestamps.
           </li>
           <li>
@@ -51,8 +50,8 @@ export default function Privacy() {
         <p>
           We use this information to authenticate shops and customers, determine
           return eligibility, calculate and submit confirmed returns, reconcile
-          Shopify and Wix status updates, prevent duplicate refunds, support
-          merchants, protect the service, and meet legal obligations.
+          Shopify status updates, prevent duplicate refunds, support merchants,
+          protect the service, and meet legal obligations.
         </p>
 
         <h2>Merchant discovery records</h2>
@@ -71,7 +70,7 @@ export default function Privacy() {
           Customer Account access tokens are used to validate the request and
           read the authenticated customer&apos;s eligible order information.
           They are not stored in Gooper.io&apos;s return records. Gooper.io does
-          not collect debit or credit card numbers. Shopify or Wix and the
+          not collect debit or credit card numbers. Shopify and the
           merchant&apos;s payment provider process refunds to the original
           payment method.
         </p>
@@ -85,10 +84,10 @@ export default function Privacy() {
 
         <h2>Sharing and service providers</h2>
         <p>
-          Information is shared with Shopify or Wix, for the merchant&apos;s own
-          store, when needed to operate the app. We may use infrastructure
-          providers to host the app and database. We do not sell personal
-          information or use it for cross-context behavioral advertising.
+          Information is shared with Shopify when needed to operate the app. We
+          may use infrastructure providers to host the app and database. We do
+          not sell personal information or use it for cross-context behavioral
+          advertising.
         </p>
 
         <h2>Retention and deletion</h2>
@@ -97,16 +96,15 @@ export default function Privacy() {
           support the service or meet legal obligations. Gooper.io processes
           Shopify&apos;s mandatory customer data request, customer redaction,
           and shop redaction webhooks. Local shop data is also deleted when the
-          app receives an uninstall webhook from Shopify or Wix, after Wix
-          confirms the app was removed.
+          app receives an uninstall webhook.
         </p>
 
         <h2>Security</h2>
         <p>
           We use access controls, signed webhook verification, scoped Shopify
-          and Wix permissions, hashed customer references, and idempotency
-          controls. No system is completely secure, and we cannot guarantee
-          absolute security.
+          permissions, hashed customer references, and idempotency controls. No
+          system is completely secure, and we cannot guarantee absolute
+          security.
         </p>
 
         <h2>Your choices</h2>
@@ -114,10 +112,7 @@ export default function Privacy() {
           Customers can contact the Shopify merchant where they placed their
           order to request access, correction, or deletion. The merchant
           controls that order information, and Shopify sends the request to
-          Gooper.io. For Wix stores, customers contact the store, which forwards
-          the request to Gooper.io&apos;s support address. Customers can also
-          remove their confirmed emails or disconnect Gooper.io from their
-          assistant at any time. Merchants can uninstall the app at any time.
+          Gooper.io. Merchants can uninstall the app at any time.
         </p>
 
         <h2>Contact us</h2>

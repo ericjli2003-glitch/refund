@@ -21,7 +21,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
         </header>
         {children}
         <footer className={styles.footer}>
-          <span>Gooper.io for Shopify and Wix merchants</span>
+          <span>Gooper.io for Shopify merchants</span>
           <div className={styles.footerLinks}>
             <Link to="/privacy">Privacy</Link>
             <Link to="/terms">Terms</Link>

@@ -44,8 +44,9 @@ all-stores connection:
    return (`AgentReturn.trackingNumber`/`trackingUrl`) and shown to the
    merchant.
 
-The public store page `/stores/wix-<instanceId>` shows only the assistant
-route: the Shopify sign-in portal and in-page start-return tools don't apply.
+The public store page `/stores/wix-<instanceId>` is its own page
+(`app/components/WixStorePage.tsx`) and shows only the assistant route: the
+Shopify sign-in portal and in-page start-return tools don't apply.
 
 ## What merchants get
 
@@ -154,6 +155,24 @@ Wix has no return object, so a Wix return is Gooper.io's `AgentReturn` row
    dashboard refuses to load; Shopify is unaffected.
 7. Apply migrations `20260928000000_wix_installation` and
    `20260928010000_agent_return_tracking` (`npm run setup`).
+
+## Shopify is unchanged
+
+Everything Shopify customers and merchants see is byte-for-byte what `main`
+serves. This was checked by building `main` and this branch and comparing a
+Shopify store's public page, the store directory and search, `/connect`,
+`/privacy`, `/terms`, `/support`, `/llms.txt`, the sitemap, the merchant search
+API and error pages. Shared text that names Shopify stays as it is for Shopify
+stores; Wix stores get their own wording where it has to differ (refund
+status, shipping labels). The embedded Shopify admin is not touched.
+
+Because of that, these public texts still describe Gooper.io as a Shopify app
+and must be updated when Wix launches publicly:
+
+- the privacy policy (`app/routes/privacy.tsx`) and terms, to disclose Wix
+  data processing and how Wix customers make data requests (counsel review);
+- the public footer ("Gooper.io for Shopify merchants") and the `llms.txt`
+  introduction.
 
 ## Tests
 

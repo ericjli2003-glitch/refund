@@ -18,8 +18,10 @@ hold Wix returns and guard against double refunds itself.
 
 Setup, behaviour and the items still to confirm on a live Wix site are in
 [WIX.md](WIX.md). Not yet done: a live test against a Wix test site with Wix
-Stores, the Wix App Market listing, and counsel review of the privacy policy
-changes that disclose Wix processing. Gooper-funded refunds stay Shopify-only.
+Stores, the Wix App Market listing, and privacy policy and terms updates
+(with counsel review) disclosing Wix processing before Wix launches publicly.
+Shopify-facing pages are byte-for-byte unchanged. Gooper-funded refunds stay
+Shopify-only.
 
 ## Gooper-funded product work (2026-09-17)
 

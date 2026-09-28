@@ -97,7 +97,7 @@ export default function Stores() {
             {merchants.map((merchant) => (
               <li key={merchant.shop}>
                 <a href={merchant.profilePath}>{merchant.name} returns</a>
-                {merchant.primaryDomain && <> · {merchant.primaryDomain}</>}
+                {merchant.primaryDomain && <> ·{" "}{merchant.primaryDomain}</>}
               </li>
             ))}
           </ul>
