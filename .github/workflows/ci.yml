@@ -47,6 +47,7 @@ jobs:
       - run: node --test scripts/configure-storefront.test.mjs
       - run: npm run storefront:check
       - run: npm run test:oauth
+      - run: npm run test:wix
       - run: npx vite-node --config vite.test.config.ts tests/return-draft.integration.ts
       - run: npx vite-node --config vite.test.config.ts tests/merchant-onboarding.integration.ts
       - run: npx vite-node --config vite.test.config.ts tests/merchant-opportunity.integration.ts
