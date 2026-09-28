@@ -82,9 +82,12 @@ test("unsigned or forged deliveries are rejected", async (t) => {
   assert.equal(create.mock.callCount(), 0);
 });
 
-test("AppRemoved deletes the site's data", async (t) => {
+test("AppRemoved deletes the site's data once Wix confirms the app is gone", async (t) => {
   configure(t);
   noReceipt(t);
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ message: "App is not installed" }, { status: 400 }),
+  );
   const transaction = mockDelegate(t, prisma, "$transaction", async (ops: unknown[]) => ops);
   const deleteInstall = mockDelegate(t, prisma.wixInstallation, "deleteMany", async () => ({ count: 1 }));
   const response = await post(await signed("AppRemoved", { appId }));
@@ -168,4 +171,17 @@ test("refund completed updates the matching return once", async (t) => {
   assert.deepEqual(receipts, [
     { data: { id: "wix:event-1", shop, topic: "wix.ecom.v1.order_transactions_refund_completed" } },
   ]);
+});
+
+test("a replayed AppRemoved for a site that still has the app deletes nothing", async (t) => {
+  configure(t);
+  noReceipt(t);
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ access_token: "tok", expires_in: 14_400 }),
+  );
+  const transaction = mockDelegate(t, prisma, "$transaction", async (ops: unknown[]) => ops);
+  const response = await post(await signed("AppRemoved", { appId }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ignored: true });
+  assert.equal(transaction.mock.callCount(), 0);
 });

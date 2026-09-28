@@ -3,7 +3,8 @@ import type { ActionFunctionArgs } from "react-router";
 
 import prisma from "../db.server";
 import { processWebhookOnce } from "../services/webhook-reconciliation.server";
-import { createWixApi } from "../services/wix/wix-client.server";
+import { WixApiError } from "../services/wix/wix-api.server";
+import { createWixApi, wixAccessToken } from "../services/wix/wix-client.server";
 import { recordWixRefundCompleted } from "../services/wix/wix-refund-events.server";
 import { provisionWixSite, removeWixSite } from "../services/wix/wix-site.server";
 import {
@@ -32,6 +33,15 @@ async function recordReceipt(id: string, shop: string, topic: string) {
       throw error;
   }
 }
+
+const stillInstalled = (instanceId: string) =>
+  wixAccessToken(instanceId, { fresh: true }).then(
+    () => true,
+    (error: unknown) => {
+      if (error instanceof WixApiError && error.rejected) return false;
+      throw error;
+    },
+  );
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   if (request.method !== "POST")
@@ -71,6 +81,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       await recordReceipt(event.id, event.shop, event.eventType);
       return Response.json({ installed: true });
     case WIX_APP_REMOVED:
+      // A replayed removal must never delete a site that still has the app,
+      // so Wix confirms first: it mints no token for a removed instance. An
+      // unclear answer throws, and Wix retries.
+      if (await stillInstalled(event.instanceId))
+        return Response.json({ ignored: true });
       // No receipt: removal deletes the site's receipts too, and repeating a
       // removal is harmless.
       await removeWixSite(event.shop);
