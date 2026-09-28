@@ -35,8 +35,23 @@ export function normalizeStoreKey(value: string) {
 // Wix permissions stand in for Shopify access scopes wherever shared code asks
 // whether a store granted one (hasScope). Only scopes shared code checks are
 // mapped.
+//
+// WixInstallation.permissions is `instance.permissions` from GET
+// /apps/v1/instance. UNVERIFIED whether Wix lists the granted scope IDs
+// (SCOPE.*) or the permission IDs those scopes grant (WIX_STORES.*); reports
+// say the latter, so both are accepted. IDs are from Wix's SDK: every scope
+// that grants product read (Catalog V1 WIX_STORES.READ_PRODUCTS, V3
+// WIX_STORES.PRODUCT_READ).
 export const WIX_SCOPE_EQUIVALENTS: Record<string, string[]> = {
-  read_products: ["SCOPE.DC-STORES.READ-PRODUCTS", "SCOPE.DC-STORES.MANAGE-PRODUCTS"],
+  read_products: [
+    "SCOPE.DC-STORES.READ-PRODUCTS",
+    "SCOPE.DC-STORES.MANAGE-PRODUCTS",
+    "SCOPE.DC-STORES-MEGA.READ-STORES",
+    "SCOPE.DC-STORES-MEGA.MANAGE-STORES",
+    "SCOPE.STORES.MANAGE-STORES",
+    "WIX_STORES.READ_PRODUCTS",
+    "WIX_STORES.PRODUCT_READ",
+  ],
 };
 
 export function wixScopeString(permissions: string[]) {
