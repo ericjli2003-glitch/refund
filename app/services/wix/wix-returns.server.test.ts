@@ -153,7 +153,7 @@ test("lists only the customer's paid Wix orders with what's left to return", asy
   ];
   const wix = fakeWix({
     "POST /ecom/v1/orders/search": { orders },
-    "POST /ecom/v1/order-billing/get-order-refundability": (body) => {
+    "POST /ecom/v1/order-billing/get-order-refundability": (body: unknown) => {
       const { orderId } = body as { orderId: string };
       if (orderId === "order-1")
         return refundability([["line-a", 3, 1], ["line-digital", 2, 0], ["line-gift", 2, 0], ["line-done", 1, 1]]);
@@ -610,7 +610,7 @@ test("maps Wix refund transaction statuses", () => {
 
 test("checks whether a Wix site has orders for an email", async () => {
   const wix = fakeWix({
-    "POST /ecom/v1/orders/search": (body) =>
+    "POST /ecom/v1/orders/search": (body: unknown) =>
       (body as { search: { filter: { "buyerInfo.email": { $eq: string } } } }).search.filter["buyerInfo.email"].$eq === email
         ? { orders: [order("order-1")] }
         : { orders: [order("order-2", { buyerInfo: { email: "someone@example.com" } })] },
@@ -624,7 +624,7 @@ test("lists Catalog V1 collections and Catalog V3 categories", async () => {
   const page = Array.from({ length: 100 }, (_, index) => ({ id: `c${index}`, name: `Collection ${String(index).padStart(3, "0")}` }));
   const v1 = fakeWix({
     "GET /stores/v3/provision/version": { catalogVersion: "V1_CATALOG" },
-    "POST /stores-reader/v2/collections/query": (body) =>
+    "POST /stores-reader/v2/collections/query": (body: unknown) =>
       (body as { query: { paging: { offset: number } } }).query.paging.offset === 0
         ? { collections: page }
         : { collections: [{ id: "sale", name: "Final sale" }] },
@@ -635,7 +635,7 @@ test("lists Catalog V1 collections and Catalog V3 categories", async () => {
 
   const v3 = fakeWix({
     "GET /stores/v3/provision/version": { catalogVersion: "V3_CATALOG" },
-    "POST /categories/v1/categories/query": (body) =>
+    "POST /categories/v1/categories/query": (body: unknown) =>
       (body as { query: { cursorPaging: { cursor?: string } } }).query.cursorPaging.cursor
         ? { categories: [{ id: "cat-2", name: "Clearance" }], pagingMetadata: { hasNext: false } }
         : { categories: [{ id: "cat-1", name: "Shoes" }], pagingMetadata: { hasNext: true, cursors: { next: "next" } } },
