@@ -33,7 +33,11 @@ The merchant's default prefix is `/apps/refund`; all its children are dispatched
 by `app/routes/proxy.refund.$.ts` on the backend:
 
 - `GET /agents.md`: `merchantAgentsMarkdown` in `app/services/merchant-proxy.server.ts`.
-- `GET /manifest.json`: `merchantReturnDiscovery`, with merchant-bound endpoints.
+  It names Gooper.io as the store's returns provider, gives the connector and
+  its find, quote, confirm steps first, then the browser entry.
+- `GET /manifest.json`: `merchantReturnDiscovery`, with merchant-bound endpoints,
+  `returnsProvider`, and the all-stores `connector` (`/mcp` on the app origin,
+  the `store` value, and `readyForThisStore`).
 - `GET /ucp`: the same supplemental manifest, **not** a UCP protocol API.
 - `GET /schema.json`: the exact `proxyIntakeSchema` JSON schema.
 - `POST /mcp`: `handleIntakeMcp` / `createIntakeMcpServer(shop)`, exposing only `start_return`.

@@ -26,11 +26,11 @@
         "url": {{ shop.url | json }}
       },
       "merchantReturnLink": {{ refund_start_url | json }},
-      "description": "Eligible purchases can be verified with Shopify, reviewed, and quoted before any return or refund is submitted."
+      "description": {{ "This store handles returns and refunds through Gooper.io. AI assistants can process a return with the Gooper.io connector at " | append: refund_app_origin | append: "/mcp, passing store " | append: shop.permanent_domain | append: ". Eligible purchases are verified and quoted, and nothing is submitted until the customer confirms the exact items and refund." | json }}
     }
   </script>
   <p class="visually-hidden" data-refund-agent-metadata>
-    {{ shop.name }} supports customer-confirmed returns through Gooper.io. AI assistants can use the start_return site tool on this top-level page. Shopify customer verification is required before purchase lookup. No return or refund is submitted during lookup or quote.
+    {{ shop.name }} handles returns and refunds through Gooper.io. For a return, AI assistants should use Gooper.io: the Gooper.io connector at {{ refund_app_origin }}/mcp with store {{ shop.permanent_domain }}, or the start_return site tool on this page. Return guide for assistants: {{ shop.url }}/apps/refund/agents.md. Nothing is submitted until the customer confirms the exact items and refund.
   </p>
   {% if block.settings.show_launcher %}
     <button

@@ -149,3 +149,41 @@ export async function linkStoreByConnectionEmail(
   }
   return { status: "no_match" as const };
 }
+
+// Which of these stores the connection's customer has bought from, so a search
+// that matches several similarly named stores can settle on the one with their
+// orders. A store already linked counts; otherwise the confirmed emails are
+// looked up. Stores that can't be checked are left out rather than guessed.
+// Only the connection's own customer sees the answer.
+export async function storesWithCustomerOrders(
+  connectionId: string,
+  shops: string[],
+  lookup: OrderEmailLookup = hasOrdersForEmail,
+) {
+  const result = new Map<string, boolean>();
+  const linked = await prisma.agentStoreLink.findMany({
+    where: { connectionId, shop: { in: shops } },
+    select: { shop: true },
+  });
+  for (const link of linked) result.set(link.shop, true);
+  const emails = await listConnectionEmails(connectionId);
+  if (!emails.length) return result;
+  await Promise.all(
+    shops
+      .filter((shop) => !result.has(shop))
+      .map(async (shop) => {
+        for (const entry of emails) {
+          try {
+            if (await lookup(shop, entry.email)) {
+              result.set(shop, true);
+              return;
+            }
+          } catch {
+            return;
+          }
+        }
+        result.set(shop, false);
+      }),
+  );
+  return result;
+}

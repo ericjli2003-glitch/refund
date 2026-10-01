@@ -70,6 +70,16 @@ still outstanding because `shopify app dev` would rewrite the live app's URLs.
 
 ## Shopify App Store compliance status
 
+### App review submission
+
+Submitted for App Store review on 2026-09-04. Shopify Support confirmed on
+2026-10-01 that the submission is in the review queue, processed in order of
+receipt, and that wait times are currently longer than the usual 5 to 10
+business days because of submission volume. No reviewer is assigned yet.
+Do not resubmit (it moves the app to the back of the queue). Feedback arrives
+by email from noreply@shopify.com and in the Partner Dashboard under
+Apps > Distribution.
+
 ### Requirements currently met
 
 - **Requirement 1.1.15, refunds only through the original payment processor.**
@@ -240,6 +250,15 @@ The dashboard also generates a paste-ready Returns section for a theme's own
 templates can only read the `agents` and `request` objects, not app data, so
 merchants paste it again after changing their guidance.
 
+Since 2026-10-01 every guide names Gooper.io as the store's returns provider
+and makes the connector the first path: the theme section (dashboard copy and
+`storefront/templates/agents.md.liquid`), the proxy `agents.md`, and the
+manifest's `returnsProvider` and `connector` blocks give `https://gooper.io/mcp`,
+the `store` value and the find, quote, confirm steps, with the browser entry as
+the fallback. The proxy guide and manifest report `connector.readyForThisStore`
+from the same check the connector uses. Shopify does not enforce this routing
+(decision 4). **Not yet tested live:** [AGENTS_MD_TEST.md](AGENTS_MD_TEST.md).
+
 ### 4. UCP (investigated; no Gooper.io-owned UCP surface)
 
 - Shopify serves the merchant's `/.well-known/ucp`, and there is still no app
@@ -255,6 +274,23 @@ merchants paste it again after changing their guidance.
 
 The manifest's `ucp` block states these boundaries, including
 `refundPublishesUcpOrderEvents: false`.
+
+Shopify Support (with a specialist) confirmed on 2026-10-01:
+
+- UCP can surface order and return information but has no way for an app to
+  register as the handler for return requests.
+- There is no setting that makes an app a merchant's required or exclusive
+  returns provider, so Shopify cannot guarantee an AI agent routes a return
+  through Gooper.io rather than another path.
+- A merchant's custom `agents.md` may name Gooper.io's MCP/API endpoint and
+  tell agents to call it to execute a return, but the file is informational:
+  whether an agent follows it depends on the agent. Shopify logged this as
+  feature feedback; watch [shopify.dev/changelog](https://shopify.dev/changelog).
+
+So the approach in decision 3 stands: make Gooper.io easy to discover and
+clearly described in `agents.md`, rather than relying on enforced routing.
+References: [agents.md Liquid template](https://shopify.dev/docs/storefronts/themes/architecture/templates/agents-md-liquid),
+[Agents and orders](https://shopify.dev/docs/agents/orders).
 
 ### 5. Cross-merchant discovery (decided and implemented)
 
@@ -613,6 +649,66 @@ ask once, then briefly acknowledge submission after a clear yes. JSON remains
 the tool input format; the assistant must not copy it into its chat reply.
 The host still controls its separate tool-approval card, so these instructions
 cannot replace that card or guarantee that the host hides raw arguments.
+
+### 18. One-click assistant discovery for merchants (decided and implemented)
+
+Merchants shouldn't paste anything. The dashboard section "Tell AI assistants
+that Gooper.io handles your returns" (`app/services/agent-discovery-publish.server.ts`)
+has two buttons, each asking for its optional scope the first time
+(`optional_scopes` in `shopify.app.toml`, requested with App Bridge
+`scopes.request`):
+
+- **agents.md** (`write_themes`): writes Gooper.io's Returns section into the
+  live theme's `templates/agents.md.liquid` with `themeFilesUpsert`, fenced by
+  Liquid comments so it never shows in `/agents.md`. A theme without the
+  template gets the starter (Shopify's shopping sections kept); a hand-pasted
+  section is replaced; otherwise it goes after the title and the merchant's
+  text is untouched. Saving return guidance refreshes it. Remove takes the
+  section out, and deletes the file when only Gooper.io's starter is left.
+- **Refund policy** (`write_legal_policies`): adds one paragraph, found again
+  by its opening words "Returns through Gooper.io:", to the top of the
+  existing refund policy with `shopPolicyUpdate`. A store with no refund
+  policy is asked to write one; Gooper.io doesn't create legal text alone.
+
+The site tools embed's `MerchantReturnPolicy` data and hidden assistant text
+now name the connector and the proxy guide. "Copy Returns section" stays as the
+fallback.
+
+**Blocking for agents.md:** public apps need Shopify's exemption to write theme
+files; without it `themeFilesUpsert` returns ACCESS_DENIED and the dashboard
+says so. Request it from the app in the Partner Dashboard (the `write_themes`
+exemption), explaining that the app writes only `templates/agents.md.liquid`,
+only when the merchant clicks. Then run `npm run deploy` so the optional scopes
+reach Shopify. *Status 2026-10-02:* the Partner Dashboard won't take the
+request while the app is in App Store review ("Additional API access can't be
+requested until Shopify has reviewed your app"). Request it after review;
+withdrawing the submission to request it now would lose the queue place.
+
+**Not verified live:** either button, the scope prompt, and whether Shopify's
+policy editor keeps the paragraph's wording. Uninstalling
+can't remove either change (the token is revoked first); merchants remove them
+before uninstalling, or by hand.
+
+### 19. Telling apart stores with similar names (decided and implemented)
+
+`find_store` (`app/services/merchant-lookup.server.ts`):
+
+- A website or myshopify domain picks that one store, even when other names
+  contain the same words.
+- When no name contains the search, similar spellings match: spacing,
+  punctuation, accents and filler words ("the", "co", "inc", "shop", "store"…)
+  are ignored, and one typo (names of 5+ letters) or two (10+) is allowed.
+  Short names must match exactly. The assistant asks "Did you mean …?" first.
+  This scans up to 5,000 listed stores in memory; past that it needs a search
+  index.
+- On the all-stores connector, when 2 to 5 stores match, Gooper.io checks which
+  of them the customer has bought from (stores already linked, then orders
+  under the connection's confirmed emails). Exactly one: it goes ahead with
+  that store. Otherwise the customer chooses, with each store's name and
+  website. Only the connection's own customer sees the result.
+
+**Not verified live:** order checks across several real stores, which need
+Level 2 protected customer data (decision 10).
 
 ## Review findings
 

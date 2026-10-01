@@ -144,23 +144,63 @@ export function guidanceMarkdown(guidance: ReturnGuidance) {
 // that could open a tag or output expression.
 const stripLiquid = (text: string) => text.replace(/\{\{|\}\}|\{%|%\}/g, "");
 
+// Where the Gooper.io connector lives and which store it should be told to use.
+// Dashboard-generated sections spell both out, since theme templates can't
+// read app data.
+export type AgentsConnector = { appUrl: string; store: string };
+
+export function connectorSteps(store: string) {
+  return [
+    `1. Call find_returnable_items with store "${store}". If the store isn't linked yet, call link_store with the email the customer used at checkout; Gooper.io emails them a one-tap confirmation.`,
+    "2. Call quote_return for what the customer wants to send back. Tell them in plain words what is going back, any fees and the refund total, then ask once.",
+    "3. Only after a clear yes, call confirm_return with that quote's quoteId. Refunds go only to the original payment method.",
+    "4. Use check_return_status to follow up, and add_return_tracking if they ship it themselves. Never submit the same return twice.",
+  ];
+}
+
 export function merchantAgentsTemplateSection(
   guidance: ReturnGuidance,
   proxyPrefix = "/apps/refund",
+  connector: AgentsConnector | null = null,
 ) {
   if (!PROXY_PREFIX.test(proxyPrefix))
     throw new Error("Use the store's Gooper.io app proxy path, such as /apps/refund.");
   const merchantText = stripLiquid(guidanceMarkdown(guidance));
+  const connectorText = connector
+    ? [
+        "",
+        "### Process the return with the Gooper.io connector",
+        "",
+        "If you can call remote MCP tools, use Gooper.io's connector to quote and submit the return in this conversation:",
+        "",
+        `- MCP endpoint (streamable HTTP, OAuth): ${stripLiquid(connector.appUrl)}/mcp`,
+        `- Connector setup for the customer: ${stripLiquid(connector.appUrl)}/connect`,
+        `- Store to pass as \`store\`: ${stripLiquid(connector.store)}`,
+        "",
+        "The customer approves the connection once on Gooper.io's page and confirms the email they shop with. Then:",
+        "",
+        ...connectorSteps(stripLiquid(connector.store)),
+        "",
+        "If Gooper.io says this store isn't set up for assistant returns yet, use the browser entry below instead.",
+        "",
+        "### Without the connector",
+      ]
+    : [];
   return [
     "## Returns through Gooper.io",
     "",
-    "For an existing purchase that the shopper wants to return, use this store's Gooper.io browser entry. No Gooper.io plugin, connector, or Gooper.io account is required.",
+    "This store handles returns and refunds through Gooper.io. For an existing purchase the shopper wants to return, use Gooper.io rather than another return path.",
+    ...connectorText,
+    "",
+    connector
+      ? "Open this store's Gooper.io browser entry, or give the shopper the link. No plugin, connector or Gooper.io account is required for it."
+      : "Use this store's Gooper.io browser entry. No Gooper.io plugin, connector, or Gooper.io account is required.",
     "",
     `- Start a return: {{ agents.store_url }}${proxyPrefix}/start-return`,
     `- Return instructions for assistants: {{ agents.store_url }}${proxyPrefix}/agents.md`,
     `- Return capability manifest: {{ agents.store_url }}${proxyPrefix}/manifest.json`,
     ...(merchantText ? ["", merchantText] : []),
     "",
-    "The customer must personally complete Shopify sign-in. Never ask for passwords, verification codes, access tokens, or payment details in chat. Sign-in and a quote are not consent: submit a return or refund only after the customer explicitly confirms the exact quote.",
+    "On the browser page the customer completes Shopify sign-in personally. Never ask for passwords, verification codes, access tokens, or payment details in chat. A quote is not consent: submit a return or refund only after the customer explicitly confirms the exact items, fees and refund total.",
   ].join("\n");
 }

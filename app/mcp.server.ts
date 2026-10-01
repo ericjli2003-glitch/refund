@@ -173,7 +173,7 @@ export function createCustomerReturnsMcpServer({
       {
         title: "Find the store",
         description:
-          "Search Gooper.io's directory of stores by business name or website. If exactly one store matches, go ahead with it without asking, and mention its name naturally so the customer can correct you. If several match, ask which one they bought from in one short, friendly question listing each name and website. Pass the store's name or website to the other tools as store.",
+          "Search Gooper.io's directory of stores by business name or website. A website always picks that one store. When several stores have similar names, Gooper.io checks which of them has the customer's orders and returns only that one when it can. Follow the result's nextStep: go ahead with a single match, mentioning its name and website so the customer can correct you; check first when it only matched a similar spelling; and when several still match, ask which one they bought from in one short, friendly question listing each name and website. Pass the store's website to the other tools as store.",
         inputSchema: {
           merchant: z
             .string()

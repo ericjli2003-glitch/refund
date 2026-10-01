@@ -14,6 +14,7 @@ import "./services/merchant-opportunity.server.test";
 import "./services/customer-security.server.test";
 import "./services/access-log.server.test";
 import "./services/return-guidance.server.test";
+import "./services/agent-discovery-publish.server.test";
 import "./services/automatic-return.server.test";
 import "./services/merchant-lookup.server.test";
 import "./services/merchant-directory.server.test";

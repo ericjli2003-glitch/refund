@@ -9,6 +9,7 @@ import { handleAgentMcp, returnToolScopes } from "./agent-mcp-http.server";
 import {
   listConnectionEmails,
   removeConnectionEmail,
+  storesWithCustomerOrders,
 } from "./connection-email.server";
 import { appOrigin } from "./customer-security.server";
 import { maskEmail } from "./email-address.server";
@@ -48,8 +49,11 @@ export const handleNetworkMcp = (request: Request, resourceMetadataPath: string)
             ),
           stores: {
             find: async (merchant) => {
-              await connection();
-              return findStore(merchant);
+              const { connectionId } = await connection();
+              return findStore(merchant, {
+                customerOrdersAt: (shops) =>
+                  storesWithCustomerOrders(connectionId, shops),
+              });
             },
             list: async () => listConnectionStores((await connection()).connectionId),
             link: async (merchant, email) =>

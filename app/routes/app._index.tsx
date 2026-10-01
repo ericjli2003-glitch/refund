@@ -38,6 +38,15 @@ import {
 import { appOrigin } from "../services/customer-security.server";
 import { hasScope } from "../services/shopify-admin.server";
 import {
+  discoveryStatus,
+  publishAgentsSection,
+  publishRefundPolicyParagraph,
+  refreshAgentsSection,
+  refundPolicyParagraph,
+  removeAgentsSection,
+  removeRefundPolicyParagraph,
+} from "../services/agent-discovery-publish.server";
+import {
   FINAL_SALE_COLLECTION_LIMIT,
   RETURN_RULES_SCOPE,
 } from "../services/verified-customer-returns.server";
@@ -108,7 +117,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     collections = collectionJson.data?.collections.nodes ?? [];
   }
 
-  const [storedPolicy, agentReturns, privacyRequests, guidance] =
+  const [storedPolicy, agentReturns, privacyRequests, guidance, discovery] =
     await Promise.all([
       prisma.storePolicy.findUnique({ where: { shop: session.shop } }),
       prisma.agentReturn.findMany({
@@ -125,6 +134,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
         take: 10,
       }),
       publicReturnGuidance(session.shop),
+      discoveryStatus(admin),
     ]);
   const gooperReturns =
     fundedSandbox && !showArchived
@@ -182,7 +192,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       returnRulesMismatch: null as string | null,
     },
     instructionsMaxLength: RETURN_INSTRUCTIONS_MAX_LENGTH,
-    agentsTemplateSection: merchantAgentsTemplateSection(guidance),
+    discovery,
+    discoverySaved: url.searchParams.get("discovery"),
+    refundPolicyPreview: refundPolicyParagraph(session.shop)
+      .replace(/<[^>]+>/g, "")
+      .replace(/&amp;/g, "&"),
+    agentsTemplateSection: merchantAgentsTemplateSection(guidance, undefined, {
+      appUrl: appOrigin(),
+      store: session.shop,
+    }),
     showArchived,
     policyOpen,
     archivedCount: await prisma.agentReturn.count({
@@ -311,6 +329,39 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       };
     }
     return redirect("/app?removed=true");
+  }
+
+  // Telling AI assistants that Gooper.io handles this store's returns. The
+  // client has already asked the merchant for the optional scope.
+  const discoveryIntent = formData.get("intent");
+  if (
+    discoveryIntent === "publishAgents" ||
+    discoveryIntent === "removeAgents" ||
+    discoveryIntent === "publishPolicy" ||
+    discoveryIntent === "removePolicy"
+  ) {
+    try {
+      if (discoveryIntent === "publishAgents")
+        await publishAgentsSection(
+          admin,
+          session.shop,
+          await publicReturnGuidance(session.shop),
+        );
+      else if (discoveryIntent === "removeAgents")
+        await removeAgentsSection(admin);
+      else if (discoveryIntent === "publishPolicy")
+        await publishRefundPolicyParagraph(admin, session.shop);
+      else await removeRefundPolicyParagraph(admin);
+    } catch (error) {
+      return {
+        heading: discoveryIntent.endsWith("Agents")
+          ? "Your agents.md wasn't changed"
+          : "Your refund policy wasn't changed",
+        error:
+          error instanceof Error ? error.message : "The action did not finish.",
+      };
+    }
+    return redirect(`/app?discovery=${discoveryIntent}`);
   }
 
   if (formData.get("intent") === "setListing") {
@@ -475,6 +526,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     create: { shop: session.shop, ...policy },
     update: policy,
   });
+  // A published agents.md section repeats the return guidance, so it follows
+  // the change. Saving the policy never fails because of it.
+  try {
+    await refreshAgentsSection(
+      admin,
+      session.shop,
+      await publicReturnGuidance(session.shop),
+    );
+  } catch {
+    /* Not published, or no theme permission: nothing to refresh. */
+  }
 
   return redirect("/app?saved=true");
 };
@@ -626,6 +688,9 @@ export default function RefundDashboard() {
     merchantProfileUrl,
     instructionsMaxLength,
     agentsTemplateSection,
+    discovery,
+    discoverySaved,
+    refundPolicyPreview,
     agentReturns,
     gooperReturns,
     gooperActionId,
@@ -700,6 +765,33 @@ export default function RefundDashboard() {
   const [previewStageByReturn, setPreviewStageByReturn] = useState<
     Record<string, number>
   >({});
+
+  const [discoveryMessage, setDiscoveryMessage] = useState("");
+
+  // Asks Shopify for the optional permission first when it isn't granted yet,
+  // then saves. Declining leaves everything as it was.
+  async function discoveryAction(
+    intent: "publishAgents" | "removeAgents" | "publishPolicy" | "removePolicy",
+    scope: string,
+    granted: boolean,
+  ) {
+    setDiscoveryMessage("");
+    if (!granted) {
+      try {
+        const response = await bridge.scopes.request([scope]);
+        if (response.result !== "granted-all") {
+          setDiscoveryMessage("Nothing changed: the permission wasn't granted.");
+          return;
+        }
+      } catch {
+        setDiscoveryMessage(
+          "Shopify couldn't ask for the permission. Reload the page and try again.",
+        );
+        return;
+      }
+    }
+    submit({ intent }, { method: "post" });
+  }
 
   async function copyTemplate() {
     try {
@@ -892,6 +984,22 @@ export default function RefundDashboard() {
       {removed && (
         <s-banner heading="Return request removed" tone="success">
           The customer can try that return again.
+        </s-banner>
+      )}
+
+      {discoverySaved && (
+        <s-banner heading="AI assistant setup saved" tone="success">
+          {
+            {
+              publishAgents:
+                "Your store's agents.md now tells AI assistants that Gooper.io handles your returns. It updates when you change your return guidance.",
+              removeAgents: "Gooper.io's section was removed from your agents.md.",
+              publishPolicy:
+                "Your refund policy now tells customers and AI assistants that returns go through Gooper.io.",
+              removePolicy:
+                "Gooper.io's paragraph was removed from your refund policy.",
+            }[discoverySaved]
+          }
         </s-banner>
       )}
 
@@ -1614,29 +1722,133 @@ export default function RefundDashboard() {
       )}
 
       {!gooperPreview && !appStoreShot && (
-        <s-section
-          slot="aside"
-          heading="Returns section for your store's agents.md (optional)"
-        >
+        <s-section heading="Tell AI assistants that Gooper.io handles your returns">
           <s-stack direction="block" gap="base">
-            <s-paragraph color="subdued">
-              Gooper.io already serves a current return guide at
-              /apps/refund/agents.md. Only if your theme publishes its own
-              agents.md, copy this Returns section into it, and copy it again
-              whenever you change your return guidance.
+            <s-paragraph>
+              When a customer asks ChatGPT, Claude or another assistant to
+              return something from your store, these point it to Gooper.io.
+              Shopify can&apos;t make an assistant use one returns app, so the
+              more places say it, the more often assistants follow it.
             </s-paragraph>
-            <s-stack direction="inline" gap="base" alignItems="center">
-              <s-button onClick={() => void copyTemplate()}>
-                Copy Returns section
-              </s-button>
-              <s-text color="subdued">{copyStatus}</s-text>
+
+            <s-stack direction="block" gap="small-200">
+              <s-heading>Your store&apos;s agents.md</s-heading>
+              <s-paragraph color="subdued">
+                {discovery.agents.published
+                  ? `Added to ${discovery.agents.themeName ?? "your live theme"}. Gooper.io keeps it current when you change your return guidance.`
+                  : "Adds a Returns section to /agents.md, the guide AI assistants read about your store, with the Gooper.io connector and the steps to process a return. Your other agents.md content stays as it is."}
+              </s-paragraph>
+              {discovery.agents.error && (
+                <s-text tone="critical">{discovery.agents.error}</s-text>
+              )}
+              <s-stack direction="inline" gap="base">
+                <s-button
+                  onClick={() =>
+                    void discoveryAction(
+                      "publishAgents",
+                      AGENTS_SCOPE,
+                      discovery.agents.permission,
+                    )
+                  }
+                >
+                  {discovery.agents.published
+                    ? "Update agents.md"
+                    : "Add Gooper.io to agents.md"}
+                </s-button>
+                {discovery.agents.published && (
+                  <s-button
+                    variant="tertiary"
+                    onClick={() =>
+                      void discoveryAction("removeAgents", AGENTS_SCOPE, true)
+                    }
+                  >
+                    Remove
+                  </s-button>
+                )}
+              </s-stack>
+              <Explainer summary="Prefer to add it yourself?">
+                <s-paragraph color="subdued">
+                  Copy this section into your theme&apos;s agents.md.liquid
+                  template instead, and copy it again whenever you change your
+                  return guidance. Gooper.io also serves a current guide at
+                  /apps/refund/agents.md either way.
+                </s-paragraph>
+                <s-stack direction="inline" gap="base" alignItems="center">
+                  <s-button variant="secondary" onClick={() => void copyTemplate()}>
+                    Copy Returns section
+                  </s-button>
+                  <s-text color="subdued">{copyStatus}</s-text>
+                </s-stack>
+              </Explainer>
             </s-stack>
+
+            <s-stack direction="block" gap="small-200">
+              <s-heading>Your refund policy</s-heading>
+              <s-paragraph color="subdued">
+                {discovery.policy.published
+                  ? "Your refund policy starts with a paragraph about returning through Gooper.io."
+                  : "Assistants usually read your refund policy when a customer asks about a return. This adds one paragraph to the top of it; the rest stays as you wrote it."}
+              </s-paragraph>
+              {!discovery.policy.published && (
+                <s-box padding="small" background="subdued" borderRadius="base">
+                  <s-text color="subdued">{refundPolicyPreview}</s-text>
+                </s-box>
+              )}
+              {discovery.policy.error && (
+                <s-text tone="critical">{discovery.policy.error}</s-text>
+              )}
+              <s-stack direction="inline" gap="base">
+                <s-button
+                  onClick={() =>
+                    void discoveryAction(
+                      "publishPolicy",
+                      POLICY_SCOPE,
+                      discovery.policy.permission,
+                    )
+                  }
+                >
+                  {discovery.policy.published
+                    ? "Update refund policy"
+                    : "Add to refund policy"}
+                </s-button>
+                {discovery.policy.published && (
+                  <s-button
+                    variant="tertiary"
+                    onClick={() =>
+                      void discoveryAction("removePolicy", POLICY_SCOPE, true)
+                    }
+                  >
+                    Remove
+                  </s-button>
+                )}
+              </s-stack>
+            </s-stack>
+
+            <s-stack direction="block" gap="small-200">
+              <s-heading>Your storefront</s-heading>
+              <s-paragraph color="subdued">
+                The Gooper.io site tools embed adds return-policy data to every
+                page that search engines and assistants read, pointing to
+                Gooper.io and its connector.
+              </s-paragraph>
+              <s-box>
+                <s-button href={siteToolsActivationUrl} target="_top" variant="secondary">
+                  Turn on in theme editor
+                </s-button>
+              </s-box>
+            </s-stack>
+
+            {discoveryMessage && <s-text tone="critical">{discoveryMessage}</s-text>}
           </s-stack>
         </s-section>
       )}
     </s-page>
   );
 }
+
+// The optional scopes each button asks for, matching shopify.app.toml.
+const AGENTS_SCOPE = "write_themes";
+const POLICY_SCOPE = "write_legal_policies";
 
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);

@@ -1,4 +1,7 @@
-{% comment %}
+// The starter agents.md template: Shopify's shopping sections plus Gooper.io's
+// Returns section. storefront/templates/agents.md.liquid is the same text for
+// merchants who install it with the Shopify CLI; a unit test keeps them equal.
+export const AGENTS_STARTER_TEMPLATE = `{% comment %}
 Merchant-owned discovery template. Shopify serves this at /agents.md, and by
 default /llms.txt and /llms-full.txt. Keep the Shopify sections current.
 Only the agents and request objects are available here; never include customer
@@ -22,7 +25,7 @@ If you can call remote MCP tools, use Gooper.io's connector to quote and submit 
 
 - MCP endpoint (streamable HTTP, OAuth): https://gooper.io/mcp
 - Connector setup for the customer: https://gooper.io/connect
-- Store to pass as `store`: {{ agents.store_url }}
+- Store to pass as \`store\`: {{ agents.store_url }}
 
 The customer approves the connection once on Gooper.io's page and confirms the email they shop with. Then:
 
@@ -107,3 +110,4 @@ This store runs on Shopify. Shopify's managed commerce endpoints and Gooper.io's
 - Storefront GraphQL MCP guide: https://mcp.shopify.com (not needed for ordinary shopping or Gooper.io returns)
 - UCP specification: https://ucp.dev
 - Shop skill: https://shop.app/SKILL.md
+`;

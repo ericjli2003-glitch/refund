@@ -91,6 +91,27 @@ test("the theme template section keeps agents placeholders but strips Liquid fro
   assert.throws(() => merchantAgentsTemplateSection(NONE, "//evil.test"));
 });
 
+test("the dashboard's Returns section names Gooper.io and how to run the return with the connector", () => {
+  const section = merchantAgentsTemplateSection(NONE, "/apps/refund", {
+    appUrl: "https://gooper.io",
+    store: "example.myshopify.com",
+  });
+  assert.match(section, /handles returns and refunds through Gooper\.io/);
+  assert.match(section, /use Gooper\.io rather than another return path/);
+  assert.match(section, /MCP endpoint \(streamable HTTP, OAuth\): https:\/\/gooper\.io\/mcp$/m);
+  assert.match(section, /Connector setup for the customer: https:\/\/gooper\.io\/connect$/m);
+  assert.match(section, /Store to pass as `store`: example\.myshopify\.com$/m);
+  for (const tool of ["find_returnable_items", "link_store", "quote_return", "confirm_return", "check_return_status"])
+    assert.ok(section.includes(tool), tool);
+  assert.match(section, /Only after a clear yes, call confirm_return/);
+  // The browser path stays as the fallback, with the same three placeholders.
+  assert.match(section, /\{\{ agents\.store_url \}\}\/apps\/refund\/start-return/);
+  assert.equal((section.match(/\{\{/g) || []).length, 3);
+  assert.doesNotMatch(section, /\{%|%\}/);
+  // Without connector details the section keeps to the browser path.
+  assert.doesNotMatch(merchantAgentsTemplateSection(NONE), /\/mcp/);
+});
+
 test("the store's own return instructions are passed on, labeled as the store's", () => {
   assert.equal(
     returnInstructionsSentence("Post to 1 Main St within 14 days."),

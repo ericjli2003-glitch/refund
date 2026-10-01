@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import prisma from "../db.server";
-import { findStore } from "./merchant-lookup.server";
+import {
+  compactMerchantName,
+  findStore,
+  similarMerchantName,
+} from "./merchant-lookup.server";
 
 process.env.SHOPIFY_APP_URL = "https://refund.test";
 
@@ -18,12 +22,18 @@ function mockDelegate(
 
 type Profile = { shop: string; name: string; primaryDomain: string };
 
-function directory(t: TestContext, profiles: Profile[], installed: string[]) {
+// Each search gets the next list of profiles; the last list repeats.
+function directory(
+  t: TestContext,
+  profiles: Profile[] | Profile[][],
+  installed: string[],
+) {
   const searches: unknown[] = [];
   const opportunities: unknown[] = [];
+  const pages = Array.isArray(profiles[0]) ? (profiles as Profile[][]) : [profiles as Profile[]];
   mockDelegate(t, prisma.merchantDirectory, "findMany", async (args: never) => {
     searches.push(args);
-    return profiles;
+    return pages[Math.min(searches.length - 1, pages.length - 1)];
   });
   mockDelegate(t, prisma.session, "findMany", async () =>
     installed.map((shop) => ({ shop })),
@@ -51,6 +61,7 @@ test("a single listed, installed store matches by partial name and is used witho
       shop: SNOW.shop,
       domain: "snowsupply.com",
       returnPage: "https://refund.test/stores/snow.myshopify.com",
+      matchedBy: "name",
     },
   ]);
   assert.equal(result.selectionRequired, false);
@@ -87,4 +98,72 @@ test("searches carrying anything but a business name or website are refused befo
   const result = await findStore("buyer@example.com order 1001");
   assert.equal(result.status, "invalid_query");
   assert.equal(searches.length, 0);
+});
+
+const BLUE_SKY = { shop: "bluesky.myshopify.com", name: "Blue Sky Co.", primaryDomain: "blueskyco.com" };
+const BLUE_SKIES = { shop: "blueskies.myshopify.com", name: "Blue Skies", primaryDomain: "blueskies.com" };
+
+test("store names compare without spacing, punctuation or filler words", () => {
+  assert.equal(compactMerchantName("Blue Sky Co."), "bluesky");
+  assert.equal(compactMerchantName("The BlueSky Shop"), "bluesky");
+  assert.equal(compactMerchantName("Café & Co"), "cafeand");
+  assert.ok(similarMerchantName("bluesky", "Blue Sky Co."));
+  assert.ok(similarMerchantName("Blue Skye", "Blue Sky Co."));
+  assert.ok(similarMerchantName("Snow Suply", "Snow Supply"));
+  // Short names must match exactly; one letter makes a different store.
+  assert.ok(!similarMerchantName("Lux", "Lix"));
+  assert.ok(!similarMerchantName("Snow Supply", "Snowboard Hut"));
+});
+
+test("a misspelled name falls back to similar names, and the customer is asked to confirm", async (t) => {
+  const { searches } = directory(t, [[], [BLUE_SKY, SNOW]], [BLUE_SKY.shop, SNOW.shop]);
+  const result = await findStore("Blu Sky");
+  assert.equal(searches.length, 2);
+  assert.equal(result.status, "matched");
+  assert.deepEqual(result.merchants.map((merchant) => merchant.shop), [BLUE_SKY.shop]);
+  assert.equal(result.merchants[0].matchedBy, "similar_name");
+  assert.match(result.nextStep, /Did you mean Blue Sky Co\. \(blueskyco\.com\)\?/);
+});
+
+test("a website picks its store even when other names contain the same words", async (t) => {
+  directory(t, [BLUE_SKY, BLUE_SKIES], [BLUE_SKY.shop, BLUE_SKIES.shop]);
+  const result = await findStore("blueskies.com");
+  assert.equal(result.status, "matched");
+  assert.deepEqual(result.merchants.map((merchant) => merchant.shop), [BLUE_SKIES.shop]);
+  assert.equal(result.merchants[0].matchedBy, "website");
+});
+
+test("several similar stores narrow to the one with the customer's orders", async (t) => {
+  directory(t, [BLUE_SKY, BLUE_SKIES], [BLUE_SKY.shop, BLUE_SKIES.shop]);
+  const checked: string[][] = [];
+  const result = await findStore("blue sk", {
+    customerOrdersAt: async (shops) => {
+      checked.push(shops);
+      return new Map([
+        [BLUE_SKY.shop, false],
+        [BLUE_SKIES.shop, true],
+      ]);
+    },
+  });
+  assert.deepEqual(checked, [[BLUE_SKY.shop, BLUE_SKIES.shop]]);
+  assert.equal(result.status, "matched");
+  assert.equal(result.selectionRequired, false);
+  assert.deepEqual(result.merchants.map((merchant) => merchant.shop), [BLUE_SKIES.shop]);
+  assert.equal(result.merchants[0].customerHasOrders, true);
+});
+
+test("orders at more than one candidate, or an order check that fails, leave the choice to the customer", async (t) => {
+  directory(t, [BLUE_SKY, BLUE_SKIES], [BLUE_SKY.shop, BLUE_SKIES.shop]);
+  const both = await findStore("blue sk", {
+    customerOrdersAt: async (shops) => new Map(shops.map((shop) => [shop, true])),
+  });
+  assert.equal(both.status, "multiple_matches");
+  assert.match(both.nextStep, /orders at more than one/);
+  const failed = await findStore("blue sk", {
+    customerOrdersAt: async () => {
+      throw new Error("Shopify unavailable");
+    },
+  });
+  assert.equal(failed.status, "multiple_matches");
+  assert.equal(failed.merchants.length, 2);
 });
