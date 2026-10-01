@@ -48,19 +48,33 @@ Each tells an assistant, in order:
 3. **Storefront password.** A password-protected storefront redirects
    `/agents.md` and `/apps/refund/*` to `/password`, so an assistant can't read
    them. Either remove the password for the test (Online Store > Preferences),
-   or use the fallback in step 5 and note it in the results. Don't change it
+   or use the fallback in step 6 and note it in the results. Don't change it
    without deciding to.
 
 ## Steps
 
-### 1. Publish the Returns section
+### 1. Publish with the dashboard buttons
 
-In the Gooper.io dashboard, click **Copy Returns section**. In Shopify admin,
-Online Store > Themes > Edit code > Templates > `agents.md.liquid` (Pied Piper
-already has one from 2026-09-11). Replace its whole "Returns through ..."
-section with the copied text and save. Keep the Shopify shopping sections.
+First, once: run `npm run deploy` so Shopify knows the optional scopes, and
+request the `write_themes` exemption in the Partner Dashboard (see
+[PROJECT_STATE.md](PROJECT_STATE.md), decision 18).
 
-The CLI route in [storefront/README.md](../storefront/README.md) also works.
+In the Gooper.io dashboard, section "Tell AI assistants that Gooper.io handles
+your returns":
+
+1. **Add Gooper.io to agents.md.** Shopify asks for permission to edit themes
+   the first time; accept. Expect the success banner and "Added to <theme>".
+   If it says Shopify hasn't allowed theme edits yet, the exemption isn't
+   approved: use **Copy Returns section** under "Prefer to add it yourself?"
+   and paste it into Online Store > Themes > Edit code >
+   `templates/agents.md.liquid` for now.
+2. **Add to refund policy.** Accept the policy permission. Check Settings >
+   Policies: the refund policy starts with "Returns through Gooper.io:" and
+   the rest is unchanged.
+3. **Turn on in theme editor** for the site tools embed, and save the theme.
+4. Change the return instructions and save the policy; `/agents.md` should
+   show the new text without clicking again.
+5. Click each **Remove** and check both come out cleanly, then add them back.
 
 ### 2. Read the published files
 
@@ -72,6 +86,9 @@ In a browser that can see the storefront:
 - `/apps/refund/agents.md`: the same connector section, numbered 1 and 2.
 - `/apps/refund/manifest.json`: `connector.readyForThisStore` is `true`. If it
   is `false`, fix the store setup above first.
+- `/policies/refund-policy`: the Gooper.io paragraph is first.
+- Any product page's source: the `MerchantReturnPolicy` script names
+  `https://gooper.io/mcp` and the store.
 
 With the storefront public, the read-only script checks all of this:
 
@@ -105,7 +122,14 @@ for a password or card.
 
 Repeat steps 3 and 4 in ChatGPT if you have developer mode.
 
-### 5. Fallback if the storefront stays locked
+### 5. Similar store names
+
+With the connector, ask to return something from a slightly misspelled store
+name ("Pied Pipr"). Expect "Did you mean Pied Piper?" before it goes ahead.
+If you have a second test store with a similar name, ask by the shared part
+of the name: it should pick the store your confirmed email has orders at.
+
+### 6. Fallback if the storefront stays locked
 
 Open `/agents.md` in an unlocked browser, copy the page text, and paste it into
 the chat with the prompt from step 3. This tests how an assistant acts on the

@@ -8,6 +8,10 @@ embedded = true
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_orders,write_orders,read_customers,read_products,read_locations,read_returns,write_returns,customer_read_customers,customer_read_orders,customer_write_customers,customer_write_orders,write_app_proxy"
+# Asked for only when the merchant clicks the dashboard button that needs it:
+# write_themes adds Gooper.io's section to the live theme's agents.md, and
+# write_legal_policies adds a paragraph to the refund policy.
+optional_scopes = [ "write_themes", "write_legal_policies" ]
 
 [app_proxy]
 url = "/proxy/refund"

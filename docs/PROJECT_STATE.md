@@ -650,6 +650,61 @@ the tool input format; the assistant must not copy it into its chat reply.
 The host still controls its separate tool-approval card, so these instructions
 cannot replace that card or guarantee that the host hides raw arguments.
 
+### 18. One-click assistant discovery for merchants (decided and implemented)
+
+Merchants shouldn't paste anything. The dashboard section "Tell AI assistants
+that Gooper.io handles your returns" (`app/services/agent-discovery-publish.server.ts`)
+has two buttons, each asking for its optional scope the first time
+(`optional_scopes` in `shopify.app.toml`, requested with App Bridge
+`scopes.request`):
+
+- **agents.md** (`write_themes`): writes Gooper.io's Returns section into the
+  live theme's `templates/agents.md.liquid` with `themeFilesUpsert`, fenced by
+  Liquid comments so it never shows in `/agents.md`. A theme without the
+  template gets the starter (Shopify's shopping sections kept); a hand-pasted
+  section is replaced; otherwise it goes after the title and the merchant's
+  text is untouched. Saving return guidance refreshes it. Remove takes the
+  section out, and deletes the file when only Gooper.io's starter is left.
+- **Refund policy** (`write_legal_policies`): adds one paragraph, found again
+  by its opening words "Returns through Gooper.io:", to the top of the
+  existing refund policy with `shopPolicyUpdate`. A store with no refund
+  policy is asked to write one; Gooper.io doesn't create legal text alone.
+
+The site tools embed's `MerchantReturnPolicy` data and hidden assistant text
+now name the connector and the proxy guide. "Copy Returns section" stays as the
+fallback.
+
+**Blocking for agents.md:** public apps need Shopify's exemption to write theme
+files; without it `themeFilesUpsert` returns ACCESS_DENIED and the dashboard
+says so. Request it from the app in the Partner Dashboard (the `write_themes`
+exemption), explaining that the app writes only `templates/agents.md.liquid`,
+only when the merchant clicks. Then run `npm run deploy` so the optional scopes
+reach Shopify. **Not verified live:** either button, the scope prompt, and
+whether Shopify's policy editor keeps the paragraph's wording. Uninstalling
+can't remove either change (the token is revoked first); merchants remove them
+before uninstalling, or by hand.
+
+### 19. Telling apart stores with similar names (decided and implemented)
+
+`find_store` (`app/services/merchant-lookup.server.ts`):
+
+- A website or myshopify domain picks that one store, even when other names
+  contain the same words.
+- When no name contains the search, similar spellings match: spacing,
+  punctuation, accents and filler words ("the", "co", "inc", "shop", "store"…)
+  are ignored, and one typo (names of 5+ letters) or two (10+) is allowed.
+  Short names must match exactly. The assistant asks "Did you mean …?" first.
+  This scans up to 5,000 listed stores in memory; past that it needs a search
+  index.
+- On the all-stores connector, when 2 to 5 stores match, Gooper.io checks which
+  of them the customer has bought from (stores already linked, then orders
+  under the connection's confirmed emails). Exactly one: it goes ahead with
+  that store. Otherwise the customer chooses, with each store's name and
+  website. Only the connection's own customer sees the result.
+
+**Not verified live:** order checks across several real stores, which need
+Level 2 protected customer data (decision 10).
+
 ## Review findings
 
 Severity is this reviewer's judgement, not a Shopify determination.
