@@ -182,7 +182,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       returnRulesMismatch: null as string | null,
     },
     instructionsMaxLength: RETURN_INSTRUCTIONS_MAX_LENGTH,
-    agentsTemplateSection: merchantAgentsTemplateSection(guidance),
+    agentsTemplateSection: merchantAgentsTemplateSection(guidance, undefined, {
+      appUrl: appOrigin(),
+      store: session.shop,
+    }),
     showArchived,
     policyOpen,
     archivedCount: await prisma.agentReturn.count({
@@ -1621,9 +1624,11 @@ export default function RefundDashboard() {
           <s-stack direction="block" gap="base">
             <s-paragraph color="subdued">
               Gooper.io already serves a current return guide at
-              /apps/refund/agents.md. Only if your theme publishes its own
-              agents.md, copy this Returns section into it, and copy it again
-              whenever you change your return guidance.
+              /apps/refund/agents.md. To name Gooper.io as your returns
+              provider in your store&apos;s own /agents.md, copy this Returns
+              section into your theme&apos;s agents.md.liquid template. It tells AI
+              assistants how to process returns with the Gooper.io connector.
+              Copy it again whenever you change your return guidance.
             </s-paragraph>
             <s-stack direction="inline" gap="base" alignItems="center">
               <s-button onClick={() => void copyTemplate()}>

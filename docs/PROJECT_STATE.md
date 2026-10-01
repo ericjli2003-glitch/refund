@@ -250,6 +250,15 @@ The dashboard also generates a paste-ready Returns section for a theme's own
 templates can only read the `agents` and `request` objects, not app data, so
 merchants paste it again after changing their guidance.
 
+Since 2026-10-01 every guide names Gooper.io as the store's returns provider
+and makes the connector the first path: the theme section (dashboard copy and
+`storefront/templates/agents.md.liquid`), the proxy `agents.md`, and the
+manifest's `returnsProvider` and `connector` blocks give `https://gooper.io/mcp`,
+the `store` value and the find, quote, confirm steps, with the browser entry as
+the fallback. The proxy guide and manifest report `connector.readyForThisStore`
+from the same check the connector uses. Shopify does not enforce this routing
+(decision 4). **Not yet tested live:** [AGENTS_MD_TEST.md](AGENTS_MD_TEST.md).
+
 ### 4. UCP (investigated; no Gooper.io-owned UCP surface)
 
 - Shopify serves the merchant's `/.well-known/ucp`, and there is still no app

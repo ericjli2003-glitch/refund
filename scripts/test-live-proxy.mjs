@@ -77,6 +77,21 @@ assert.equal(manifest.browser.connectorRequired, false);
 assert.equal(manifest.browser.portalUrl, `${app}/returns/${shop}`);
 assert.equal(manifest.mcp.endpoint, `https://${shop}${prefix}/mcp`);
 assert.equal(manifest.ucp.standardizedReturnMutation, false);
+assert.equal(manifest.returnsProvider?.name, "Gooper.io");
+assert.equal(
+  manifest.connector?.endpoint,
+  `${app}/mcp`,
+  "Deploy the backend that publishes the Gooper.io connector in the manifest",
+);
+assert.equal(manifest.connector.store, shop);
+const proxyGuide = await (await request(`${storefront}${prefix}/agents.md`)).text();
+assert.ok(
+  proxyGuide.includes(`${app}/mcp`),
+  "The proxy guide must name the Gooper.io connector",
+);
+// The root guide is merchant-owned; an older pasted section still works,
+// it just doesn't offer the connector yet.
+const rootNamesConnector = guide.includes(`${app}/mcp`);
 const page = await request(`${storefront}${prefix}/start-return`);
 assert.equal(page.status, 200);
 assert.ok(
@@ -114,6 +129,16 @@ assert.deepEqual(
 assert.equal(tools[0].inputSchema.properties.merchant, undefined);
 console.log(
   "PASS: merchant /agents.md → real Shopify App Proxy → Gooper.io manifest, browser handoff and shop-bound MCP discovery.",
+);
+console.log(
+  rootNamesConnector
+    ? "The store's own /agents.md names the Gooper.io connector."
+    : "NOTE: the store's own /agents.md doesn't name the Gooper.io connector yet. Copy the Returns section from the Gooper.io dashboard into the theme's agents.md.liquid.",
+);
+console.log(
+  manifest.connector.readyForThisStore
+    ? "This store accepts returns through the connector."
+    : "NOTE: this store doesn't accept connector returns yet. Save the return rules and turn on returns through AI assistants in the dashboard.",
 );
 console.log(
   "No intake tool, login, return or refund was executed. This verifies deployment, not automatic ChatGPT/Claude discovery or customer-authorized execution.",

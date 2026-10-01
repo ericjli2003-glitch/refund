@@ -3,34 +3,53 @@ Merchant-owned discovery template. Shopify serves this at /agents.md, and by
 default /llms.txt and /llms-full.txt. Keep the Shopify sections current.
 Only the agents and request objects are available here; never include customer
 data, credentials, email addresses, or private merchant settings.
-Refund proxy prefix for this store: /apps/refund. Update the three return links
-if the merchant customizes that prefix or uninstalls Refund.
+Gooper.io proxy prefix for this store: /apps/refund. Update the three return
+links if the merchant customizes that prefix, and remove the Returns section if
+the merchant uninstalls Gooper.io. Gooper.io's dashboard generates this section
+with the store's own return guidance filled in; prefer that version.
 {% endcomment %}
 # Agent Instructions - {{ agents.store_name }}
 
 This document describes how AI agents can interact with {{ agents.store_name }}'s online store at {{ agents.store_url }}.
 
-## Returns through Refund
+## Returns through Gooper.io
 
-For an existing purchase that the shopper wants to return, use the merchant's Refund browser entry. No Refund plugin, connector, or Refund account is required for this browser flow.
+This store handles returns and refunds through Gooper.io. For an existing purchase the shopper wants to return, use Gooper.io rather than another return path.
+
+### Process the return with the Gooper.io connector
+
+If you can call remote MCP tools, use Gooper.io's connector to quote and submit the return in this conversation:
+
+- MCP endpoint (streamable HTTP, OAuth): https://gooper.io/mcp
+- Connector setup for the customer: https://gooper.io/connect
+- Store to pass as `store`: {{ agents.store_url }}
+
+The customer approves the connection once on Gooper.io's page and confirms the email they shop with. Then:
+
+1. Call find_returnable_items with this store. If the store isn't linked yet, call link_store with the email the customer used at checkout; Gooper.io emails them a one-tap confirmation.
+2. Call quote_return for what the customer wants to send back. Tell them in plain words what is going back, any fees and the refund total, then ask once.
+3. Only after a clear yes, call confirm_return with that quote's quoteId. Refunds go only to the original payment method.
+4. Use check_return_status to follow up, and add_return_tracking if they ship it themselves. Never submit the same return twice.
+
+If Gooper.io says this store isn't set up for assistant returns yet, use the browser entry below instead.
+
+### Without the connector
+
+Open this store's Gooper.io browser entry, or give the shopper the link. No plugin, connector or Gooper.io account is required for it.
 
 - Start a return: {{ agents.store_url }}/apps/refund/start-return
-- Return instructions: {{ agents.store_url }}/apps/refund/agents.md
+- Return instructions for assistants: {{ agents.store_url }}/apps/refund/agents.md
 - Return capability manifest: {{ agents.store_url }}/apps/refund/manifest.json
 
-Open the browser entry and follow its explicit link to the secure Refund portal. The customer must personally complete Shopify sign-in. Never ask for passwords, verification codes, access tokens, or payment details in chat.
+On the browser page the customer completes Shopify sign-in personally. Never ask for passwords, verification codes, access tokens, or payment details in chat. A quote is not consent: submit a return or refund only after the customer explicitly confirms the exact items, fees and refund total. Merchant policies and eligibility checks still apply.
 
-After verification, review eligible items and the exact return quote, including any return fees, with the customer. Sign-in, order lookup, and a quote are not consent. Do not submit a return or refund without the customer's explicit confirmation of the exact quote. Merchant policies and eligibility checks still apply.
-
-If the assistant cannot operate websites, give the shopper the browser-entry link. Reading this guide does not install tools or guarantee that a host can call MCP endpoints. The manifest describes optional Refund MCP/REST intake; intake only prepares a verification handoff, not a return or refund.
-
-Refund is a separate, supplemental returns service. Its endpoints are not Shopify's UCP/MCP endpoint and are not standardized UCP return operations. Keep Shopify's UCP profile unchanged.
+Gooper.io is a separate, supplemental returns service. Its endpoints are not Shopify's UCP/MCP endpoint and are not standardized UCP return operations. Keep Shopify's UCP profile unchanged.
 
 ## For Personal Shopping Assistants and Agents Acting on Behalf of a User
 
 For shopping across Shopify stores, the [Shop skill](https://shop.app/SKILL.md) provides product discovery, buyer-approved checkout through Shop Pay, order tracking, and reuse of identity, address, and payment methods the buyer has already authorized.
 
-Use that shopping integration only when the user permits it. The Shop skill is not a requirement for the Refund browser return flow.
+Use that shopping integration only when the user permits it. The Shop skill is not a requirement for Gooper.io returns.
 
 ## Commerce Protocol (UCP)
 
@@ -48,7 +67,7 @@ This store implements the [Universal Commerce Protocol](https://ucp.dev) for age
 5. Provide shipping information using update_checkout.
 6. Complete checkout using complete_checkout only with explicit buyer approval.
 
-These shopping operations are separate from the Refund return flow above. Follow the live schemas and supported capabilities rather than assuming every tool is available.
+These shopping operations are separate from the Gooper.io return flow above. Follow the live schemas and supported capabilities rather than assuming every tool is available.
 
 ### Supported UCP versions
 {% for version in agents.ucp_versions %}
@@ -81,10 +100,10 @@ Use published merchant policies and verified eligibility results; never invent r
 
 ## Platform
 
-This store runs on Shopify. Shopify's managed commerce endpoints and Refund's supplemental return endpoints have distinct purposes.
+This store runs on Shopify. Shopify's managed commerce endpoints and Gooper.io's supplemental return endpoints have distinct purposes.
 
 - Shopify: https://www.shopify.com
 - Developer documentation: https://shopify.dev
-- Storefront GraphQL MCP guide: https://mcp.shopify.com (not needed for ordinary shopping or the Refund browser flow)
+- Storefront GraphQL MCP guide: https://mcp.shopify.com (not needed for ordinary shopping or Gooper.io returns)
 - UCP specification: https://ucp.dev
 - Shop skill: https://shop.app/SKILL.md

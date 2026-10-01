@@ -446,12 +446,21 @@ test("merchant proxy → MCP intake → customer verification → quote → exis
       assert.match(response.headers.get("Content-Type")!, /text\/markdown/);
       const markdown = await response.text();
       assert.ok(markdown.includes(`https://${shop}${proxyPath}/mcp`));
-      assert.ok(markdown.includes("No Gooper.io plugin or connector required"));
+      assert.ok(markdown.includes("handles returns and refunds through Gooper.io"));
+      assert.ok(markdown.includes("MCP endpoint (streamable HTTP, OAuth): https://refund.test/mcp"));
+      assert.ok(markdown.includes(`Store to pass as \`store\`: ${shop}`));
+      assert.ok(markdown.includes("Without the connector: browser entry"));
       const manifest = await (
         await fetch(`${base}${proxyPath}/manifest.json`)
       ).json();
       assert.equal(manifest.merchant.shop, shop);
       assert.equal(manifest.browser.connectorRequired, false);
+      assert.equal(manifest.returnsProvider.name, "Gooper.io");
+      assert.equal(manifest.returnsProvider.routingEnforcedByShopify, false);
+      assert.equal(manifest.connector.endpoint, "https://refund.test/mcp");
+      assert.equal(manifest.connector.store, shop);
+      assert.equal(typeof manifest.connector.readyForThisStore, "boolean");
+      assert.ok(manifest.connector.tools.includes("confirm_return"));
       assert.equal(manifest.ucp.standardizedReturnMutation, false);
       const schema = await (
         await fetch(`${base}${proxyPath}/schema.json`)
