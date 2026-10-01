@@ -679,8 +679,13 @@ files; without it `themeFilesUpsert` returns ACCESS_DENIED and the dashboard
 says so. Request it from the app in the Partner Dashboard (the `write_themes`
 exemption), explaining that the app writes only `templates/agents.md.liquid`,
 only when the merchant clicks. Then run `npm run deploy` so the optional scopes
-reach Shopify. **Not verified live:** either button, the scope prompt, and
-whether Shopify's policy editor keeps the paragraph's wording. Uninstalling
+reach Shopify. *Status 2026-10-02:* the Partner Dashboard won't take the
+request while the app is in App Store review ("Additional API access can't be
+requested until Shopify has reviewed your app"). Request it after review;
+withdrawing the submission to request it now would lose the queue place.
+
+**Not verified live:** either button, the scope prompt, and whether Shopify's
+policy editor keeps the paragraph's wording. Uninstalling
 can't remove either change (the token is revoked first); merchants remove them
 before uninstalling, or by hand.
 
