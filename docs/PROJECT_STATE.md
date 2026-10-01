@@ -70,6 +70,16 @@ still outstanding because `shopify app dev` would rewrite the live app's URLs.
 
 ## Shopify App Store compliance status
 
+### App review submission
+
+Submitted for App Store review on 2026-09-04. Shopify Support confirmed on
+2026-10-01 that the submission is in the review queue, processed in order of
+receipt, and that wait times are currently longer than the usual 5 to 10
+business days because of submission volume. No reviewer is assigned yet.
+Do not resubmit (it moves the app to the back of the queue). Feedback arrives
+by email from noreply@shopify.com and in the Partner Dashboard under
+Apps > Distribution.
+
 ### Requirements currently met
 
 - **Requirement 1.1.15, refunds only through the original payment processor.**
@@ -255,6 +265,23 @@ merchants paste it again after changing their guidance.
 
 The manifest's `ucp` block states these boundaries, including
 `refundPublishesUcpOrderEvents: false`.
+
+Shopify Support (with a specialist) confirmed on 2026-10-01:
+
+- UCP can surface order and return information but has no way for an app to
+  register as the handler for return requests.
+- There is no setting that makes an app a merchant's required or exclusive
+  returns provider, so Shopify cannot guarantee an AI agent routes a return
+  through Gooper.io rather than another path.
+- A merchant's custom `agents.md` may name Gooper.io's MCP/API endpoint and
+  tell agents to call it to execute a return, but the file is informational:
+  whether an agent follows it depends on the agent. Shopify logged this as
+  feature feedback; watch [shopify.dev/changelog](https://shopify.dev/changelog).
+
+So the approach in decision 3 stands: make Gooper.io easy to discover and
+clearly described in `agents.md`, rather than relying on enforced routing.
+References: [agents.md Liquid template](https://shopify.dev/docs/storefronts/themes/architecture/templates/agents-md-liquid),
+[Agents and orders](https://shopify.dev/docs/agents/orders).
 
 ### 5. Cross-merchant discovery (decided and implemented)
 
