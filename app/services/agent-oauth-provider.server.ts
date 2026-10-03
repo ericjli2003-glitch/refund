@@ -120,7 +120,7 @@ export function createAgentOAuthProvider(): OAuthServerProvider {
           assistants = input.redirect_uris.map(assistantForRedirect);
         } catch {
           throw new InvalidClientMetadataError(
-            "[registration_callback] A callback URL is not an allowed hosted ChatGPT or Claude callback.",
+            "[registration_callback] A callback URL is not an allowed hosted ChatGPT, Claude or Muse callback.",
           );
         }
         if (new Set(assistants).size !== 1)

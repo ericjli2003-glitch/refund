@@ -1,4 +1,4 @@
-# Assistant end-to-end test: ChatGPT and Claude
+# Assistant end-to-end test: ChatGPT, Claude and Muse
 
 A manual acceptance run for the customer connection at `https://gooper.io/mcp`,
 done once in each host. It checks what automated tests can't: the host's own
@@ -53,9 +53,25 @@ and leave client ID and secret blank.
 - **ChatGPT:** turn on developer mode (Settings → Apps & Connectors →
   Advanced), then create a connector named "Gooper.io" with the URL and OAuth.
   Workspace policy can block developer mode.
+- **Muse** (Meta, US only for now): there is no form. In a chat, ask Muse to
+  "create a custom connector for Gooper.io" at the URL, over HTTP with OAuth.
+  It opens the consent page in its own cloud browser. Afterwards set the
+  connector to **Allow** under Settings (Muse's word for Always allow).
 
 Host menus change. If these paths are out of date, follow the host links in
 [AGENT_ACCESS.md](AGENT_ACCESS.md#connect-and-test) and update this section.
+
+### Muse differences to note
+
+Muse signs in from a browser in Meta's cloud, not on the tester's device, so
+the connection cookie lands there. Where a step checks
+`https://gooper.io/connect/manage` "in the same browser", expect it **not** to
+open on your own device for a Muse connection; use `list_confirmed_emails` in
+chat instead and record what happened. For the same reason the last consent
+screen offers no "open permissions" button for Muse. Also record which token
+authentication Muse registers with: Gooper.io accepts `none` and
+`client_secret_post`, and a `registration_auth_method` error means Muse wants
+`client_secret_basic`, which needs a server change.
 
 ## Steps
 
@@ -209,3 +225,4 @@ failure, note the step and what happened, and attach the screenshots.
 | ---- | --------------- | ------ | ------ | ---------------------- |
 |      | Claude          |        |        |                        |
 |      | ChatGPT         |        |        |                        |
+|      | Muse            |        |        |                        |

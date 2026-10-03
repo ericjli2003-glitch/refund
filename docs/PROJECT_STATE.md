@@ -5,6 +5,17 @@ when a decision below is resolved; do not let it drift into a changelog.
 
 Last reviewed: 2026-09-12, against `claude/project-state`.
 
+## Muse as a third assistant host (2026-10-03)
+
+The customer connection at `/mcp` now also accepts Muse, Meta's agent, through
+its one OAuth callback `https://agent.meta.ai/api/hatch/oauth/callback`, with
+the same consent, email confirmation, scopes and tools as Claude and ChatGPT.
+Not yet run live. Open items (token authentication method, Muse signing in from
+a cloud browser so `/connect/manage` doesn't reach the customer's device, and
+Muse's settings wording) are in [AGENT_ACCESS.md](AGENT_ACCESS.md#muse). Other
+public pages and the merchant dashboard still say "ChatGPT or Claude"; name
+Muse there once a live run passes.
+
 ## Wix stores alongside Shopify (2026-09-28)
 
 Gooper.io now also serves Wix stores, next to Shopify stores and through the

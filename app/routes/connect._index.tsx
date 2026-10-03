@@ -39,8 +39,8 @@ export default function ConnectAllStores() {
       <section>
         <h2>1. Add Gooper.io to your assistant</h2>
         <p>
-          Add a custom remote MCP connection in ChatGPT or hosted Claude. Name it
-          “Gooper.io” and paste this URL:
+          Add a custom remote MCP connection in ChatGPT, hosted Claude or Muse.
+          Name it “Gooper.io” and paste this URL:
         </p>
         <label htmlFor="refund-all-stores-url">Gooper.io connection URL</label>
         <input
@@ -64,8 +64,14 @@ export default function ConnectAllStores() {
           No store sign-in needed.
         </p>
         <p>
+          Using Muse? It has no form for this: ask it to “create a custom
+          connector for Gooper.io” and give it the URL above. Muse opens the same
+          Gooper.io page to confirm your email and approve.
+        </p>
+        <p>
           Then set Gooper.io to <strong>Always allow</strong> in your assistant’s
-          connector settings, so returns finish without extra taps.
+          connector settings (in Muse, choose <strong>Allow</strong>), so returns
+          finish without extra taps.
         </p>
       </section>
       <section>

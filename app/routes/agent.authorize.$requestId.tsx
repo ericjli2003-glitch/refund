@@ -128,13 +128,15 @@ export function ErrorBoundary() {
 // A picture of the setting to choose in the assistant, not a working control:
 // the toggle itself lives in the assistant's own settings.
 function AlwaysAllowPreview({ assistant }: { assistant: string }) {
+  const groups =
+    assistant === "Muse" ? ["Gooper.io"] : ["Read-only tools", "Write/delete tools"];
   return (
     <figure className="setting-preview">
       <div aria-hidden="true">
-        {["Read-only tools", "Write/delete tools"].map((group) => (
+        {groups.map((group) => (
           <div key={group} className="setting-preview-row">
             <span>{group}</span>
-            <span className="setting-preview-pill">✓ Always allow</span>
+            <span className="setting-preview-pill">✓ {allowLabel(assistant)}</span>
           </div>
         ))}
       </div>
@@ -146,13 +148,22 @@ function AlwaysAllowPreview({ assistant }: { assistant: string }) {
 }
 
 const settingsPath = (assistant: string) =>
-  assistant === "ChatGPT"
-    ? "Settings → Connectors → Gooper.io"
-    : "Customize → Connectors → Gooper.io → Tool permissions";
+  assistant === "Claude"
+    ? "Customize → Connectors → Gooper.io → Tool permissions"
+    : "Settings → Connectors → Gooper.io";
+
+// Muse holds each connector to read-only, approval for every action, or allow.
+const allowLabel = (assistant: string) =>
+  assistant === "Muse" ? "Allow" : "Always allow";
+const askLabel = (assistant: string) =>
+  assistant === "Muse" ? "Require approval" : "Ask for approval";
 
 // Claude names a connector's page after the OAuth client it registered with
 // us, so this opens Gooper.io's own permissions instead of the whole list.
+// Muse signs in from a browser in Meta's cloud, so a new tab would open there
+// rather than on the customer's device; it gets no settings link.
 const connectorSettingsUrl = (assistant: string, clientId: string) => {
+  if (assistant === "Muse") return null;
   if (assistant === "ChatGPT") return "https://chatgpt.com/#settings/Connectors";
   const list = "https://claude.ai/customize/connectors";
   return /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(clientId)
@@ -172,7 +183,7 @@ function ConnectedStep({
 }: {
   assistant: string;
   continueUrl: string;
-  settingsUrl: string;
+  settingsUrl: string | null;
 }) {
   const [seconds, setSeconds] = useState(AUTO_FINISH_SECONDS);
   const [finishing, setFinishing] = useState(false);
@@ -186,18 +197,32 @@ function ConnectedStep({
     const timer = window.setTimeout(() => setSeconds((value) => value - 1), 1000);
     return () => window.clearTimeout(timer);
   }, [seconds, finishing, continueUrl]);
+  const allow = allowLabel(assistant);
   return (
     <main className="customer-returns connection-page">
       <header>
         <span>GOOPER.IO</span>
         <span>STEP 3 OF 3</span>
       </header>
-      <h1>One tap to finish — then turn on Always allow</h1>
-      <p className="lead">
-        Tap below to finish connecting. {assistant} then shows your connectors:
-        open <strong>Gooper.io</strong> there and set both tool groups to{" "}
-        <strong>Always allow</strong> so your returns don’t stop at every step.
-      </p>
+      {settingsUrl ? (
+        <>
+          <h1>One tap to finish — then turn on Always allow</h1>
+          <p className="lead">
+            Tap below to finish connecting. {assistant} then shows your connectors:
+            open <strong>Gooper.io</strong> there and set both tool groups to{" "}
+            <strong>Always allow</strong> so your returns don’t stop at every step.
+          </p>
+        </>
+      ) : (
+        <>
+          <h1>One tap to finish, then set Gooper.io to {allow}</h1>
+          <p className="lead">
+            Tap below to finish connecting. Then, in {assistant}, open{" "}
+            {settingsPath(assistant)} and choose <strong>{allow}</strong> so your
+            returns don’t stop at every step.
+          </p>
+        </>
+      )}
       <AlwaysAllowPreview assistant={assistant} />
       <div className="button-row">
         <a
@@ -207,16 +232,18 @@ function ConnectedStep({
         >
           Finish connecting
         </a>
-        <a
-          className="return-button secondary"
-          href={continueUrl}
-          onClick={() => {
-            setFinishing(true);
-            window.open(settingsUrl, "_blank", "noopener,noreferrer");
-          }}
-        >
-          Finish &amp; open Gooper.io permissions ↗
-        </a>
+        {settingsUrl && (
+          <a
+            className="return-button secondary"
+            href={continueUrl}
+            onClick={() => {
+              setFinishing(true);
+              window.open(settingsUrl, "_blank", "noopener,noreferrer");
+            }}
+          >
+            Finish &amp; open Gooper.io permissions ↗
+          </a>
+        )}
       </div>
       <p className="consent-email-hint" role="status" aria-live="polite">
         {finishing
@@ -224,11 +251,11 @@ function ConnectedStep({
           : `If you don’t tap anything, we’ll finish connecting in ${seconds} second${seconds === 1 ? "" : "s"}.`}{" "}
         Gooper.io sits under {settingsPath(assistant)}; if its tools haven’t
         loaded yet, refresh that page once the connection finishes. You can also
-        choose <strong>Always allow</strong> the first time {assistant} asks to
+        choose <strong>{allow}</strong> the first time {assistant} asks to
         use a Gooper.io tool in your chat.
       </p>
       <details>
-        <summary>What happens if I leave it on “Ask for approval”?</summary>
+        <summary>What happens if I leave it on “{askLabel(assistant)}”?</summary>
         <p>
           {assistant} stops and waits for you to tap Allow before each step:
           finding the store, looking up your order, working out your refund and
@@ -430,15 +457,25 @@ export default function AgentConsent() {
         </li>
         <li className="upcoming">
           <section aria-labelledby="always-allow">
-            <h2 id="always-allow">Turn on Always allow</h2>
-            <p>
-              Right after you allow, one tap opens {info.assistant}’s connector
-              settings. Set Gooper.io to <strong>Always allow</strong> so returns
-              finish without stopping.
-            </p>
+            <h2 id="always-allow">Turn on {allowLabel(info.assistant)}</h2>
+            {info.assistant === "Muse" ? (
+              <p>
+                Right after you allow, open {settingsPath(info.assistant)} in
+                Muse and choose <strong>Allow</strong> so returns finish without
+                stopping.
+              </p>
+            ) : (
+              <p>
+                Right after you allow, one tap opens {info.assistant}’s connector
+                settings. Set Gooper.io to <strong>Always allow</strong> so returns
+                finish without stopping.
+              </p>
+            )}
             {emailDone && <AlwaysAllowPreview assistant={info.assistant} />}
             <details>
-              <summary>What happens if I leave it on “Ask for approval”?</summary>
+              <summary>
+                What happens if I leave it on “{askLabel(info.assistant)}”?
+              </summary>
               <p>
                 {info.assistant} stops and waits for you to tap Allow before each
                 step: finding the store, looking up your order, working out your
