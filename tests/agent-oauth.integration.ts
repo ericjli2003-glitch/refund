@@ -569,6 +569,94 @@ test("direct assistant OAuth works through SDK HTTP handlers and PostgreSQL", as
     },
   );
   await t.test(
+    "Muse registers, approves and exchanges a code through Meta's one callback",
+    async () => {
+      const museCallback = "https://agent.meta.ai/api/hatch/oauth/callback";
+      const { value: muse, response } = await register(
+        museCallback,
+        "client_secret_post",
+      );
+      assert.equal(response.status, 201);
+      assert.equal(muse.client_name, "Muse");
+      const authorize = (redirectUri: string, verifier: string) =>
+        fetch(
+          `${base}/authorize?${new URLSearchParams({
+            client_id: muse.client_id,
+            response_type: "code",
+            redirect_uri: redirectUri,
+            resource,
+            scope: "returns:read",
+            code_challenge: digest(verifier),
+            code_challenge_method: "S256",
+            state: "muse-state",
+          })}`,
+          { redirect: "manual" },
+        );
+      // A Muse client can't borrow another assistant's callback.
+      assert.equal((await authorize(callback, randomToken())).status, 400);
+      const verifier = randomToken();
+      const started = await authorize(museCallback, verifier);
+      assert.equal(started.status, 302);
+      const rawId = new URL(started.headers.get("Location")!).pathname
+        .split("/")
+        .at(-1)!;
+      const flow = await prisma.agentOAuthRequest.findUniqueOrThrow({
+        where: { id: digest(rawId) },
+      });
+      const url = `https://refund.test/agent/authorize/${rawId}`;
+      const result = await consentAction({
+        request: new Request(url, {
+          method: "POST",
+          headers: {
+            Cookie: started.headers.get("Set-Cookie")!.split(";")[0],
+            Origin: "https://refund.test",
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            decision: "allow",
+            csrf: flow.csrfToken,
+          }),
+        }),
+        params: { requestId: rawId },
+        context: {},
+        url: new URL(url),
+        pattern: "/agent/authorize/:requestId",
+      });
+      const { data } = result as unknown as {
+        data: {
+          connected: {
+            assistant: string;
+            continueUrl: string;
+            settingsUrl: string | null;
+          };
+        };
+      };
+      assert.equal(data.connected.assistant, "Muse");
+      // Muse signs in from Meta's cloud browser, so there is no settings tab.
+      assert.equal(data.connected.settingsUrl, null);
+      const approved = new URL(data.connected.continueUrl);
+      assert.equal(`${approved.origin}${approved.pathname}`, museCallback);
+      assert.equal(approved.searchParams.get("iss"), "https://refund.test");
+      assert.equal(approved.searchParams.get("state"), "muse-state");
+      const exchanged = await post("/token", {
+        client_id: muse.client_id,
+        client_secret: muse.client_secret,
+        grant_type: "authorization_code",
+        code: approved.searchParams.get("code")!,
+        code_verifier: verifier,
+        redirect_uri: museCallback,
+        resource,
+      });
+      assert.equal(exchanged.status, 200);
+      const tokens = await exchanged.json();
+      assert.equal(tokens.scope, "returns:read");
+      assert.ok(
+        (await authorizeConnection(`Bearer ${tokens.access_token}`, "returns:read"))
+          .connectionId,
+      );
+    },
+  );
+  await t.test(
     "one all-stores connection links each store with that store's own sign-in",
     async (ctx) => {
       const allStores = "https://refund.test/mcp/stores";

@@ -141,6 +141,12 @@ client IDs/secrets blank. CIMD is deliberately not advertised.
 - ChatGPT: enable developer mode if available, add an MCP connection with that
   URL, and use OAuth/DCR. See [OpenAI's current test instructions](https://developers.openai.com/plugins/deploy/connect-chatgpt).
   Account/workspace policy can restrict developer mode.
+- Muse (Meta): there is no connector form. Ask Muse in a chat to create a
+  custom connector for Gooper.io with that URL, over HTTP with OAuth. It
+  registers itself by DCR and opens the consent page in a browser in Meta's
+  cloud, then returns to `https://agent.meta.ai/api/hatch/oauth/callback`. The
+  customer then sets the connector to Allow under Muse's Settings. Not yet
+  tested live; see [Muse](#muse) below.
 
 Do not use `/mcp/public` or `/apps/refund/mcp` for this customer connection:
 those expose anonymous intake only. The browser flow remains an alternative, not
@@ -156,6 +162,35 @@ For a first test, ask the assistant to find an order at Pied Piper
 (testing-bl7vdfur.myshopify.com) and quote it. Submitting refunds the original
 payment method, so use a test order. The full acceptance run for both hosts is
 [ASSISTANT_E2E_TEST.md](ASSISTANT_E2E_TEST.md).
+
+## Muse
+
+Muse is Meta's agent. Since 2026-09-18 it can add third-party connectors,
+including remote MCP servers that sign in with OAuth and DCR. Gooper.io accepts
+exactly one Muse callback, `https://agent.meta.ai/api/hatch/oauth/callback`
+(HTTPS, no port, query or fragment; look-alike hosts and paths are rejected),
+and treats it like Claude and ChatGPT: same consent page, email confirmation,
+scopes, quote and confirm tools, and tokens. A client registers for one
+assistant only, so a Muse client can't use another host's callback.
+
+That callback comes from other MCP server operators who allowlisted it, not
+from Meta documentation. Still to confirm in a live run
+([ASSISTANT_E2E_TEST.md](ASSISTANT_E2E_TEST.md)):
+
+- **Token authentication.** Gooper.io (and the installed MCP SDK's token
+  handler) accepts `none` and `client_secret_post`. If Muse registers with
+  `client_secret_basic`, registration fails with `registration_auth_method`.
+- **Cloud browser.** Muse opens the consent page in a browser in Meta's cloud,
+  so the `__Host-refund_connection` cookie lands there and `/connect/manage`
+  won't open on the customer's own device. The customer manages emails with
+  `list_confirmed_emails` and `remove_confirmed_email` in chat, and removes the
+  connector in Muse. Email codes and the tap-on-another-device confirmation
+  work as usual. The last consent screen gives Muse no "open permissions"
+  button, since a new tab would open in that cloud browser.
+- **Settings wording.** The consent page tells Muse customers to choose
+  **Allow** under Settings → Connectors → Gooper.io, from third-party
+  descriptions of Muse's read-only, approval and allow levels.
+- Muse is reported to be US only for now.
 
 ## Protocol and safety
 
@@ -179,8 +214,8 @@ failure category; this instrumentation is not itself a compatibility fix.
 - The issuer is exactly SHOPIFY_APP_URL's HTTPS origin, without a trailing slash.
   Every success/error authorization redirect includes matching RFC 9207 iss.
 - Only documented hosted callback destinations are accepted: Claude's
-  https://claude.ai/api/mcp/auth_callback and ChatGPT's stable or callback-ID
-  redirect. Arbitrary websites, redirect queries/fragments and loopback/native
+  https://claude.ai/api/mcp/auth_callback, ChatGPT's stable or callback-ID
+  redirect, and Muse's https://agent.meta.ai/api/hatch/oauth/callback. Arbitrary websites, redirect queries/fragments and loopback/native
   clients are rejected in this rollout. Registered names are not trusted.
 - No arbitrary client metadata URL is fetched. Registration is rate-limited and
   capped at 5,000 clients for the initial rollout. Client records persist across

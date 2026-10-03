@@ -5,6 +5,7 @@ import {
   ServerError,
 } from "@modelcontextprotocol/sdk/server/auth/errors.js";
 import prisma from "../db.server";
+import { assistantForRedirect } from "./agent-oauth-flow.server";
 import { createAgentOAuthProvider } from "./agent-oauth-provider.server";
 
 const valid = {
@@ -36,6 +37,36 @@ test("ChatGPT registration accepts authorization code plus rotating refresh toke
   assert.equal(create.mock.callCount(), 1);
 });
 
+test("Muse registers through Meta's one hosted callback", async (t) => {
+  process.env.SHOPIFY_API_SECRET ||= "test-secret";
+  const originalCount = prisma.agentOAuthClient.count;
+  const originalCreate = prisma.agentOAuthClient.create;
+  Reflect.set(prisma.agentOAuthClient, "count", async () => 0);
+  Reflect.set(prisma.agentOAuthClient, "create", async () => ({}));
+  t.after(() => {
+    Reflect.set(prisma.agentOAuthClient, "count", originalCount);
+    Reflect.set(prisma.agentOAuthClient, "create", originalCreate);
+  });
+  const muse = "https://agent.meta.ai/api/hatch/oauth/callback";
+  const client = await createAgentOAuthProvider().clientsStore.registerClient!({
+    ...valid,
+    redirect_uris: [muse],
+  });
+  assert.equal(client.client_name, "Muse");
+  assert.deepEqual(client.redirect_uris, [muse]);
+  for (const value of [
+    "https://agent.meta.ai/api/hatch/oauth/callback?next=evil",
+    "https://agent.meta.ai/api/hatch/oauth/callback/",
+    "https://agent.meta.ai/api/hatch/oauth/other",
+    "https://agent.meta.ai:8443/api/hatch/oauth/callback",
+    "https://meta.ai/api/hatch/oauth/callback",
+    "https://agent.meta.ai.evil.test/api/hatch/oauth/callback",
+    "https://evil.agent.meta.ai/api/hatch/oauth/callback",
+    "http://agent.meta.ai/api/hatch/oauth/callback",
+  ])
+    assert.throws(() => assistantForRedirect(value), value);
+});
+
 test("registration errors identify rejected fields without echoing supplied metadata", async (t) => {
   const original = prisma.agentOAuthClient.count;
   const count = t.mock.fn(async () => {
@@ -53,6 +84,15 @@ test("registration errors identify rejected fields without echoing supplied meta
       {
         redirect_uris: [
           ...valid.redirect_uris,
+          "https://claude.ai/api/mcp/auth_callback",
+        ],
+      },
+      "registration_mixed_hosts",
+    ],
+    [
+      {
+        redirect_uris: [
+          "https://agent.meta.ai/api/hatch/oauth/callback",
           "https://claude.ai/api/mcp/auth_callback",
         ],
       },

@@ -25,7 +25,7 @@ export const agentFlowCookie = createCookie("__Host-refund_agent_flow", {
   maxAge: 1200,
 });
 
-// First rollout: hosted ChatGPT and Claude only, not arbitrary sites or loopback.
+// Hosted ChatGPT, Claude and Meta's Muse only, not arbitrary sites or loopback.
 // Names supplied in registration are never treated as proof of client identity.
 export function assistantForRedirect(value: string) {
   const url = new URL(value);
@@ -46,8 +46,14 @@ export function assistantForRedirect(value: string) {
       /^\/connector\/oauth\/[A-Za-z0-9_-]+$/.test(url.pathname))
   )
     return "ChatGPT";
+  // Muse signs in to custom connectors from Meta's cloud, through one callback.
+  if (
+    url.hostname === "agent.meta.ai" &&
+    url.pathname === "/api/hatch/oauth/callback"
+  )
+    return "Muse";
   throw new Error(
-    "Only the documented ChatGPT and hosted Claude callbacks are supported in this rollout.",
+    "Only the documented ChatGPT, hosted Claude and Muse callbacks are supported.",
   );
 }
 
