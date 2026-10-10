@@ -34,9 +34,44 @@ that need human review remain visible in the merchant activity dashboard.
 - Duplicate-safe return and refund execution.
 - Activity and privacy-request views inside Shopify admin.
 
-**Pricing recommendation for initial review:** Free. Add billing only after the
-core workflow has been validated with real merchants. If paid plans are added,
-use Shopify Billing and update the listing, terms, and reviewer instructions.
+**Pricing: free. Decided 2026-10-09, after a rejection.**
+
+The listing must show no paid plans. The app contains no billing code: no
+`appSubscriptionCreate`, no `appPurchaseOneTimeCreate`, no `appUsageRecordCreate`,
+no Shopify App Pricing configuration, and nothing merchant-facing that states a
+price. A free listing is the only honest description of that.
+
+Why this is written down rather than left as a recommendation: on 2026-10-09
+Shopify paused the submission on requirement **1.2.1 (Use Shopify App Pricing or
+the Shopify Billing API)**, reporting that the app "uses manual pricing and listed
+subscription plans but the app UI provides no option to subscribe or select a
+plan," so they could not verify that charges went through Shopify. The plans had
+been entered on the listing while no code could create a charge. The fix was to
+remove them from the listing, not to add billing.
+
+The Starter/Growth prices in FUNDED_RETURNS_HANDOFF.md, PROJECT_STATE.md,
+GOOPER_FUNDED_REFUNDS_VALIDATION.md and SHOPIFY_FUNDED_RETURNS_SUBMISSION.md are
+commercial decisions and modelling inputs only. They are not live, and they must
+not be entered on the listing until the work below is done.
+
+**Before any price goes on the listing again**, all of this has to ship together:
+
+1. Billing through Shopify. Prefer **Shopify App Pricing** (plans defined in the
+   Partner Dashboard, Shopify hosts the plan-selection page, the app checks
+   `activeSubscription` and redirects merchants without one): it is what Shopify
+   directs new public apps to, and it needs no plan-picker UI of our own. The
+   Billing API is the alternative and means creating charges in code and handling
+   `APP_SUBSCRIPTIONS_UPDATE`. Off-platform billing is prohibited (1.2.1).
+2. Accept, decline, and re-approval on reinstall (**1.2.2**).
+3. In-app upgrade and downgrade, with no support contact and no reinstall, and
+   charges appearing in the merchant's admin charge history (**1.2.3**).
+4. Usage reporting for the per-return percentage fee (App Events API under
+   Shopify App Pricing).
+5. Confirmation that Shopify can charge in CAD, or an equivalent USD price.
+6. Listing, `/terms`, and reviewer instructions updated to match.
+
+Requirements 1.2.2 and 1.2.3 pass today only because there are no charges. They
+become live and reviewer-tested the moment one exists.
 
 ## Access-scope rationale
 
