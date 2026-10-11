@@ -61,7 +61,9 @@ Items marked **[PROVIDER]** depend on which payments provider signs on.
 >
 > The merchant's repayment is documented as repayment of the purchased refund
 > claim, under the merchant agreement. It isn't an app charge. Gooper's service fee
-> is disclosed and charged separately, through Shopify's app billing.
+> would be disclosed and charged separately, through Shopify App Pricing or the
+> Shopify Billing API. The app is free today and bills nothing; we would build
+> that before charging anyone.
 >
 > We have not enabled any live payouts. The flow runs only in a development sandbox
 > with a simulated payments provider. We'd like App Review's determination, and any
@@ -77,7 +79,8 @@ Items marked **[PROVIDER]** depend on which payments provider signs on.
 >    or program required?
 > 3. Is it acceptable for the merchant's repayment of approved principal to be
 >    collected by pre-authorized debit under our merchant agreement, with our plan
->    and per-return fee charged through Shopify app billing?
+>    and per-return fee charged through Shopify App Pricing or the Shopify Billing
+>    API once we build it?
 > 4. How should the funded Shopify return be closed after repayment, so the
 >    merchant's records show the item returned without a Shopify refund and without
 >    distorting sales and tax reporting?
@@ -227,10 +230,12 @@ decisions already made:
 - **Structure:** Gooper buys the customer's refund claim against the merchant (a
   purchase of the receivable, not a loan).
 - **Customer fee:** none. The customer receives the full refund amount.
-- **Merchant pricing (CAD, billed monthly through Shopify app billing):** Starter
-  $49 plus 5% per funded return; Growth $199 plus 4%; each with a $2 minimum per
-  return. Early supporters get a 60-day trial that waives the subscription only;
-  per-return fees still apply.
+- **Merchant pricing (CAD, monthly) — decided, not implemented and not charged:**
+  Starter $49 plus 5% per funded return; Growth $199 plus 4%; each with a $2
+  minimum per return. Early supporters get a 60-day trial that waives the
+  subscription only; per-return fees still apply. No billing code exists and the
+  App Store listing is free; see the Billing section of
+  SHOPIFY_APP_STORE_SUBMISSION.md before quoting these prices to anyone.
 - **Customer breach:** the customer owes the full original refund amount.
 - **Non-recourse:** Gooper can't pursue the customer for the merchant's failure to
   pay.
@@ -282,8 +287,10 @@ pays them and why; to merchants, fees, timing and their obligations.
 - **Rollout:** the feature stays off by default. It's enabled per merchant only
   after the merchant signs the merchant agreement and debit authorization.
 - **Pilot:** 3 to 5 Canadian merchants outside Quebec, with the caps in §5.
-- **Billing:** plan and per-return fee through Shopify's app billing. Repayment of
-  approved principal goes through the provider, under the merchant agreement.
+- **Billing:** none today — the app is free and contains no billing code. The plan
+  and per-return fee would go through Shopify App Pricing or the Shopify Billing
+  API, built before any charge. Repayment of approved principal goes through the
+  provider, under the merchant agreement.
 
 ## 10. Before submitting — Eric's checklist
 
@@ -292,7 +299,8 @@ Before submitting for a determination:
 - [x] Rules and limits set: 7-day ship window, 3-business-day inspection deadline,
       $150 per return, $3,000 per merchant, $14,000 in total, one open funded
       return per customer.
-- [x] Pricing set: monthly, CAD, trial waives the subscription only.
+- [x] Pricing decided: monthly, CAD, trial waives the subscription only. Decided
+      only — nothing charges, and the App Store listing is free.
 - [ ] Submit through Partner Dashboard → Apps → Gooper.io → Distribution, or ask
       Partner Support (citing the Wolf chat) to open an App Review case if the app
       is already published. Paste §1 and attach this document.

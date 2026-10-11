@@ -30,9 +30,12 @@ and have not been reviewed by counsel.
   | Growth | $199 | 4% of the refund, minimum $2 |
 
   Prices are in CAD and billed monthly. Early supporters get a 60-day trial that
-  waives the subscription only; per-return fees still apply. Plan and per-return
-  fees go through Shopify's app billing (check that it can charge in CAD when
-  billing is built; otherwise set an equivalent USD price).
+  waives the subscription only; per-return fees still apply. **None of this is
+  built or charged.** No billing code exists and the App Store listing is free.
+  When billing is built it must use Shopify App Pricing or the Shopify Billing
+  API — off-platform billing is not allowed for App Store apps (requirement
+  1.2.1) — and CAD support needs checking then; otherwise set an equivalent USD
+  price. See the Billing section of SHOPIFY_APP_STORE_SUBMISSION.md.
 - **Pilot rules and limits (set 2026-09-19):** the customer ships within 7 days
   of payout. The merchant inspects within 3 business days of arrival, with no
   automatic approval; a missed deadline triggers reminders and pauses new funded
