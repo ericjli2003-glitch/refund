@@ -28,6 +28,7 @@ import "./services/inbound-email.server.test";
 import "./services/connection-email.server.test";
 import "./services/return-reasons.server.test";
 import "./services/return-wording.server.test";
+import "./services/app-plan.server.test";
 import "./funded-return-sandbox.test";
 import "./funded-payments.test";
 import "./services/funded-returns-admin.server.test";

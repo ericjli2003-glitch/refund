@@ -34,44 +34,57 @@ that need human review remain visible in the merchant activity dashboard.
 - Duplicate-safe return and refund execution.
 - Activity and privacy-request views inside Shopify admin.
 
-**Pricing: free. Decided 2026-10-09, after a rejection.**
+**Pricing: paid, through Shopify App Pricing. Decided 2026-10-28, after a
+second rejection.**
 
-The listing must show no paid plans. The app contains no billing code: no
-`appSubscriptionCreate`, no `appPurchaseOneTimeCreate`, no `appUsageRecordCreate`,
-no Shopify App Pricing configuration, and nothing merchant-facing that states a
-price. A free listing is the only honest description of that.
+History. On 2026-10-09 Shopify paused the submission on requirement **1.2.1
+(Use Shopify App Pricing or the Shopify Billing API)** because the listing showed
+subscription plans while the app had no way to subscribe. The first fix was to
+make the listing free. On 2026-10-28 Shopify paused it again on 1.2.1 ("We were
+unable to find the option to subscribe within the app"), because the listing
+still showed a subscription. The merchant decided to charge at launch, so the
+app now bills through Shopify instead.
 
-Why this is written down rather than left as a recommendation: on 2026-10-09
-Shopify paused the submission on requirement **1.2.1 (Use Shopify App Pricing or
-the Shopify Billing API)**, reporting that the app "uses manual pricing and listed
-subscription plans but the app UI provides no option to subscribe or select a
-plan," so they could not verify that charges went through Shopify. The plans had
-been entered on the listing while no code could create a charge. The fix was to
-remove them from the listing, not to add billing.
+How it works (`app/services/app-plan.server.ts`, `app/routes/app.tsx`):
 
-The Starter/Growth prices in FUNDED_RETURNS_HANDOFF.md, PROJECT_STATE.md,
-GOOPER_FUNDED_REFUNDS_VALIDATION.md and SHOPIFY_FUNDED_RETURNS_SUBMISSION.md are
-commercial decisions and modelling inputs only. They are not live, and they must
-not be entered on the listing until the work below is done.
+- The plans are defined in the Partner Dashboard under Shopify App Pricing.
+  Shopify hosts the plan selection page and creates the subscription; Gooper.io
+  never calls `appSubscriptionCreate` or the framework's `billing.request`.
+- Every embedded admin page reads `currentAppInstallation.activeSubscriptions`.
+  A store with no `ACTIVE` subscription is sent, top frame, to
+  `https://admin.shopify.com/store/<store>/charges/<app handle>/pricing_plans`.
+  The app handle comes from the same query, so there is no handle to configure.
+- A reinstall cancels the old subscription, so the merchant picks a plan again
+  (**1.2.2**). Declining leaves them on the plan page and out of the app.
+- The dashboard's "Your plan" section names the plan and links to the same
+  Shopify page to upgrade or downgrade, with no support contact or reinstall
+  (**1.2.3**). Charges appear in the merchant's Shopify bill.
+- Development stores get test subscriptions, which Shopify doesn't bill. The
+  dashboard says "test charge, not billed" for them.
+- The customer connection, return portal and Wix stores don't check the plan.
+  Customer returns through an assistant stay off until the merchant turns them
+  on in the dashboard, which needs a plan.
 
-**Before any price goes on the listing again**, all of this has to ship together:
+**Partner Dashboard setup** (Apps > Gooper.io > Distribution > Manage listing >
+Pricing, or the app's Pricing page):
 
-1. Billing through Shopify. Prefer **Shopify App Pricing** (plans defined in the
-   Partner Dashboard, Shopify hosts the plan-selection page, the app checks
-   `activeSubscription` and redirects merchants without one): it is what Shopify
-   directs new public apps to, and it needs no plan-picker UI of our own. The
-   Billing API is the alternative and means creating charges in code and handling
-   `APP_SUBSCRIPTIONS_UPDATE`. Off-platform billing is prohibited (1.2.1).
-2. Accept, decline, and re-approval on reinstall (**1.2.2**).
-3. In-app upgrade and downgrade, with no support contact and no reinstall, and
-   charges appearing in the merchant's admin charge history (**1.2.3**).
-4. Usage reporting for the per-return percentage fee (App Events API under
-   Shopify App Pricing).
-5. Confirmation that Shopify can charge in CAD, or an equivalent USD price.
-6. Listing, `/terms`, and reviewer instructions updated to match.
+1. Choose **Shopify App Pricing** (formerly "Managed pricing"), not manual
+   pricing.
+2. Add the plans, monthly, each with a **display name** (the hosted page can
+   404 without one): Starter $49 and Growth $199, with the 60-day trial.
+3. Describe each plan by its features only. Do **not** list the per-return
+   percentage fees: they apply only to funded returns, which are not live, and
+   nothing charges them. Listing a charge the app can't make is what caused
+   both rejections.
+4. Shopify App Pricing charges in USD. The CAD prices in the funded-returns docs
+   need either a USD equivalent or Shopify's confirmation that CAD is possible.
+5. Save, then install on a clean development store and confirm the plan page
+   appears, a plan can be chosen, and the dashboard shows it.
 
-Requirements 1.2.2 and 1.2.3 pass today only because there are no charges. They
-become live and reviewer-tested the moment one exists.
+**Still to build before the per-return fees can be charged:** usage charges
+through Shopify (App Events API under Shopify App Pricing, or a Billing API
+usage line item), then the listing, `/terms` and reviewer instructions updated
+to name them. Off-platform billing is prohibited (1.2.1).
 
 ## Access-scope rationale
 
@@ -102,11 +115,56 @@ assistant and a year without use delete them.
 
 ## Reviewer test instructions
 
-Provide Shopify with a development store and customer account that has a paid,
-fulfilled, returnable order. Include credentials only in the private reviewer
-fields in Partner Dashboard, never in this repository.
+Shopify requires working credentials for every login the review needs
+(**4.5.4, 4.5.5**). Put them only in the private testing-instructions field in
+Partner Dashboard, never in this repository, and re-check each one on the day
+you submit. The review needs:
 
-1. Install Gooper.io and open it from Shopify admin.
+- **The test store** (Pied Piper, `testing-bl7vdfur.myshopify.com`): its
+  storefront password if one is set, so the reviewer can reach the store and its
+  return page.
+- **A customer account on that store** with a paid, fulfilled, returnable order
+  placed through the test payment gateway, and a second such order for the
+  two-order return.
+- **The inbox for that customer's email address.** Shopify customer sign-in
+  sends a one-time code there, and Gooper.io's email confirmation is a button
+  sent there, so the reviewer can't finish without it. Use a dedicated mailbox
+  that opens with only a password (no phone or second-device check), and keep
+  it for reviews only.
+- **An AI assistant account** that can add a custom connector (Claude or
+  ChatGPT), unless the reviewer is told to use their own.
+
+Draft text for the testing-instructions field (fill the bracketed values):
+
+> 1. Install Gooper.io on your development store. Shopify shows Gooper.io's
+>    plans; choose Starter. Development stores get a test charge, which is not
+>    billed. Plans can be changed later from "Your plan" > Change plan in the
+>    app.
+> 2. In the app, open the return policy editor, turn on automatic refunds and
+>    "Let customers return through their AI assistant", set a return window of
+>    30 days and a maximum of 500, and save.
+> 3. To see a customer return end to end, use our test store, where returnable
+>    orders already exist: [store URL], storefront password [password].
+>    Customer email: [email]. Its inbox: [webmail URL], password [password].
+>    Shopify sign-in codes and Gooper.io's confirmation email arrive there.
+> 4. In Claude (claude.ai, Customize > Connectors) add a custom connector named
+>    Gooper.io with the URL https://gooper.io/mcp and connect. [Or: sign in to
+>    Claude with [email] / [password].] Approve the connection with the
+>    customer email above and press the confirmation button in that inbox.
+> 5. Ask: "I'd like to return my [product] from [store name]." The assistant
+>    shows the items, any fees and the refund total, and asks before
+>    submitting. Say yes. The refund goes to the original (test) payment.
+> 6. In Gooper.io in the test store's admin, the return appears under Recent
+>    returns. Turning automatic refunds off, or a refund above the maximum,
+>    leaves the return for the store to review instead.
+
+Before each submission, walk these steps yourself with the exact credentials in
+the field, and replace any order that has already been returned.
+
+The full checks the run should cover:
+
+1. Install Gooper.io, choose a plan on Shopify's page, and open it from Shopify
+   admin.
 2. In **Policy**, enable automatic refunds, set a return window that includes the
    test order, set a maximum above the test line-item amount, and save.
 3. Open the test assistant connector and authenticate with the provided Shopify
@@ -120,6 +178,8 @@ fields in Partner Dashboard, never in this repository.
 8. Return to Gooper.io in Shopify admin and verify the attempt appears in Activity.
 9. Demonstrate the disabled state or a quote above the configured maximum to show
    that Gooper.io blocks the automatic action.
+10. Change plan from "Your plan" and verify Shopify's page opens and the new plan
+    shows in the dashboard.
 
 If a live refund would create cost or operational risk, use a Shopify test payment
 gateway and state that clearly in the reviewer notes.
@@ -176,5 +236,6 @@ Shopify can change listing asset specifications.
 - Final production hostname and hosting account
 - Legal publisher/entity name and governing-law language, if required
 - Monitored support email and support response process
-- App Store category, languages, target regions, and final pricing
+- App Store category, languages, and target regions
+- USD prices for Shopify App Pricing (decided prices are CAD)
 - Test store, reviewer account, and assistant-host connector configuration
