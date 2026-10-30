@@ -11,7 +11,7 @@ export default function Terms() {
       <main className={styles.legal}>
         <p className={styles.eyebrow}>Legal</p>
         <h1>Terms of service</h1>
-        <p className={styles.updated}>Effective September 20, 2026</p>
+        <p className={styles.updated}>Effective October 28, 2026</p>
 
         <p>
           These terms govern a merchant&apos;s use of Gooper.io, a Shopify app that
@@ -98,6 +98,15 @@ export default function Terms() {
           uninstalled, except where law requires it to be retained. On
           reasonable request, Gooper.io will make available the information
           necessary to demonstrate compliance with this section.
+        </p>
+
+        <h2>Plans and billing</h2>
+        <p>
+          Shopify stores use Gooper.io on a monthly plan shown on our Shopify
+          App Store listing. Shopify bills the plan with your other app charges;
+          Gooper.io does not take payment directly. You can change plans from
+          the app in Shopify admin at any time. Uninstalling Gooper.io ends the
+          plan.
         </p>
 
         <h2>Acceptable use</h2>

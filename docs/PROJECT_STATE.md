@@ -69,8 +69,9 @@ This is also presentation-only and does not change merchant or return state.
 
 Decided 2026-09-18/19: Canada first (CAD), merchant-paid pricing (Starter $49 + 5%,
 Growth $199 + 4%, $2 minimum, CAD, monthly, 60-day early-supporter trial waiving
-the subscription only — decided only; no billing code exists, nothing charges, and
-the App Store listing is free, see SHOPIFY_APP_STORE_SUBMISSION.md), pilot limits ($150 per return, $3,000 per merchant,
+the subscription only). Since 2026-10-28 the subscriptions bill through Shopify
+App Pricing and the admin requires a plan; the per-return fees are still not
+charged (see SHOPIFY_APP_STORE_SUBMISSION.md), pilot limits ($150 per return, $3,000 per merchant,
 $14,000 total, one open return per customer, 7-day ship window, 3-business-day
 inspection with no auto-approval), and a working legal
 structure of buying the customer's refund claim, pending Canadian counsel.
@@ -91,6 +92,13 @@ business days because of submission volume. No reviewer is assigned yet.
 Do not resubmit (it moves the app to the back of the queue). Feedback arrives
 by email from noreply@shopify.com and in the Partner Dashboard under
 Apps > Distribution.
+
+Paused twice on **1.2.1** (2026-10-09 and 2026-10-28) because the listing showed
+a subscription the app couldn't sell. Gooper.io now bills through Shopify App
+Pricing; the Partner Dashboard pricing has to be switched to match before
+resubmitting. The 2026-10-28 email also asked for working test credentials
+(**4.5.4, 4.5.5**). Both are in
+[SHOPIFY_APP_STORE_SUBMISSION.md](SHOPIFY_APP_STORE_SUBMISSION.md).
 
 ### Requirements currently met
 

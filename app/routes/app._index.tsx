@@ -5,7 +5,12 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useActionData, useLoaderData, useSubmit } from "react-router";
+import {
+  useActionData,
+  useLoaderData,
+  useRouteLoaderData,
+  useSubmit,
+} from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 import prisma from "../db.server";
@@ -15,6 +20,7 @@ import {
 } from "../funded-return-display";
 import { describeRefundProgress } from "../refund-status";
 import { authenticate } from "../shopify.server";
+import type { loader as appLoader } from "./app";
 import {
   fundedSandboxEnabled,
   listDashboardFundedReturns,
@@ -696,6 +702,7 @@ export default function RefundDashboard() {
     gooperActionId,
     privacyRequests,
   } = useLoaderData<typeof loader>();
+  const appData = useRouteLoaderData<typeof appLoader>("routes/app");
   const actionData = useActionData<typeof action>();
   const submit = useSubmit();
   const bridge = useAppBridge();
@@ -928,6 +935,27 @@ export default function RefundDashboard() {
                 </s-button>
               )}
             </s-stack>
+          </s-stack>
+        </s-section>
+      )}
+
+      {appData && !appStoreShot && (
+        <s-section slot="aside" heading="Your plan">
+          <s-stack direction="block" gap="base">
+            <s-paragraph>
+              You&apos;re on the {appData.plan.name} plan
+              {appData.plan.test ? " (test charge, not billed)" : ""}. Shopify
+              bills it with your other app charges.
+            </s-paragraph>
+            <s-box>
+              <s-button
+                href={appData.planSelectionUrl}
+                target="_top"
+                variant="secondary"
+              >
+                Change plan
+              </s-button>
+            </s-box>
           </s-stack>
         </s-section>
       )}
