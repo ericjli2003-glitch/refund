@@ -944,8 +944,9 @@ export default function RefundDashboard() {
           <s-stack direction="block" gap="base">
             <s-paragraph>
               You&apos;re on the {appData.plan.name} plan
-              {appData.plan.test ? " (test charge, not billed)" : ""}. Shopify
-              bills it with your other app charges.
+              {appData.plan.test || appData.plan.freeDevelopmentTest
+                ? " (test charge, not billed)."
+                : ". Shopify bills it with your other app charges."}
             </s-paragraph>
             <s-box>
               <s-button

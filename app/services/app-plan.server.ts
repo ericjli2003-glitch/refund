@@ -9,6 +9,7 @@ import { adminData, type AdminGraphql } from "./shopify-admin.server";
 export type AppPlan = {
   name: string;
   test: boolean;
+  freeDevelopmentTest: boolean;
   trialDays: number;
   currentPeriodEnd: string | null;
 };
@@ -19,6 +20,7 @@ export type PlanStatus = {
 };
 
 type AppPlanData = {
+  shop: { plan: { partnerDevelopment: boolean } };
   currentAppInstallation: {
     app: { handle: string | null };
     activeSubscriptions: Array<{
@@ -27,12 +29,21 @@ type AppPlanData = {
       test: boolean;
       trialDays: number;
       currentPeriodEnd: string | null;
+      lineItems: Array<{
+        plan: {
+          pricingDetails: {
+            __typename: string;
+            price?: { amount: string };
+          };
+        };
+      }>;
     }>;
   };
 };
 
 const APP_PLAN_QUERY = `#graphql
   query AppPlan {
+    shop { plan { partnerDevelopment } }
     currentAppInstallation {
       app { handle }
       activeSubscriptions {
@@ -41,6 +52,14 @@ const APP_PLAN_QUERY = `#graphql
         test
         trialDays
         currentPeriodEnd
+        lineItems {
+          plan {
+            pricingDetails {
+              __typename
+              ... on AppRecurringPricing { price { amount } }
+            }
+          }
+        }
       }
     }
   }`;
@@ -58,6 +77,20 @@ export function planStatusFrom(data: AppPlanData): PlanStatus {
       ? {
           name: active.name,
           test: active.test,
+          // Current Shopify App Pricing dev-store subscriptions use $0 prices
+          // instead of the legacy Billing API test flag. Do not infer free
+          // billing from dev-store status or a trial alone.
+          freeDevelopmentTest:
+            data.shop.plan.partnerDevelopment &&
+            active.lineItems.length > 0 &&
+            active.lineItems.every(({ plan }) => {
+              const pricing = plan.pricingDetails;
+              return (
+                pricing.__typename === "AppRecurringPricing" &&
+                pricing.price?.amount != null &&
+                /^0+(?:\.0+)?$/.test(pricing.price.amount)
+              );
+            }),
           trialDays: active.trialDays,
           currentPeriodEnd: active.currentPeriodEnd,
         }
