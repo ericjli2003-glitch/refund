@@ -59,8 +59,10 @@ How it works (`app/services/app-plan.server.ts`, `app/routes/app.tsx`):
 - The dashboard's "Your plan" section names the plan and links to the same
   Shopify page to upgrade or downgrade, with no support contact or reinstall
   (**1.2.3**). Charges appear in the merchant's Shopify bill.
-- Development stores get test subscriptions, which Shopify doesn't bill. The
-  dashboard says "test charge, not billed" for them.
+- Shopify App Pricing supports no-charge development-store subscriptions. The
+  dashboard says "test charge, not billed" for a legacy test subscription or a
+  development-store subscription whose recurring line items are all $0. A trial
+  alone does not qualify. See Shopify's [dev-store testing guidance](https://shopify.dev/docs/apps/launch/billing/shopify-app-pricing).
 - The customer connection, return portal and Wix stores don't check the plan.
   Customer returns through an assistant stay off until the merchant turns them
   on in the dashboard, which needs a plan.
