@@ -75,8 +75,10 @@ References:
 - [WebMCP specification](https://webmachinelearning.github.io/webmcp/)
 - [ChatGPT remote connection testing](https://developers.openai.com/plugins/deploy/connect-chatgpt)
 
-Immediate debit-card payouts and return shipping labels remain separate,
-unimplemented capabilities; this path uses the existing original-payment refund.
+Immediate debit-card payouts remain a separate, unimplemented capability; this
+path uses the existing original-payment refund. Return labels come from the
+merchant's connected shipping account when there is one (PROJECT_STATE.md,
+decision 7).
 
 ## UCP publication boundary
 

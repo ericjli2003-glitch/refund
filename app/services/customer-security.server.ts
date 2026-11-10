@@ -52,11 +52,12 @@ export function safeEqual(left: string, right: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function seal(value: string, context: string) {
+// `purpose` separates key material by use; customer sessions keep the default.
+export function seal(value: string, context: string, purpose = "customer-session") {
   const iv = randomBytes(12);
   const cipher = createCipheriv(
     "aes-256-gcm",
-    key("customer-session", refundSecrets()[0]),
+    key(purpose, refundSecrets()[0]),
     iv,
   );
   cipher.setAAD(Buffer.from(context));
@@ -71,7 +72,11 @@ export function seal(value: string, context: string) {
 
 // `current` is false when a retired secret was needed, so a durable record can
 // be re-sealed rather than depending on that secret indefinitely.
-export function unsealWithRotation(value: string, context: string) {
+export function unsealWithRotation(
+  value: string,
+  context: string,
+  purpose = "customer-session",
+) {
   const [iv, tag, encrypted] = value
     .split(".")
     .map((part) => Buffer.from(part, "base64url"));
@@ -80,7 +85,7 @@ export function unsealWithRotation(value: string, context: string) {
     try {
       const decipher = createDecipheriv(
         "aes-256-gcm",
-        key("customer-session", secret),
+        key(purpose, secret),
         iv,
       );
       decipher.setAAD(Buffer.from(context));
@@ -99,8 +104,8 @@ export function unsealWithRotation(value: string, context: string) {
   throw new Error("Sealed value could not be opened.");
 }
 
-export const unseal = (value: string, context: string) =>
-  unsealWithRotation(value, context).value;
+export const unseal = (value: string, context: string, purpose?: string) =>
+  unsealWithRotation(value, context, purpose).value;
 
 export function signQuote(payload: unknown) {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");

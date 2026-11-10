@@ -37,6 +37,7 @@ import {
   type SuggestedRefundTransaction,
 } from "./shopify-inputs.server";
 import { isWixStore } from "./store-platform.server";
+import { buyReturnLabel } from "./return-labels.server";
 import { wixApiFor } from "./wix/wix-client.server";
 import {
   receiveWixReturn,
@@ -968,6 +969,7 @@ export async function executeAutomaticReturn({
   expectedRefund,
   refundTiming,
   lookupReturnReason = (store) => otherReturnReasonId(store),
+  buyLabel = buyReturnLabel,
 }: {
   shop: string;
   customerToken: CustomerAccess;
@@ -978,6 +980,7 @@ export async function executeAutomaticReturn({
   expectedRefund: Money;
   refundTiming: RefundTiming;
   lookupReturnReason?: (shop: string) => Promise<string>;
+  buyLabel?: typeof buyReturnLabel;
 }) {
   const policy = await prisma.storePolicy.findUnique({ where: { shop } });
   if (!policy?.automaticRefundsEnabled) {
@@ -1180,6 +1183,9 @@ export async function executeAutomaticReturn({
 
     const admin = await adminFor(shop);
     await approveReturn(admin, returnId, orderId);
+    // Bought on the merchant's own shipping account when one is connected.
+    // It never throws, so a label problem can't hold up the return or refund.
+    await buyLabel({ admin, shop, recordId: record.id });
     if (refundTiming === "ON_RECEIPT")
       return await prisma.agentReturn.update({
         where: { id: record.id },

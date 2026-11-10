@@ -29,6 +29,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     db.fundedEntitlement.deleteMany({ where: { shop } }),
     db.privacyRequest.deleteMany({ where: { shop } }),
     db.webhookReceipt.deleteMany({ where: { shop } }),
+    db.returnLabelAccount.deleteMany({ where: { shop } }),
     db.storePolicy.deleteMany({ where: { shop } }),
     db.session.deleteMany({ where: { shop } }),
   ]);

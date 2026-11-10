@@ -20,6 +20,7 @@ import "./services/merchant-lookup.server.test";
 import "./services/merchant-directory.server.test";
 import "./services/merchant-maintenance.server.test";
 import "./services/return-shipping.server.test";
+import "./services/return-labels.server.test";
 import "./services/verified-customer-returns.server.test";
 import "./services/email-verification.server.test";
 import "./services/consent-email.server.test";

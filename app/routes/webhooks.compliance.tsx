@@ -232,6 +232,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       prisma.fundedEntitlement.deleteMany({ where: { shop } }),
       prisma.privacyRequest.deleteMany({ where: { shop } }),
       prisma.webhookReceipt.deleteMany({ where: { shop } }),
+      prisma.returnLabelAccount.deleteMany({ where: { shop } }),
       prisma.storePolicy.deleteMany({ where: { shop } }),
       prisma.session.deleteMany({ where: { shop } }),
     ]);

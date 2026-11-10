@@ -371,9 +371,23 @@ model AgentReturn {
   refundTiming        String?
   itemReceivedAt      DateTime?
   // Tracking the customer entered for a return with no platform return
-  // object to hold it (Wix). Shopify returns keep tracking on the return.
+  // object to hold it (Wix), or the tracking of a return label Gooper.io
+  // bought on the merchant's own shipping account. Otherwise Shopify returns
+  // keep tracking on the return.
   trackingNumber      String?
   trackingUrl         String?
+  // A return label bought on the merchant's connected shipping account
+  // (ReturnLabelAccount). PURCHASING while the purchase is in flight, so a
+  // label is bought at most once; PURCHASED or FAILED after.
+  labelStatus         String?
+  labelUrl            String?
+  labelCarrier        String?
+  labelCost           String?
+  labelCostCurrency   String?
+  labelShipmentId     String?
+  labelError          String?
+  // Set once the label is also attached to the return in Shopify.
+  labelAttachedAt     DateTime?
   // Set when the merchant clears a finished return off the dashboard. The
   // record stays: it is the store's account of a refund, and a customer data
   // request still reports it.
@@ -557,4 +571,31 @@ model WixInstallation {
   currencyCode String?
   installedAt  DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// A merchant's own shipping-label account (EasyPost or Shippo). Gooper.io buys
+// return labels on it after a return is approved, so the carrier bills the
+// merchant directly and Gooper.io charges nothing for labels. The API key is
+// sealed; only its last four characters are kept readable.
+model ReturnLabelAccount {
+  shop          String   @id
+  // EASYPOST or SHIPPO
+  provider      String
+  apiKeySealed  String
+  apiKeyHint    String
+  // A provider test key: labels are samples and nothing is billed.
+  testMode      Boolean  @default(false)
+  // Off keeps the account connected without buying labels.
+  enabled       Boolean  @default(true)
+  // The box every return label is bought for.
+  parcelLength  String   @default("12")
+  parcelWidth   String   @default("9")
+  parcelHeight  String   @default("4")
+  // in or cm
+  distanceUnit  String   @default("in")
+  parcelWeight  String   @default("2")
+  // oz, lb, g or kg
+  massUnit      String   @default("lb")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

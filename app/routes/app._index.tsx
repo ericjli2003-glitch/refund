@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import * as z from "zod/v4";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import type {
   ActionFunctionArgs,
@@ -43,6 +44,15 @@ import {
 } from "../services/merchant-directory.server";
 import { appOrigin } from "../services/customer-security.server";
 import { hasScope } from "../services/shopify-admin.server";
+import {
+  buyReturnLabel,
+  connectLabelAccount,
+  disconnectLabelAccount,
+  labelAccountFor,
+  saveLabelSettings,
+  type LabelAccountSummary,
+} from "../services/return-labels.server";
+import { SHIPPABLE } from "../services/return-shipping.server";
 import {
   discoveryStatus,
   publishAgentsSection,
@@ -146,6 +156,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     fundedSandbox && !showArchived
       ? await listDashboardFundedReturns(session.shop)
       : [];
+  const labelAccount = await labelAccountFor(session.shop);
 
   return {
     fundedSandbox,
@@ -212,8 +223,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     archivedCount: await prisma.agentReturn.count({
       where: { shop: session.shop, archivedAt: { not: null } },
     }),
+    labelAccount,
+    labelsSaved: url.searchParams.get("labels"),
     agentReturns: agentReturns.map((agentReturn) => ({
       ...agentReturn,
+      // A failed label can be bought again while the item is still on its way.
+      labelRetryable: Boolean(
+        labelAccount?.enabled &&
+          agentReturn.labelStatus === "FAILED" &&
+          agentReturn.returnId &&
+          !agentReturn.itemReceivedAt &&
+          SHIPPABLE.includes(agentReturn.status),
+      ),
       archivable: canArchiveReturn(agentReturn),
       retryable: canRetryReturn(agentReturn),
       receivable: canReceiveReturn(agentReturn),
@@ -224,6 +245,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     privacyRequests,
   };
 };
+
+// A zod failure reads as its first message rather than raw JSON.
+function formErrorText(error: unknown) {
+  if (error instanceof z.ZodError)
+    return error.issues[0]?.message ?? "Check the values and try again.";
+  return error instanceof Error ? error.message : "The action did not finish.";
+}
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session, redirect } = await authenticate.admin(request);
@@ -368,6 +396,61 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       };
     }
     return redirect(`/app?discovery=${discoveryIntent}`);
+  }
+
+  // The merchant's own shipping-label account. Gooper.io buys return labels on
+  // it; the carrier bills the merchant there.
+  const labelIntent = formData.get("intent");
+  if (
+    labelIntent === "connectLabels" ||
+    labelIntent === "saveLabels" ||
+    labelIntent === "disconnectLabels"
+  ) {
+    try {
+      if (labelIntent === "connectLabels")
+        await connectLabelAccount(session.shop, {
+          provider: formData.get("provider"),
+          apiKey: formData.get("apiKey"),
+        });
+      else if (labelIntent === "saveLabels")
+        await saveLabelSettings(session.shop, {
+          enabled: formData.get("enabled") === "true",
+          parcelLength: formData.get("parcelLength"),
+          parcelWidth: formData.get("parcelWidth"),
+          parcelHeight: formData.get("parcelHeight"),
+          distanceUnit: formData.get("distanceUnit"),
+          parcelWeight: formData.get("parcelWeight"),
+          massUnit: formData.get("massUnit"),
+        });
+      else await disconnectLabelAccount(session.shop);
+    } catch (error) {
+      return {
+        heading:
+          labelIntent === "connectLabels"
+            ? "The shipping account wasn't connected"
+            : "Return label settings weren't saved",
+        error: formErrorText(error),
+      };
+    }
+    return redirect(`/app?labels=${labelIntent}`);
+  }
+
+  if (formData.get("intent") === "retryLabel") {
+    const agentReturnId = formData.get("agentReturnId");
+    if (typeof agentReturnId !== "string" || !agentReturnId) {
+      throw new Response("Return ID is required.", { status: 400 });
+    }
+    const outcome = await buyReturnLabel({
+      admin,
+      shop: session.shop,
+      recordId: agentReturnId,
+    });
+    if (outcome.status !== "PURCHASED")
+      return {
+        heading: "No return label was bought",
+        error: outcome.status === "FAILED" ? outcome.error : outcome.reason,
+      };
+    return redirect("/app?labels=retryLabel");
   }
 
   if (formData.get("intent") === "setListing") {
@@ -664,6 +747,238 @@ function ReturnAutomationOverview({
   );
 }
 
+const LABEL_SAVED_MESSAGES: Record<string, string> = {
+  connectLabels:
+    "Shipping account connected. New returns get a prepaid label automatically.",
+  saveLabels: "Return label settings saved.",
+  disconnectLabels:
+    "Shipping account disconnected. No more return labels will be bought.",
+  retryLabel: "Return label bought.",
+};
+
+// A label bought on the merchant's shipping account, shown on its return row.
+function LabelStatus({
+  agentReturn,
+}: {
+  agentReturn: {
+    labelStatus: string | null;
+    labelUrl: string | null;
+    labelCarrier: string | null;
+    labelCost: string | null;
+    labelCostCurrency: string | null;
+    labelError: string | null;
+  };
+}) {
+  if (agentReturn.labelStatus === "PURCHASED")
+    return (
+      <s-stack direction="block" gap="small-200">
+        <s-stack direction="inline" gap="small-200" alignItems="center">
+          <s-text color="subdued">
+            Return label: {agentReturn.labelCarrier ?? "bought"}
+            {agentReturn.labelCost
+              ? `, ${agentReturn.labelCost} ${agentReturn.labelCostCurrency ?? ""}`.trimEnd()
+              : ""}
+          </s-text>
+          {agentReturn.labelUrl && (
+            <s-link href={agentReturn.labelUrl} target="_blank">
+              Open label
+            </s-link>
+          )}
+        </s-stack>
+        {agentReturn.labelError && (
+          <s-paragraph color="subdued">{agentReturn.labelError}</s-paragraph>
+        )}
+      </s-stack>
+    );
+  if (agentReturn.labelStatus === "FAILED")
+    return (
+      <s-paragraph color="subdued">
+        No return label was bought: {agentReturn.labelError}
+      </s-paragraph>
+    );
+  if (agentReturn.labelStatus === "PURCHASING")
+    return (
+      <s-paragraph color="subdued">
+        Buying the return label. If this doesn&apos;t change, check your
+        shipping account for a label before buying another.
+      </s-paragraph>
+    );
+  return null;
+}
+
+function ReturnLabelsSection({
+  account,
+  saved,
+}: {
+  account: LabelAccountSummary | null;
+  saved: string | null;
+}) {
+  const submit = useSubmit();
+  const [provider, setProvider] = useState("EASYPOST");
+  const [apiKey, setApiKey] = useState("");
+  const [enabled, setEnabled] = useState(account?.enabled ?? true);
+  const [parcel, setParcel] = useState({
+    parcelLength: account?.parcelLength ?? "12",
+    parcelWidth: account?.parcelWidth ?? "9",
+    parcelHeight: account?.parcelHeight ?? "4",
+    distanceUnit: account?.distanceUnit ?? "in",
+    parcelWeight: account?.parcelWeight ?? "2",
+    massUnit: account?.massUnit ?? "lb",
+  });
+  const send = (fields: Record<string, string>) => {
+    const formData = new FormData();
+    for (const [name, value] of Object.entries(fields)) formData.set(name, value);
+    submit(formData, { method: "post" });
+  };
+  const setField = (name: keyof typeof parcel) => (event: Event) =>
+    setParcel((current) => ({
+      ...current,
+      [name]: (event.currentTarget as HTMLInputElement).value,
+    }));
+
+  return (
+    <s-section slot="aside" heading="Return labels">
+      <s-stack direction="block" gap="base">
+        {saved && LABEL_SAVED_MESSAGES[saved] && (
+          <s-banner tone="success">{LABEL_SAVED_MESSAGES[saved]}</s-banner>
+        )}
+        {account ? (
+          <form
+            method="post"
+            onSubmit={(event) => {
+              event.preventDefault();
+              send({ intent: "saveLabels", enabled: String(enabled), ...parcel });
+            }}
+          >
+            <s-stack direction="block" gap="base">
+              <s-stack direction="inline" gap="small-200" alignItems="center">
+                <s-text>
+                  Connected to {account.providerName}, key ending{" "}
+                  {account.apiKeyHint}
+                </s-text>
+                {account.testMode && <s-badge tone="info">Test key</s-badge>}
+              </s-stack>
+              <s-switch
+                label="Buy a prepaid label for each approved return"
+                checked={enabled}
+                onChange={(event) => setEnabled(event.currentTarget.checked)}
+              ></s-switch>
+              <s-paragraph color="subdued">
+                The cheapest rate on your {account.providerName} account is
+                bought for this box, from the customer&apos;s shipping address
+                to your return location. {account.providerName} bills you for
+                the label; Gooper.io charges nothing for it.
+                {account.testMode
+                  ? " With a test key, labels are samples and nothing is billed."
+                  : ""}
+              </s-paragraph>
+              <s-grid gridTemplateColumns="1fr 1fr 1fr" gap="small-200">
+                <s-text-field
+                  label="Length"
+                  value={parcel.parcelLength}
+                  onChange={setField("parcelLength")}
+                ></s-text-field>
+                <s-text-field
+                  label="Width"
+                  value={parcel.parcelWidth}
+                  onChange={setField("parcelWidth")}
+                ></s-text-field>
+                <s-text-field
+                  label="Height"
+                  value={parcel.parcelHeight}
+                  onChange={setField("parcelHeight")}
+                ></s-text-field>
+              </s-grid>
+              <s-select
+                label="Box size in"
+                value={parcel.distanceUnit}
+                onChange={setField("distanceUnit")}
+              >
+                <s-option value="in">Inches</s-option>
+                <s-option value="cm">Centimeters</s-option>
+              </s-select>
+              <s-grid gridTemplateColumns="1fr 1fr" gap="small-200">
+                <s-text-field
+                  label="Packed weight"
+                  value={parcel.parcelWeight}
+                  onChange={setField("parcelWeight")}
+                ></s-text-field>
+                <s-select
+                  label="Weight in"
+                  value={parcel.massUnit}
+                  onChange={setField("massUnit")}
+                >
+                  <s-option value="oz">Ounces</s-option>
+                  <s-option value="lb">Pounds</s-option>
+                  <s-option value="g">Grams</s-option>
+                  <s-option value="kg">Kilograms</s-option>
+                </s-select>
+              </s-grid>
+              <s-stack direction="inline" gap="small-200">
+                <s-button type="submit" variant="secondary">
+                  Save label settings
+                </s-button>
+                <s-button
+                  type="button"
+                  variant="tertiary"
+                  tone="critical"
+                  onClick={() => send({ intent: "disconnectLabels" })}
+                >
+                  Disconnect
+                </s-button>
+              </s-stack>
+            </s-stack>
+          </form>
+        ) : (
+          <form
+            method="post"
+            onSubmit={(event) => {
+              event.preventDefault();
+              send({ intent: "connectLabels", provider, apiKey });
+            }}
+          >
+            <s-stack direction="block" gap="base">
+              <s-paragraph>
+                Connect your own EasyPost or Shippo account and Gooper.io buys
+                a prepaid return label as soon as a return is approved. The
+                customer gets it right away in their chat and return page, and
+                it&apos;s attached to the return in Shopify.
+              </s-paragraph>
+              <Explainer summary="Who pays for labels">
+                <s-paragraph color="subdued">
+                  Labels are bought on your account, so your shipping provider
+                  bills you at your rates, the same as labels you buy today.
+                  Gooper.io charges nothing for labels. Use a test key first to
+                  try it with sample labels that cost nothing.
+                </s-paragraph>
+              </Explainer>
+              <s-select
+                label="Shipping provider"
+                value={provider}
+                onChange={(event) => setProvider(event.currentTarget.value)}
+              >
+                <s-option value="EASYPOST">EasyPost</s-option>
+                <s-option value="SHIPPO">Shippo</s-option>
+              </s-select>
+              <s-password-field
+                label="API key"
+                value={apiKey}
+                autocomplete="off"
+                onChange={(event) => setApiKey(event.currentTarget.value)}
+              ></s-password-field>
+              <s-box>
+                <s-button type="submit" variant="secondary">
+                  Connect shipping account
+                </s-button>
+              </s-box>
+            </s-stack>
+          </form>
+        )}
+      </s-stack>
+    </s-section>
+  );
+}
+
 export default function RefundDashboard() {
   const {
     fundedSandbox,
@@ -701,6 +1016,8 @@ export default function RefundDashboard() {
     gooperReturns,
     gooperActionId,
     privacyRequests,
+    labelAccount,
+    labelsSaved,
   } = useLoaderData<typeof loader>();
   const appData = useRouteLoaderData<typeof appLoader>("routes/app");
   const actionData = useActionData<typeof action>();
@@ -815,7 +1132,8 @@ export default function RefundDashboard() {
       | "receiveReturn"
       | "removeReturn"
       | "archiveReturn"
-      | "unarchiveReturn",
+      | "unarchiveReturn"
+      | "retryLabel",
     agentReturnId: string,
     // Null where the button's own label is the whole explanation, which keeps
     // a row that needs nothing from the merchant down to one line.
@@ -1225,6 +1543,7 @@ export default function RefundDashboard() {
                                 </s-link>
                               )}
                           </s-stack>
+                          {!preview && <LabelStatus agentReturn={agentReturn} />}
                           {preview ? (
                             preview.actionLabel && (
                               <s-box>
@@ -1280,6 +1599,13 @@ export default function RefundDashboard() {
                                       "Mark received and restock",
                                     )}
                                   </s-stack>
+                                )}
+                              {agentReturn.labelRetryable &&
+                                returnAction(
+                                  "retryLabel",
+                                  agentReturn.id,
+                                  null,
+                                  "Buy return label again",
                                 )}
                               {agentReturn.itemReceivedAt && (
                                 <s-paragraph color="subdued">
@@ -1337,6 +1663,10 @@ export default function RefundDashboard() {
             </s-table>
           )}
         </s-section>
+      )}
+
+      {!appStoreShot && (
+        <ReturnLabelsSection account={labelAccount} saved={labelsSaved} />
       )}
 
       {!appStoreShot && (

@@ -22,6 +22,7 @@ import {
 } from "./customer-security.server";
 import { resolveReturning, returningSchema } from "./return-wording.server";
 import { returnInstructionsSentence } from "./return-guidance.server";
+import { boughtLabel } from "./return-shipping.server";
 import { isWixStore } from "./store-platform.server";
 
 // A basket holds items from a few of the customer's orders at one store.
@@ -312,6 +313,17 @@ export async function createReturnQuote(
     expiresAt: Date.now() + QUOTE_LIFETIME_MS,
   };
   const instructions = returnInstructionsSentence(policy?.returnInstructions);
+  // Only a promise of a label, never a blocker: if this can't be read the
+  // quote falls back to the general wording.
+  const labelsOn =
+    !isWixStore(shop) &&
+    Boolean(
+      (
+        await prisma.returnLabelAccount
+          .findUnique({ where: { shop }, select: { enabled: true } })
+          .catch(() => null)
+      )?.enabled,
+    );
   const orderViews = priced.map((entry) => ({
     orderId: entry.order.id,
     orderName: entry.order.name,
@@ -359,7 +371,9 @@ export async function createReturnQuote(
       (submissionAvailable
         ? isWixStore(shop)
           ? "A return is opened for each order after confirmation."
-          : "A return is opened for each order after confirmation. The store may add return shipping labels in Shopify."
+          : labelsOn
+            ? "A return is opened for each order after confirmation, and the store provides a prepaid return label right away."
+            : "A return is opened for each order after confirmation. The store may add return shipping labels in Shopify."
         : "Contact the merchant for return approval. No shipping label has been created.") +
       instructions,
   };
@@ -388,6 +402,8 @@ type SubmittedOrder = {
   refundStatus: string | null;
   title: string;
   message: string;
+  // Present when a label was bought on the store's shipping account.
+  returnLabel?: NonNullable<ReturnType<typeof boughtLabel>>;
 };
 
 export async function submitReturnQuote(
@@ -436,6 +452,7 @@ export async function submitReturnQuote(
         currencyCode: result.currencyCode,
         refundStatus: result.refundStatus,
         ...describeRefundProgress(result),
+        ...(boughtLabel(result) ? { returnLabel: boughtLabel(result)! } : {}),
       });
     } catch (error) {
       // A single order answers exactly as it always has: the caller sees the

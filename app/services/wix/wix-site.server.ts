@@ -210,6 +210,7 @@ export async function removeWixSite(shop: string) {
     prisma.fundedEntitlement.deleteMany({ where: { shop } }),
     prisma.privacyRequest.deleteMany({ where: { shop } }),
     prisma.webhookReceipt.deleteMany({ where: { shop } }),
+    prisma.returnLabelAccount.deleteMany({ where: { shop } }),
     prisma.storePolicy.deleteMany({ where: { shop } }),
     prisma.wixInstallation.deleteMany({ where: { shop } }),
   ]);

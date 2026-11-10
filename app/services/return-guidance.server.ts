@@ -99,14 +99,22 @@ export function returnInstructionsSentence(
 
 // Said once the return exists: what to do with the item, where a label comes
 // from, and the store's policy page when it set one.
-export function submittedReturnShipping(guidance: ReturnGuidance, shop?: string) {
+export function submittedReturnShipping(
+  guidance: ReturnGuidance,
+  shop?: string,
+  labelReady = false,
+) {
   return (
     "The return is open, so send the item back." +
     returnInstructionsSentence(guidance.returnInstructions) +
-    // Wix sends no return labels; the customer can add their own tracking.
-    (shop && isWixStore(shop)
-      ? " If you ship it yourself, you can add the tracking number here."
-      : " The store may add a return shipping label in Shopify; ask to check this return's status later for the label and tracking.") +
+    // A label bought on the store's shipping account is in each order's
+    // returnLabel; Wix sends no return labels, so the customer can add their
+    // own tracking.
+    (labelReady
+      ? " The store's prepaid return label is ready: give the customer the returnLabel link to print, and tell them which carrier to drop the package off with."
+      : shop && isWixStore(shop)
+        ? " If you ship it yourself, you can add the tracking number here."
+        : " The store may add a return shipping label in Shopify; ask to check this return's status later for the label and tracking.") +
     (guidance.returnPolicyUrl
       ? ` Return policy: ${guidance.returnPolicyUrl}`
       : "")

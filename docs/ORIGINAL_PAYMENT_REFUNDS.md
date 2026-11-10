@@ -67,7 +67,9 @@ of payment success. Webhooks preserve failed attempts and do not downgrade
 successful processor evidence with older pending data.
 
 Gooper.io does not advance money, purchase refund receivables, issue a new card,
-promise instant bank settlement, or automatically generate shipping labels.
+or promise instant bank settlement. It buys return shipping labels only on a
+shipping account the merchant connected, which bills the merchant directly
+(PROJECT_STATE.md, decision 7).
 
 ## Verification
 

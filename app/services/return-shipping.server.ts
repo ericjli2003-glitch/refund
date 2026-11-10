@@ -4,7 +4,7 @@ import {
   adminData,
   adminFor,
   type AdminGraphql,
-} from "./automatic-return.server";
+} from "./shopify-admin.server";
 import type { CustomerContext } from "./return-draft.server";
 import { isWixStore } from "./store-platform.server";
 
@@ -32,7 +32,7 @@ export type ReturnShipping = {
 };
 
 // Returns the customer can still ship: approved, and not yet received.
-const SHIPPABLE = ["RETURN_OPEN", "AWAITING_ITEM", "REFUND_SUBMITTED", "REFUND_RECORDED"];
+export const SHIPPABLE = ["RETURN_OPEN", "AWAITING_ITEM", "REFUND_SUBMITTED", "REFUND_RECORDED"];
 
 // Labels and tracking live on the return's reverse deliveries in Shopify,
 // whether the merchant created a label there or the customer added tracking.
@@ -94,7 +94,7 @@ const UPDATE_TRACKING_MUTATION = `#graphql
   }
 `;
 
-async function readShipping(admin: AdminGraphql, returnId: string) {
+export async function readShipping(admin: AdminGraphql, returnId: string) {
   const { return: found } = await adminData<{
     return: {
       reverseFulfillmentOrders: {
@@ -107,6 +107,24 @@ async function readShipping(admin: AdminGraphql, returnId: string) {
   return {
     reverseFulfillmentOrderId: orders[0]?.id ?? null,
     delivery: orders.flatMap((order) => order.reverseDeliveries.nodes)[0] ?? null,
+  };
+}
+
+// A return label Gooper.io bought on the merchant's shipping account
+// (return-labels.server.ts). Null when none was.
+export function boughtLabel(record: {
+  labelStatus?: string | null;
+  labelUrl?: string | null;
+  labelCarrier?: string | null;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
+}) {
+  if (record.labelStatus !== "PURCHASED" || !record.labelUrl) return null;
+  return {
+    labelUrl: record.labelUrl,
+    carrierName: record.labelCarrier ?? null,
+    trackingNumber: record.trackingNumber ?? null,
+    trackingUrl: record.trackingUrl ?? null,
   };
 }
 
@@ -146,7 +164,15 @@ export async function returnShippingFor(
     },
     orderBy: { createdAt: "desc" },
     take: 5,
-    select: { id: true, returnId: true, trackingNumber: true, trackingUrl: true },
+    select: {
+      id: true,
+      returnId: true,
+      trackingNumber: true,
+      trackingUrl: true,
+      labelStatus: true,
+      labelUrl: true,
+      labelCarrier: true,
+    },
   });
   if (!records.length) return [];
   // Wix sends no return labels; the customer's own tracking is on the record.
@@ -162,10 +188,32 @@ export async function returnShippingFor(
   const client = admin ?? (await adminFor(context.shop));
   const shipping = await Promise.all(
     records.map(async (record) => {
+      // A label bought on the merchant's shipping account is on the record
+      // too, so the customer has it even if Shopify can't be read or the
+      // label never reached the Shopify return.
+      const bought = boughtLabel(record);
       try {
-        return describeShipping(record.id, await readShipping(client, record.returnId!));
+        const described = describeShipping(record.id, await readShipping(client, record.returnId!));
+        if (!bought || described.labelUrl) return described;
+        return {
+          ...described,
+          labelUrl: httpsOrNull(bought.labelUrl),
+          trackingNumber: described.trackingNumber ?? bought.trackingNumber,
+          trackingUrl: described.trackingUrl ?? httpsOrNull(bought.trackingUrl),
+          carrierName: described.carrierName ?? bought.carrierName,
+          canAddTracking: false,
+        };
       } catch {
-        return null;
+        return bought
+          ? {
+              agentReturnId: record.id,
+              labelUrl: httpsOrNull(bought.labelUrl),
+              trackingNumber: bought.trackingNumber,
+              trackingUrl: httpsOrNull(bought.trackingUrl),
+              carrierName: bought.carrierName,
+              canAddTracking: false,
+            }
+          : null;
       }
     }),
   );
@@ -207,6 +255,8 @@ export async function addReturnTracking(
     throw new Error(
       "Tracking can only be added to your own approved return before the store receives it.",
     );
+  if (boughtLabel(record)?.trackingNumber)
+    throw new Error("This return already has tracking from the store's label.");
   if (isWixStore(context.shop)) {
     if (record.trackingNumber)
       throw new Error("This return already has a tracking number.");

@@ -389,6 +389,65 @@ carrier, so there is no carrier account, per-label cost or off-platform billing.
 **Not yet verified against a live store:** reading label fields and adding
 tracking on a return whose refund was already processed.
 
+**Labels bought on the merchant's own shipping account (2026-11-10).**
+Merchants can connect their own EasyPost or Shippo account in the dashboard's
+"Return labels" panel. Once a return is approved, Gooper.io buys a prepaid
+label on that account, so the carrier bills the merchant there and Gooper.io
+pays for and charges nothing (no carrier account of its own, no off-platform
+billing, requirement 1.2.1 untouched). Code: `return-label-providers.server.ts`
+(the two REST clients) and `return-labels.server.ts` (account, purchase,
+Shopify attachment).
+
+- The API key is checked with the provider before it is saved, sealed with
+  its own key purpose (`return-label-account`), and only its last four
+  characters are readable. A test key (`EZTK...`, `shippo_test_...`) buys
+  sample labels that cost nothing. Uninstall, shop redaction and Wix removal
+  delete the account.
+- `executeAutomaticReturn` calls `buyReturnLabel` right after Shopify approves
+  the return, before any refund. It never throws, so a label problem can't
+  hold up a return or refund. The record is claimed (`labelStatus` PURCHASING)
+  so a label is bought at most once; a return Shopify already shows a label
+  or tracking on is released without buying.
+- The label goes from the customer's order shipping address to the return
+  location (the store's restock location, else the fulfilling location, else
+  the store address), for the merchant's saved box size and weight, at the
+  cheapest rate the account offers. Labels are bought as ordinary shipments,
+  not with the providers' return flags: Shippo only swaps addresses for USPS,
+  FedEx and UPS, so a return flag could send a Canada Post label the wrong
+  way. The trade-off is that the label is charged when bought, not on scan.
+- The label URL, carrier, cost and tracking are stored on the `AgentReturn`, so
+  the customer has the label in `confirm_return` (each order's `returnLabel`),
+  `get_return_session`, `check_return_status` and the portal even if Shopify
+  can't be read. The file is then attached to the Shopify return
+  (`stagedUploadsCreate` with `RETURN_LABEL`, then
+  `reverseDeliveryCreateWithShipping` or `reverseDeliveryShippingUpdate`,
+  `notifyCustomer: false`). A customer can't add tracking over a bought label.
+- The dashboard shows each return's label (carrier, cost, link), the reason a
+  purchase failed, and "Buy return label again" for a failed one. Quotes say
+  the store provides a prepaid label when an account is on.
+- Wix stores are not offered this: there is no Wix return object to attach
+  the label to, and the Wix dashboard has no label settings yet.
+
+**Before it works live:**
+
+1. **Level 2 protected customer data for the shipping address.** The label
+   reads the order's `shippingAddress` (name, address, phone), which Shopify
+   only returns with Level 2 access to those fields. Add name, address and
+   phone to the protected customer data request in Partner Dashboard, with
+   this use. Without it, purchases fail with "Shopify didn't share the
+   customer's shipping address" and nothing is bought. Gooper.io does not
+   store the address; it passes it only to the merchant's provider.
+2. **Privacy policy and terms (counsel review).** They must say that, when a
+   merchant connects a shipping account, the customer's name, address and
+   phone go to that merchant's chosen provider (EasyPost or Shippo) to make
+   the label, and that the label file stays in the merchant's provider
+   account after a customer redaction removes Gooper.io's records.
+3. **Live checks, with test keys on a development store:** that
+   `labelInput.fileUrl` takes the staged upload's `resourceUrl` (Shopify's
+   docs were unreachable from the build environment; the schema validates),
+   that EasyPost returns `label_pdf_url` when `label_format` is PDF, and that
+   both providers rate Canada Post for a Canadian store.
+
 ### 8. One assistant connection for every store (decided and implemented)
 
 Customers who connect Gooper.io expect it to work with every store in the Gooper.io

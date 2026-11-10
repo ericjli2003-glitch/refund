@@ -105,7 +105,10 @@ to name them. Off-platform billing is prohibited (1.2.1).
 | `customer_write_orders` | Request the customer-confirmed return in their own account. |
 
 Request protected customer data access for order and customer fields used in the
-workflow, including Level 2 access to the order email: Gooper.io matches the email
+workflow, including Level 2 access to the order's shipping name, address and
+phone for merchants who connect a shipping account (Gooper.io reads them when
+it buys a return label and passes them only to the merchant's EasyPost or
+Shippo account, without storing them), and Level 2 access to the order email: Gooper.io matches the email
 a customer gives their assistant against the store's orders before emailing
 that address a one-tap confirmation. The app hashes the customer identifier in operational records and does
 not store Customer Account access tokens there.
