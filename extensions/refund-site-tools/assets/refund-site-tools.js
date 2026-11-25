@@ -3,6 +3,23 @@
     document.querySelectorAll("[data-refund-site-tools]"),
   );
 
+  // Theme editor reloads can replace the entire block after the asset runs.
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const root = event.target.closest("[data-refund-site-tools]");
+    if (!root) return;
+    const dialog = root.querySelector("[data-refund-dialog]");
+    if (event.target.closest("[data-refund-close]")) dialog?.close();
+    if (!event.target.closest("[data-refund-launcher]") || !dialog?.showModal) return;
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    openReturnPanel(root);
+    if (dialog.open) event.preventDefault();
+  });
+  document.addEventListener("close", (event) => {
+    if (!(event.target instanceof Element) || !event.target.matches("[data-refund-dialog]")) return;
+    event.target.closest("[data-refund-site-tools]")?.querySelector("[data-refund-launcher]")?.setAttribute("aria-expanded", "false");
+  }, true);
+
   if (roots.length === 0) return;
 
   function readStore(root) {
@@ -27,11 +44,17 @@
     const status = root.querySelector("[data-refund-status]");
     const requestedItem = request.itemName || request.orderName;
     const link = root.querySelector(".refund-site-tools__account-link");
-    const url = new URL(root.dataset.portalUrl);
+    // Older embeds can lack an absolute portal URL. Always open the
+    // panel, even when optional intent parameters cannot be appended.
+    const portalUrl = root.dataset.portalUrl || link?.getAttribute("href");
+    let url;
+    try {
+      if (portalUrl) url = new URL(portalUrl, window.location.origin);
+    } catch { /* Keep the server-rendered return link. */ }
     for (const field of ["orderName", "itemName"]) {
-      if (typeof request[field] === "string") url.searchParams.set(field, request[field].slice(0, 120));
+      if (url && typeof request[field] === "string") url.searchParams.set(field, request[field].slice(0, 120));
     }
-    if (link) link.href = url.toString();
+    if (url && link) link.href = url.toString();
 
     if (status && requestedItem) {
       const prefix = root.dataset.intentPrefix || "Return request for";
@@ -55,18 +78,6 @@
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || "Gooper.io is unavailable.");
     return payload;
-  }
-
-  for (const root of roots) {
-    const dialog = root.querySelector("[data-refund-dialog]");
-    const launcher = root.querySelector("[data-refund-launcher]");
-    const close = root.querySelector("[data-refund-close]");
-
-    launcher?.addEventListener("click", () => openReturnPanel(root));
-    close?.addEventListener("click", () => dialog?.close());
-    dialog?.addEventListener("close", () => {
-      launcher?.setAttribute("aria-expanded", "false");
-    });
   }
 
   const modelContext = document.modelContext;
