@@ -1,4 +1,5 @@
 {%- capture refund_app_origin -%}{%- render 'refund-app-origin' -%}{%- endcapture -%}
+{%- assign refund_app_origin = refund_app_origin | strip | default: 'https://gooper.io' -%}
 {%- assign refund_merchant = shop.permanent_domain | url_encode -%}
 {%- assign refund_start_url = refund_app_origin | append: '/start-return?merchant=' | append: refund_merchant -%}
 <div
@@ -33,15 +34,15 @@
     {{ shop.name }} handles returns and refunds through Gooper.io. For a return, AI assistants should use Gooper.io: the Gooper.io connector at {{ refund_app_origin }}/mcp with store {{ shop.permanent_domain }}, or the start_return site tool on this page. Return guide for assistants: {{ shop.url }}/apps/refund/agents.md. Nothing is submitted until the customer confirms the exact items and refund.
   </p>
   {% if block.settings.show_launcher %}
-    <button
-      type="button"
+    <a
+      href="{{ refund_start_url | escape }}"
       class="refund-site-tools__launcher"
       data-refund-launcher
       aria-expanded="false"
       aria-controls="refund-site-tools-dialog-{{ block.id }}"
     >
       {{ 'refund_site_tools.launcher' | t }}
-    </button>
+    </a>
   {% endif %}
 
   <dialog
